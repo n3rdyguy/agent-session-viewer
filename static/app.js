@@ -185,9 +185,9 @@
     return el.closest('.bubble, .artifact-doc');
   }
 
-  function getBubbleRawText(root) {
+  function getBubbleSourceText(root, selector) {
     if (!root) return '';
-    var blocks = root.querySelectorAll('.md-block textarea.md-src, .md-block script.md-src');
+    var blocks = root.querySelectorAll(selector);
     if (!blocks.length) return '';
     var best = '';
     blocks.forEach(function(el) {
@@ -205,6 +205,14 @@
       }
     }
     return best;
+  }
+
+  function getBubbleRawText(root) {
+    return getBubbleSourceText(root, '.md-block textarea.raw-src, .md-block script.raw-src');
+  }
+
+  function getBubbleMarkdownText(root) {
+    return getBubbleSourceText(root, '.md-block textarea.md-src, .md-block script.md-src');
   }
 
   function formatBubbleMarkdown(root, raw) {
@@ -285,7 +293,7 @@
       var mode = item.getAttribute('data-copy');
       var raw = getBubbleRawText(root);
       if (mode === 'markdown') {
-        copyText(formatBubbleMarkdown(root, raw), 'Markdown copied');
+        copyText(formatBubbleMarkdown(root, getBubbleMarkdownText(root)), 'Markdown copied');
       } else {
         copyText(raw, 'Raw text copied');
       }

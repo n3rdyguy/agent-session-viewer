@@ -12,6 +12,7 @@ from flask import Flask, Response, abort, render_template, request, send_file
 from .config import CLAUDE_HOME, CODEX_HOME, GROK_HOME
 from .discovery import all_sessions
 from .images import is_image_path
+from .markdown_output import format_markdown_content
 from .session import load_session, summary_to_markdown, turns_to_markdown
 from .util import path_allowed
 
@@ -20,6 +21,7 @@ app = Flask(
     template_folder=str(Path(__file__).parent.parent / "templates"),
     static_folder=str(Path(__file__).parent.parent / "static"),
 )
+app.jinja_env.filters["markdown_content"] = format_markdown_content
 
 
 @app.route("/")
