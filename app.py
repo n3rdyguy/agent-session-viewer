@@ -1505,7 +1505,6 @@ def get_grok_conversation(path: Path) -> list[dict]:
                         time=display_time(obj.get("timestamp"), tcid or seq),
                         id=tcid or seq,
                         text=content or "(empty tool result)",
-                        meta=tcid,
                         images=images,
                     ))
                     continue
