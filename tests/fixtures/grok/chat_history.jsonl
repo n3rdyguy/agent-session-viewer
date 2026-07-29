@@ -1,0 +1,4 @@
+{"type":"user","timestamp":"2026-07-30T08:00:00Z","prompt_index":7,"content":"Inspect the parser."}
+{"type":"assistant","timestamp":"2026-07-30T08:00:01Z","id":"assistant-1","model":"grok-test","content":"I will inspect it.","tool_calls":[{"id":"call-1","name":"read_file","arguments":{"path":"parser.py"}}]}
+{"type":"tool_result","timestamp":"2026-07-30T08:00:02Z","tool_call_id":"call-1","content":"parser contents"}
+{"type":"reasoning","timestamp":"2026-07-30T08:00:03Z","id":"reason-1","summary":[{"text":"The parser is small."}],"encrypted_content":"opaque"}

@@ -1,0 +1,7 @@
+{"timestamp":"2026-07-30T08:00:00Z","type":"session_meta","payload":{"id":"codex-test","cwd":"C:/fixture"}}
+{"timestamp":"2026-07-30T08:00:01Z","type":"response_item","payload":{"type":"message","role":"developer","content":[{"type":"input_text","text":"Follow the fixture instructions."}]}}
+{"timestamp":"2026-07-30T08:00:02Z","type":"event_msg","payload":{"type":"user_message","message":"Inspect the parser."}}
+{"timestamp":"2026-07-30T08:00:03Z","type":"response_item","payload":{"type":"reasoning","id":"reason-1","summary":[{"type":"summary_text","text":"The parser is small."}],"encrypted_content":"opaque"}}
+{"timestamp":"2026-07-30T08:00:04Z","type":"response_item","payload":{"type":"function_call","name":"read_file","call_id":"call-1","arguments":"{\"path\":\"parser.py\"}"}}
+{"timestamp":"2026-07-30T08:00:05Z","type":"response_item","payload":{"type":"function_call_output","call_id":"call-1","output":"parser contents"}}
+{"timestamp":"2026-07-30T08:00:06Z","type":"event_msg","payload":{"type":"agent_message","message":"The parser looks good.","phase":"final"}}
