@@ -1189,13 +1189,11 @@ def grok_updates_timeline(path: Path, max_events: int = 400) -> list[dict]:
         parts.clear()
         if not text:
             return
-        events.append({
-            "role": role,
-            "time": display_time(ts),
-            "id": "",
-            "text": text,
-            "model": "",
-        })
+        events.append(make_turn(
+            role=role,
+            time=display_time(ts),
+            text=text,
+        ))
 
     try:
         with f.open(encoding="utf-8", errors="replace") as fh:
@@ -1242,13 +1240,12 @@ def grok_updates_timeline(path: Path, max_events: int = 400) -> list[dict]:
                     title = update.get("title") or update.get("kind") or "tool"
                     raw_in = update.get("rawInput") or update.get("raw_input") or update.get("input")
                     text = f"{title}\nid: {tcid}\n{format_tool_args(raw_in)}" if tcid else f"{title}\n{format_tool_args(raw_in)}"
-                    events.append({
-                        "role": "tool_call",
-                        "time": display_time(ts, tcid),
-                        "id": tcid,
-                        "text": text,
-                        "model": "",
-                    })
+                    events.append(make_turn(
+                        role="tool_call",
+                        time=display_time(ts, tcid),
+                        id=tcid,
+                        text=text,
+                    ))
                     tool_final[tcid] = {"status": "started", "title": title}
                 elif kind == "tool_call_update":
                     tcid = update.get("toolCallId") or update.get("tool_call_id") or ""
@@ -1267,13 +1264,12 @@ def grok_updates_timeline(path: Path, max_events: int = 400) -> list[dict]:
                     # Emit completed/failed updates inline
                     if str(status).lower() in ("completed", "failed", "error", "cancelled"):
                         body = prev.get("content") or ""
-                        events.append({
-                            "role": "tool_result",
-                            "time": display_time(ts, tcid),
-                            "id": tcid,
-                            "text": f"status: {status}\nid: {tcid}\n{body}".strip(),
-                            "model": "",
-                        })
+                        events.append(make_turn(
+                            role="tool_result",
+                            time=display_time(ts, tcid),
+                            id=tcid,
+                            text=f"status: {status}\nid: {tcid}\n{body}".strip(),
+                        ))
                 elif kind == "task_backgrounded":
                     if user_buf:
                         flush_buf("user", user_buf, last_ts)
@@ -1284,26 +1280,24 @@ def grok_updates_timeline(path: Path, max_events: int = 400) -> list[dict]:
                     tid = update.get("task_id") or update.get("tool_call_id") or ""
                     cmd = update.get("command") or ""
                     out = update.get("output_file") or ""
-                    events.append({
-                        "role": "event",
-                        "time": display_time(ts, tid),
-                        "id": tid,
-                        "text": f"task_backgrounded\nid: {tid}\ncommand: {cmd}\noutput_file: {out}",
-                        "model": "",
-                    })
+                    events.append(make_turn(
+                        role="event",
+                        time=display_time(ts, tid),
+                        id=tid,
+                        text=f"task_backgrounded\nid: {tid}\ncommand: {cmd}\noutput_file: {out}",
+                    ))
                 elif kind == "task_completed":
                     snap = update.get("task_snapshot") or update
                     tid = snap.get("task_id") or update.get("task_id") or ""
                     out = snap.get("output") or ""
                     if len(str(out)) > 3000:
                         out = str(out)[:3000] + "…"
-                    events.append({
-                        "role": "event",
-                        "time": display_time(ts, tid),
-                        "id": tid,
-                        "text": f"task_completed\nid: {tid}\ncommand: {snap.get('command') or ''}\n{out}",
-                        "model": "",
-                    })
+                    events.append(make_turn(
+                        role="event",
+                        time=display_time(ts, tid),
+                        id=tid,
+                        text=f"task_completed\nid: {tid}\ncommand: {snap.get('command') or ''}\n{out}",
+                    ))
                 elif kind == "turn_completed":
                     if user_buf:
                         flush_buf("user", user_buf, last_ts)
@@ -1313,13 +1307,12 @@ def grok_updates_timeline(path: Path, max_events: int = 400) -> list[dict]:
                         flush_buf("assistant", message_buf, last_ts)
                     usage = update.get("usage") or {}
                     usage_txt = pretty_json(usage, 800) if usage else ""
-                    events.append({
-                        "role": "event",
-                        "time": display_time(ts, update.get("prompt_id")),
-                        "id": update.get("prompt_id") or "",
-                        "text": f"turn_completed · stop={update.get('stop_reason') or '?'}\n{usage_txt}",
-                        "model": "",
-                    })
+                    events.append(make_turn(
+                        role="event",
+                        time=display_time(ts, update.get("prompt_id")),
+                        id=update.get("prompt_id") or "",
+                        text=f"turn_completed · stop={update.get('stop_reason') or '?'}\n{usage_txt}",
+                    ))
 
         if user_buf:
             flush_buf("user", user_buf, last_ts)
@@ -1333,13 +1326,10 @@ def grok_updates_timeline(path: Path, max_events: int = 400) -> list[dict]:
     if len(events) > max_events:
         head = events[: max_events // 2]
         tail = events[-(max_events // 2) :]
-        marker = [{
-            "role": "event",
-            "time": "",
-            "id": "",
-            "text": f"… {len(events) - max_events} updates omitted for display …",
-            "model": "",
-        }]
+        marker = [make_turn(
+            role="event",
+            text=f"… {len(events) - max_events} updates omitted for display …",
+        )]
         return head + marker + tail
     return events
 
@@ -1764,32 +1754,26 @@ def codex_scan_session(path: Path) -> dict:
                 counts["assistant"] += 1
             elif et == "task_started":
                 counts["task"] += 1
-                events.append({
-                    "role": "event",
-                    "time": display_time(ts, payload.get("turn_id")),
-                    "id": payload.get("turn_id") or "",
-                    "text": f"task_started\nid: {payload.get('turn_id') or ''}\nmodel_context_window: {payload.get('model_context_window') or ''}",
-                    "model": "",
-                    "meta": "task",
-                    "images": [],
-                    "html": "",
-                })
+                events.append(make_turn(
+                    role="event",
+                    time=display_time(ts, payload.get("turn_id")),
+                    id=payload.get("turn_id") or "",
+                    text=f"task_started\nid: {payload.get('turn_id') or ''}\nmodel_context_window: {payload.get('model_context_window') or ''}",
+                    meta="task",
+                ))
             elif et == "task_complete":
-                events.append({
-                    "role": "event",
-                    "time": display_time(ts, payload.get("turn_id")),
-                    "id": payload.get("turn_id") or "",
-                    "text": (
+                events.append(make_turn(
+                    role="event",
+                    time=display_time(ts, payload.get("turn_id")),
+                    id=payload.get("turn_id") or "",
+                    text=(
                         f"task_complete\nid: {payload.get('turn_id') or ''}\n"
                         f"duration_ms: {payload.get('duration_ms')}\n"
                         f"ttft_ms: {payload.get('time_to_first_token_ms')}\n"
                         f"{(payload.get('last_agent_message') or '')[:500]}"
                     ),
-                    "model": "",
-                    "meta": "task",
-                    "images": [],
-                    "html": "",
-                })
+                    meta="task",
+                ))
             elif et == "token_count":
                 token_events += 1
                 info = payload.get("info") if isinstance(payload.get("info"), dict) else {}
@@ -1841,31 +1825,25 @@ def codex_scan_session(path: Path) -> dict:
                         "diff": (ch.get("unified_diff") or "")[:400],
                     })
                 stdout = (payload.get("stdout") or "")[:300]
-                events.append({
-                    "role": "event",
-                    "time": display_time(ts, call_id),
-                    "id": call_id,
-                    "text": f"patch_apply_end · success={payload.get('success')}\n{stdout}\nfiles: {', '.join(list(changes)[:12])}",
-                    "model": "",
-                    "meta": "patch",
-                    "images": [],
-                    "html": "",
-                })
+                events.append(make_turn(
+                    role="event",
+                    time=display_time(ts, call_id),
+                    id=call_id,
+                    text=f"patch_apply_end · success={payload.get('success')}\n{stdout}\nfiles: {', '.join(list(changes)[:12])}",
+                    meta="patch",
+                ))
             elif et == "image_generation_end":
-                events.append({
-                    "role": "event",
-                    "time": display_time(ts, payload.get("call_id")),
-                    "id": payload.get("call_id") or "",
-                    "text": (
+                events.append(make_turn(
+                    role="event",
+                    time=display_time(ts, payload.get("call_id")),
+                    id=payload.get("call_id") or "",
+                    text=(
                         f"image_generation_end · {payload.get('status')}\n"
                         f"saved: {payload.get('saved_path') or '—'}\n"
                         f"{(payload.get('revised_prompt') or '')[:400]}"
                     ),
-                    "model": "",
-                    "meta": "image",
-                    "images": [],
-                    "html": "",
-                })
+                    meta="image",
+                ))
 
     # Token usage: cumulative total from last token_count (Codex running total)
     tokens = _empty_token_usage()
@@ -2346,6 +2324,118 @@ def turns_to_markdown(turns: list[dict], title: str, agent: str, path: str, extr
     return "\n".join(lines)
 
 
+
+# ─────────────────────────────────────────────
+# Session load (shared by /view and /export)
+# ─────────────────────────────────────────────
+
+def load_session(agent: str, path: Path) -> dict:
+    """
+    Load everything the view/export routes need for one session.
+
+    Returns turns, title, summary, resources, artifacts, hunks,
+    terminal_logs, recaps, and updates (timeline / events tab).
+    """
+    title = path.name
+    turns = get_conversation(agent, path)
+    summary = None
+    resources = None
+    artifacts = None
+    hunks = None
+    terminal_logs = None
+    recaps = None
+    updates = None
+
+    if agent == "grok" and path.is_dir():
+        summary = grok_summary_card(path)
+        title = summary.get("title") or title
+        resources = grok_resources(path)
+        artifacts = (resources or {}).get("artifacts") or []
+        hunks = grok_hunk_records(path)
+        terminal_logs = grok_terminal_logs(path)
+        recaps = grok_recap_requests(path)
+        updates = grok_updates_timeline(path)
+    elif agent == "codex" and path.is_file():
+        scan = codex_scan_session(path)
+        summary = scan["summary"]
+        title = summary.get("title") or title
+        resources = scan["resources"]
+        artifacts = scan.get("artifacts") or []
+        hunks = scan["hunks"]
+        # Reuse "updates" tab for Codex task/patch/image timeline
+        updates = scan["events"]
+
+    return {
+        "agent": agent,
+        "path": path,
+        "title": title,
+        "turns": turns,
+        "summary": summary,
+        "resources": resources,
+        "artifacts": artifacts,
+        "hunks": hunks,
+        "terminal_logs": terminal_logs,
+        "recaps": recaps,
+        "updates": updates,
+    }
+
+
+def summary_to_markdown(
+    summary: dict | None,
+    *,
+    agent: str,
+    resources: dict | None = None,
+) -> str:
+    """Shared export header (model/cwd/tokens/todos) for Grok and Codex."""
+    if not summary:
+        return ""
+
+    if agent == "grok":
+        lines = [
+            f"**Model:** {summary.get('model') or '—'}  ",
+            f"**CWD:** `{summary.get('cwd') or '—'}`  ",
+            f"**Agent:** {summary.get('agent_name') or '—'}  ",
+            f"**Reasoning effort:** {summary.get('reasoning_effort') or '—'}  ",
+            f"**Session id:** `{summary.get('id')}`  ",
+        ]
+    elif agent == "codex":
+        lines = [
+            f"**Model:** {summary.get('model') or '—'}  ",
+            f"**CWD:** `{summary.get('cwd') or '—'}`  ",
+            f"**Originator:** {summary.get('agent_name') or '—'}  ",
+            f"**Reasoning effort:** {summary.get('reasoning_effort') or '—'}  ",
+            f"**Sandbox:** {summary.get('sandbox_profile') or '—'}  ",
+            f"**Session id:** `{summary.get('id')}`  ",
+        ]
+    else:
+        return ""
+
+    tok = summary.get("tokens") or {}
+    if tok.get("available"):
+        lines.extend([
+            "",
+            "### Estimated token usage",
+            f"- **Input:** {tok.get('input_fmt')}  ",
+            f"- **Output:** {tok.get('output_fmt')}  ",
+            f"- **Cached read:** {tok.get('cached_fmt')}  ",
+            f"- **Reasoning:** {tok.get('reasoning_fmt')}  ",
+            f"- **Uncached input:** {tok.get('uncached_fmt')}  ",
+            f"- **Total:** {tok.get('total_fmt')}  ",
+            f"- *Source: {tok.get('source')}*",
+        ])
+
+    if resources and resources.get("todos"):
+        lines.append("")
+        lines.append("### Todos")
+        for t in resources["todos"]:
+            mark = "x" if t.get("status") == "completed" else " "
+            lines.append(
+                f"- [{mark}] `{t.get('id')}` {t.get('content')} ({t.get('status')})"
+            )
+
+    return "\n".join(lines)
+
+
 # ─────────────────────────────────────────────
 # Routes
 # ─────────────────────────────────────────────
@@ -2395,65 +2485,20 @@ def view():
     if not path_allowed(path):
         abort(403, "Path not allowed")
 
-    turns = get_conversation(agent, path)
-    title = path.name if path.is_file() else path.name
-
-    summary = None
-    resources = None
-    artifacts = None
-    hunks = None
-    terminal_logs = None
-    recaps = None
-    updates = None
-
-    if agent == "grok" and path.is_dir():
-        summary = grok_summary_card(path)
-        title = summary.get("title") or title
-        resources = grok_resources(path)
-        artifacts = (resources or {}).get("artifacts") or []
-        hunks = grok_hunk_records(path)
-        terminal_logs = grok_terminal_logs(path)
-        recaps = grok_recap_requests(path)
-        updates = grok_updates_timeline(path)
-    elif agent == "codex" and path.is_file():
-        scan = codex_scan_session(path)
-        summary = scan["summary"]
-        title = summary.get("title") or title
-        resources = scan["resources"]
-        artifacts = scan.get("artifacts") or []
-        hunks = scan["hunks"]
-        # Reuse "updates" tab for Codex task/patch/image timeline
-        updates = scan["events"]
-        # Ensure timeline turns have html for markdown toggle
-        fixed = []
-        for ev in updates:
-            if "html" not in ev or not ev.get("html"):
-                fixed.append(make_turn(
-                    role=ev.get("role") or "event",
-                    text=ev.get("text") or "",
-                    time=ev.get("time") or "",
-                    id=ev.get("id") or "",
-                    model=ev.get("model") or "",
-                    meta=ev.get("meta") or "",
-                    images=ev.get("images"),
-                ))
-            else:
-                fixed.append(ev)
-        updates = fixed
-
+    session = load_session(agent, path)
     return render_template(
         "view.html",
         agent=agent,
         path=str(path),
-        title=title,
-        turns=turns,
-        summary=summary,
-        resources=resources,
-        artifacts=artifacts,
-        hunks=hunks,
-        terminal_logs=terminal_logs,
-        recaps=recaps,
-        updates=updates,
+        title=session["title"],
+        turns=session["turns"],
+        summary=session["summary"],
+        resources=session["resources"],
+        artifacts=session["artifacts"],
+        hunks=session["hunks"],
+        terminal_logs=session["terminal_logs"],
+        recaps=session["recaps"],
+        updates=session["updates"],
     )
 
 
@@ -2471,68 +2516,19 @@ def export_md():
     if not path_allowed(path):
         abort(403)
 
-    turns = get_conversation(agent, path)
-    title = path.name
-    extra = ""
-
-    if agent == "grok" and path.is_dir():
-        summary = grok_summary_card(path)
-        title = summary.get("title") or title
-        resources = grok_resources(path)
-        lines = [
-            f"**Model:** {summary.get('model') or '—'}  ",
-            f"**CWD:** `{summary.get('cwd') or '—'}`  ",
-            f"**Agent:** {summary.get('agent_name') or '—'}  ",
-            f"**Reasoning effort:** {summary.get('reasoning_effort') or '—'}  ",
-            f"**Session id:** `{summary.get('id')}`  ",
-        ]
-        tok = summary.get("tokens") or {}
-        if tok.get("available"):
-            lines.extend([
-                "",
-                "### Estimated token usage",
-                f"- **Input:** {tok.get('input_fmt')}  ",
-                f"- **Output:** {tok.get('output_fmt')}  ",
-                f"- **Cached read:** {tok.get('cached_fmt')}  ",
-                f"- **Reasoning:** {tok.get('reasoning_fmt')}  ",
-                f"- **Uncached input:** {tok.get('uncached_fmt')}  ",
-                f"- **Total:** {tok.get('total_fmt')}  ",
-                f"- *Source: {tok.get('source')}*",
-            ])
-        if resources.get("todos"):
-            lines.append("")
-            lines.append("### Todos")
-            for t in resources["todos"]:
-                mark = "x" if t["status"] == "completed" else " "
-                lines.append(f"- [{mark}] `{t['id']}` {t['content']} ({t['status']})")
-        extra = "\n".join(lines)
-    elif agent == "codex" and path.is_file():
-        summary = codex_summary_card(path)
-        title = summary.get("title") or title
-        lines = [
-            f"**Model:** {summary.get('model') or '—'}  ",
-            f"**CWD:** `{summary.get('cwd') or '—'}`  ",
-            f"**Originator:** {summary.get('agent_name') or '—'}  ",
-            f"**Reasoning effort:** {summary.get('reasoning_effort') or '—'}  ",
-            f"**Sandbox:** {summary.get('sandbox_profile') or '—'}  ",
-            f"**Session id:** `{summary.get('id')}`  ",
-        ]
-        tok = summary.get("tokens") or {}
-        if tok.get("available"):
-            lines.extend([
-                "",
-                "### Estimated token usage",
-                f"- **Input:** {tok.get('input_fmt')}  ",
-                f"- **Output:** {tok.get('output_fmt')}  ",
-                f"- **Cached read:** {tok.get('cached_fmt')}  ",
-                f"- **Reasoning:** {tok.get('reasoning_fmt')}  ",
-                f"- **Uncached input:** {tok.get('uncached_fmt')}  ",
-                f"- **Total:** {tok.get('total_fmt')}  ",
-                f"- *Source: {tok.get('source')}*",
-            ])
-        extra = "\n".join(lines)
-
-    md = turns_to_markdown(turns, title, agent, str(path), extra=extra)
+    session = load_session(agent, path)
+    extra = summary_to_markdown(
+        session["summary"],
+        agent=agent,
+        resources=session["resources"],
+    )
+    md = turns_to_markdown(
+        session["turns"],
+        session["title"],
+        agent,
+        str(path),
+        extra=extra,
+    )
 
     filename = f"{agent}-{path.stem[:40]}.md"
     return Response(
