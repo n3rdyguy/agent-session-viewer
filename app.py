@@ -1646,9 +1646,12 @@ def iter_codex_rollout(path: Path):
                 continue
 
 
-def codex_scan_session(path: Path) -> dict:
+def codex_scan_session(path: Path, records: list[dict] | None = None) -> dict:
     """
     Single-pass scan of a Codex rollout file for summary, tokens, patches, settings.
+
+    Parsed records may be supplied by ``load_session`` so the conversation and
+    metadata views can reuse the same JSONL read.
     """
     meta: dict = {}
     git: dict = {}
@@ -1688,7 +1691,7 @@ def codex_scan_session(path: Path) -> dict:
     settings_rows: list[dict] = []
     events: list[dict] = []  # lightweight timeline for "updates" tab
 
-    for obj in iter_codex_rollout(path):
+    for obj in records if records is not None else iter_codex_rollout(path):
         counts["lines"] += 1
         ts = obj.get("timestamp") or ""
         if ts:
@@ -1976,7 +1979,11 @@ def codex_summary_card(path: Path) -> dict:
     return codex_scan_session(path)["summary"]
 
 
-def get_codex_conversation(path: Path) -> list[dict]:
+def get_codex_conversation(
+    path: Path,
+    records: list[dict] | None = None,
+    session_cwd: str | None = None,
+) -> list[dict]:
     """
     Full Codex rollout transcript:
     - event_msg user/agent messages (chat)
@@ -1986,18 +1993,6 @@ def get_codex_conversation(path: Path) -> list[dict]:
     """
     turns: list[dict] = []
     idx = 0
-    session_cwd = None
-
-    # Light cwd for image path resolution
-    try:
-        for obj in iter_codex_rollout(path):
-            if obj.get("type") == "session_meta":
-                p = obj.get("payload") or {}
-                session_cwd = p.get("cwd")
-                break
-    except Exception:
-        pass
-
     def content_pair(raw: Any, extra_images: Any = None) -> tuple[str, list[dict]]:
         return extract_text_and_images(
             raw,
@@ -2018,14 +2013,18 @@ def get_codex_conversation(path: Path) -> list[dict]:
         return str(output)
 
     try:
-        for obj in iter_codex_rollout(path):
+        for obj in records if records is not None else iter_codex_rollout(path):
             idx += 1
             seq = f"#{idx}"
             ts_raw = obj.get("timestamp")
             t = obj.get("type")
             payload = obj.get("payload") if isinstance(obj.get("payload"), dict) else {}
 
-            if t == "response_item":
+            if t == "session_meta":
+                meta = payload.get("meta") if isinstance(payload.get("meta"), dict) else payload
+                session_cwd = meta.get("cwd") or session_cwd
+
+            elif t == "response_item":
                 ptype = payload.get("type")
 
                 if ptype == "reasoning":
@@ -2337,7 +2336,7 @@ def load_session(agent: str, path: Path) -> dict:
     terminal_logs, recaps, and updates (timeline / events tab).
     """
     title = path.name
-    turns = get_conversation(agent, path)
+    turns = []
     summary = None
     resources = None
     artifacts = None
@@ -2345,6 +2344,23 @@ def load_session(agent: str, path: Path) -> dict:
     terminal_logs = None
     recaps = None
     updates = None
+
+    if agent == "codex" and path.is_file():
+        # Parse and decode the rollout once, then reuse those records for both
+        # the transcript and its summary/tokens/events/patches.
+        records = list(iter_codex_rollout(path))
+        scan = codex_scan_session(path, records)
+        meta = scan.get("meta") if isinstance(scan.get("meta"), dict) else {}
+        turns = get_codex_conversation(path, records, session_cwd=meta.get("cwd"))
+        summary = scan["summary"]
+        title = summary.get("title") or title
+        resources = scan["resources"]
+        artifacts = scan.get("artifacts") or []
+        hunks = scan["hunks"]
+        # Reuse "updates" tab for Codex task/patch/image timeline
+        updates = scan["events"]
+    else:
+        turns = get_conversation(agent, path)
 
     if agent == "grok" and path.is_dir():
         summary = grok_summary_card(path)
@@ -2355,16 +2371,6 @@ def load_session(agent: str, path: Path) -> dict:
         terminal_logs = grok_terminal_logs(path)
         recaps = grok_recap_requests(path)
         updates = grok_updates_timeline(path)
-    elif agent == "codex" and path.is_file():
-        scan = codex_scan_session(path)
-        summary = scan["summary"]
-        title = summary.get("title") or title
-        resources = scan["resources"]
-        artifacts = scan.get("artifacts") or []
-        hunks = scan["hunks"]
-        # Reuse "updates" tab for Codex task/patch/image timeline
-        updates = scan["events"]
-
     return {
         "agent": agent,
         "path": path,
