@@ -85,11 +85,11 @@ Today Codex walks the rollout twice (conversation + scan).
 
 ---
 
-## Phase 4 — Small shared utilities (only if still messy)
+## Phase 4 — Small shared utilities (only if still messy) ✅
 
-- `iter_jsonl(path)` for all agents.
-- `time` = real timestamp only; `id` always in msgid (keep template guards as belt-and-suspenders).
-- Same empty/finalize helpers for Grok + Codex token fields.
+- [x] `iter_jsonl(path)` for all agents.
+- [x] `time` = real timestamp only; `id` always in msgid (keep template guards as belt-and-suspenders).
+- [x] Same empty/finalize helpers for Grok + Codex token fields.
 
 **Done when:** fewer near-duplicate loops; no new framework.
 
@@ -170,7 +170,7 @@ Stop after any phase if the app is “good enough.” KISS means **you don’t h
 - [x] Phase 1 — templates + static  
 - [x] Phase 2 — `load_session` + thin routes  
 - [x] Phase 3 — Codex one pass  
-- [ ] Phase 4 — shared jsonl / time / tokens  
+- [x] Phase 4 — shared jsonl / time / tokens
 - [x] Phase 5 — package split (optional)
 - [ ] Phase 6 — fixture tests  
 - [ ] Phase 7 — Claude WIP items (README)

@@ -6,7 +6,7 @@ from datetime import datetime
 from pathlib import Path
 
 from .agents.claude import load_session as load_claude_session
-from .agents.codex import codex_scan_session, get_codex_conversation, iter_codex_rollout
+from .agents.codex import codex_scan_session, get_codex_conversation
 from .agents.grok import (
     get_grok_conversation,
     grok_hunk_records,
@@ -16,6 +16,7 @@ from .agents.grok import (
     grok_terminal_logs,
     grok_updates_timeline,
 )
+from .util import iter_jsonl
 
 
 def turns_to_markdown(turns: list[dict], title: str, agent: str, path: str, extra: str = "") -> str:
@@ -78,7 +79,7 @@ def load_session(agent: str, path: Path) -> dict:
     if agent == "codex" and path.is_file():
         # Parse and decode the rollout once, then reuse those records for both
         # the transcript and its summary/tokens/events/patches.
-        records = list(iter_codex_rollout(path))
+        records = list(iter_jsonl(path))
         scan = codex_scan_session(path, records)
         meta = scan.get("meta") if isinstance(scan.get("meta"), dict) else {}
         turns = get_codex_conversation(path, records, session_cwd=meta.get("cwd"))

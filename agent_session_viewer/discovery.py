@@ -8,7 +8,7 @@ from datetime import datetime
 from urllib.parse import unquote
 
 from .config import CLAUDE_HOME, CODEX_HOME, GROK_HOME
-from .util import load_json
+from .util import iter_jsonl, load_json
 
 
 def discover_grok() -> list[dict]:
@@ -116,23 +116,15 @@ def load_codex_session_index() -> dict[str, dict]:
     if not path.exists():
         return index
     try:
-        with path.open(encoding="utf-8", errors="replace") as fh:
-            for line in fh:
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    obj = json.loads(line)
-                except Exception:
-                    continue
-                sid = obj.get("id")
-                if not sid:
-                    continue
-                # Later lines win (index may list the same id more than once)
-                index[str(sid)] = {
-                    "thread_name": obj.get("thread_name") or "",
-                    "updated_at": obj.get("updated_at") or "",
-                }
+        for obj in iter_jsonl(path):
+            sid = obj.get("id")
+            if not sid:
+                continue
+            # Later lines win (index may list the same id more than once)
+            index[str(sid)] = {
+                "thread_name": obj.get("thread_name") or "",
+                "updated_at": obj.get("updated_at") or "",
+            }
     except Exception:
         pass
     return index

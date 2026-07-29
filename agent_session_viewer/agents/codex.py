@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import re
 from pathlib import Path
 from typing import Any
@@ -15,75 +14,20 @@ from ..images import (
     image_ref_file,
 )
 from ..turns import make_turn
-from ..util import display_time, format_tokens, human_time, pretty_json
+from ..util import (
+    display_time,
+    empty_token_usage,
+    finalize_token_usage,
+    human_time,
+    iter_jsonl,
+    pretty_json,
+)
 
 
-def _empty_token_usage() -> dict:
-    return {
-        "input": 0,
-        "output": 0,
-        "total": 0,
-        "cached": 0,
-        "reasoning": 0,
-        "model_calls": 0,
-        "api_duration_ms": 0,
-        "turns": 0,
-        "uncached_input": 0,
-        "by_model": {},
-        "by_model_rows": [],
-        "context_used": None,
-        "context_window": None,
-        "context_pct": None,
-        "available": False,
-        "input_fmt": "—",
-        "output_fmt": "—",
-        "total_fmt": "—",
-        "cached_fmt": "—",
-        "reasoning_fmt": "—",
-        "uncached_fmt": "—",
-        "source": "",
-        "bar": {"uncached_pct": 0, "cached_pct": 0, "out_pct": 0, "reason_pct": 0},
-    }
 
 
-def _finalize_token_usage(usage: dict) -> dict:
-    if usage["turns"] > 0 or usage["input"] or usage["output"]:
-        usage["available"] = True
-        usage["uncached_input"] = max(0, usage["input"] - usage["cached"])
-        usage["input_fmt"] = format_tokens(usage["input"])
-        usage["output_fmt"] = format_tokens(usage["output"])
-        usage["total_fmt"] = format_tokens(usage["total"] or (usage["input"] + usage["output"]))
-        usage["cached_fmt"] = format_tokens(usage["cached"])
-        usage["reasoning_fmt"] = format_tokens(usage["reasoning"])
-        usage["uncached_fmt"] = format_tokens(usage["uncached_input"])
-        bar_total = max(usage["input"] + usage["output"], 1)
-        out_non_reason = max(usage["output"] - usage["reasoning"], 0)
-        usage["bar"] = {
-            "uncached_pct": round(100.0 * usage["uncached_input"] / bar_total, 2),
-            "cached_pct": round(100.0 * usage["cached"] / bar_total, 2),
-            "out_pct": round(100.0 * out_non_reason / bar_total, 2),
-            "reason_pct": round(100.0 * usage["reasoning"] / bar_total, 2),
-        }
-        if usage.get("context_used") is not None and usage.get("context_window"):
-            usage["context_used_fmt"] = format_tokens(usage["context_used"])
-            usage["context_window_fmt"] = format_tokens(usage["context_window"])
-            usage["context_pct"] = round(
-                100.0 * usage["context_used"] / max(usage["context_window"], 1), 1
-            )
-    return usage
 
 
-def iter_codex_rollout(path: Path):
-    """Yield parsed JSON objects from a Codex rollout jsonl."""
-    with path.open(encoding="utf-8", errors="replace") as fh:
-        for line in fh:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                yield json.loads(line)
-            except Exception:
-                continue
 
 
 def codex_scan_session(path: Path, records: list[dict] | None = None) -> dict:
@@ -131,7 +75,7 @@ def codex_scan_session(path: Path, records: list[dict] | None = None) -> dict:
     settings_rows: list[dict] = []
     events: list[dict] = []  # lightweight timeline for "updates" tab
 
-    for obj in records if records is not None else iter_codex_rollout(path):
+    for obj in records if records is not None else iter_jsonl(path):
         counts["lines"] += 1
         ts = obj.get("timestamp") or ""
         if ts:
@@ -199,7 +143,7 @@ def codex_scan_session(path: Path, records: list[dict] | None = None) -> dict:
                 counts["task"] += 1
                 events.append(make_turn(
                     role="event",
-                    time=display_time(ts, payload.get("turn_id")),
+                    time=display_time(ts),
                     id=payload.get("turn_id") or "",
                     text=f"task_started\nid: {payload.get('turn_id') or ''}\nmodel_context_window: {payload.get('model_context_window') or ''}",
                     meta="task",
@@ -207,7 +151,7 @@ def codex_scan_session(path: Path, records: list[dict] | None = None) -> dict:
             elif et == "task_complete":
                 events.append(make_turn(
                     role="event",
-                    time=display_time(ts, payload.get("turn_id")),
+                    time=display_time(ts),
                     id=payload.get("turn_id") or "",
                     text=(
                         f"task_complete\nid: {payload.get('turn_id') or ''}\n"
@@ -270,7 +214,7 @@ def codex_scan_session(path: Path, records: list[dict] | None = None) -> dict:
                 stdout = (payload.get("stdout") or "")[:300]
                 events.append(make_turn(
                     role="event",
-                    time=display_time(ts, call_id),
+                    time=display_time(ts),
                     id=call_id,
                     text=f"patch_apply_end · success={payload.get('success')}\n{stdout}\nfiles: {', '.join(list(changes)[:12])}",
                     meta="patch",
@@ -278,7 +222,7 @@ def codex_scan_session(path: Path, records: list[dict] | None = None) -> dict:
             elif et == "image_generation_end":
                 events.append(make_turn(
                     role="event",
-                    time=display_time(ts, payload.get("call_id")),
+                    time=display_time(ts),
                     id=payload.get("call_id") or "",
                     text=(
                         f"image_generation_end · {payload.get('status')}\n"
@@ -289,7 +233,7 @@ def codex_scan_session(path: Path, records: list[dict] | None = None) -> dict:
                 ))
 
     # Token usage: cumulative total from last token_count (Codex running total)
-    tokens = _empty_token_usage()
+    tokens = empty_token_usage()
     if last_total:
         tokens["input"] = int(last_total.get("input_tokens") or 0)
         tokens["output"] = int(last_total.get("output_tokens") or 0)
@@ -311,7 +255,7 @@ def codex_scan_session(path: Path, records: list[dict] | None = None) -> dict:
         tokens["context_window"] = context_window
     if context_used is not None:
         tokens["context_used"] = context_used
-    tokens = _finalize_token_usage(tokens)
+    tokens = finalize_token_usage(tokens)
 
     # Settings rows for resources panel
     for key, val in [
@@ -453,7 +397,7 @@ def get_codex_conversation(
         return str(output)
 
     try:
-        for obj in records if records is not None else iter_codex_rollout(path):
+        for obj in records if records is not None else iter_jsonl(path):
             idx += 1
             seq = f"#{idx}"
             ts_raw = obj.get("timestamp")
@@ -489,7 +433,7 @@ def get_codex_conversation(
                         )
                     turns.append(make_turn(
                         role="reasoning",
-                        time=display_time(ts_raw, rid),
+                        time=display_time(ts_raw),
                         id=rid,
                         text="\n".join(body),
                         meta="reasoning",
@@ -510,7 +454,7 @@ def get_codex_conversation(
                         if stripped.startswith(("# AGENTS.md", "<INSTRUCTIONS>", "# ")):
                             turns.append(make_turn(
                                 role="system",
-                                time=display_time(ts_raw, seq),
+                                time=display_time(ts_raw),
                                 id=seq,
                                 text=text,
                                 meta="project_instructions",
@@ -521,7 +465,7 @@ def get_codex_conversation(
                     if role == "developer":
                         turns.append(make_turn(
                             role="system",
-                            time=display_time(ts_raw, seq),
+                            time=display_time(ts_raw),
                             id=seq,
                             text=text,
                             meta="developer",
@@ -530,7 +474,7 @@ def get_codex_conversation(
                         continue
                     turns.append(make_turn(
                         role=role,
-                        time=display_time(ts_raw, seq),
+                        time=display_time(ts_raw),
                         id=seq,
                         text=text,
                         images=images,
@@ -547,7 +491,7 @@ def get_codex_conversation(
                     _, imgs = content_pair(body)
                     turns.append(make_turn(
                         role="tool_call",
-                        time=display_time(ts_raw, call_id or seq),
+                        time=display_time(ts_raw),
                         id=call_id or seq,
                         text=body,
                         meta=name,
@@ -561,7 +505,7 @@ def get_codex_conversation(
                     text, imgs = content_pair(out)
                     turns.append(make_turn(
                         role="tool_result",
-                        time=display_time(ts_raw, call_id or seq),
+                        time=display_time(ts_raw),
                         id=call_id or seq,
                         text=text or "(empty tool result)",
                         images=imgs,
@@ -591,7 +535,7 @@ def get_codex_conversation(
                     if text.strip() or images:
                         turns.append(make_turn(
                             role="user",
-                            time=display_time(ts_raw, seq),
+                            time=display_time(ts_raw),
                             id=seq,
                             text=text or "(image)",
                             images=images,
@@ -604,7 +548,7 @@ def get_codex_conversation(
                     if msg:
                         turns.append(make_turn(
                             role="assistant",
-                            time=display_time(ts_raw, seq),
+                            time=display_time(ts_raw),
                             id=seq,
                             text=str(msg),
                             meta=phase,
@@ -628,7 +572,7 @@ def get_codex_conversation(
                             lines.append(diff[:600] + ("…" if len(diff) > 600 else ""))
                     turns.append(make_turn(
                         role="event",
-                        time=display_time(ts_raw, call_id),
+                        time=display_time(ts_raw),
                         id=call_id,
                         text="\n".join(lines),
                         meta="patch",
@@ -649,7 +593,7 @@ def get_codex_conversation(
                         images.append(image_ref_file(str(saved), str(saved)))
                     turns.append(make_turn(
                         role="event",
-                        time=display_time(ts_raw, call_id),
+                        time=display_time(ts_raw),
                         id=call_id,
                         text=text,
                         meta="image",
@@ -669,7 +613,7 @@ def get_codex_conversation(
                             extra += f"\n{(payload.get('last_agent_message') or '')[:400]}"
                     turns.append(make_turn(
                         role="event",
-                        time=display_time(ts_raw, turn_id),
+                        time=display_time(ts_raw),
                         id=turn_id,
                         text=f"{et}\nid: {turn_id}{extra}",
                         meta="task",
@@ -682,7 +626,7 @@ def get_codex_conversation(
                 if amd.get("text"):
                     turns.append(make_turn(
                         role="system",
-                        time=display_time(ts_raw, seq),
+                        time=display_time(ts_raw),
                         id=seq,
                         text=f"# AGENTS.md ({amd.get('directory') or ''})\n\n{amd.get('text')}",
                         meta="agents_md",
