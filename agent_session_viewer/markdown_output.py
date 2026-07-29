@@ -178,8 +178,8 @@ def detect_code_language(text: str) -> str | None:
     return None
 
 
-def format_markdown_content(text: str) -> str:
-    """Decode code entities and fence complete code-like values for Markdown."""
+def format_markdown_content(text: str, assume_markdown: bool = False) -> str:
+    """Prepare Markdown content, optionally bypassing automatic code detection."""
     source = str(text or "")
     if _FENCE_LINE_RE.search(source):
         return _FENCED_BLOCK_RE.sub(
@@ -189,6 +189,12 @@ def format_markdown_content(text: str) -> str:
             ),
             source,
         )
+
+    # System instructions and Markdown documents often contain XML-like wrapper
+    # tags around otherwise normal Markdown. Preserve their Markdown structure
+    # instead of misclassifying and fencing the entire document as XML.
+    if assume_markdown:
+        return source
 
     decoded_source = html.unescape(source)
     language = detect_code_language(decoded_source)

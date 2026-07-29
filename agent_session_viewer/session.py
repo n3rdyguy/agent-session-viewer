@@ -33,7 +33,8 @@ def turns_to_markdown(turns: list[dict], title: str, agent: str, path: str, extr
         lines.extend([extra, ""])
     lines.extend(["---", ""])
     for t in turns:
-        role = t["role"].upper()
+        turn_role = str(t["role"] or "")
+        role = turn_role.upper()
         header = f"### {role}"
         if t.get("time"):
             header += f" · {t['time']}"
@@ -45,7 +46,14 @@ def turns_to_markdown(turns: list[dict], title: str, agent: str, path: str, extr
         if t.get("meta"):
             lines.append(f"*Meta: {t['meta']}*")
         lines.append("")
-        lines.append(format_markdown_content(t["text"]))
+        assumes_markdown = turn_role.lower() in {
+            "system",
+            "system_reminder",
+            "developer",
+        }
+        lines.append(
+            format_markdown_content(t["text"], assume_markdown=assumes_markdown)
+        )
         lines.append("")
         lines.append("---")
         lines.append("")

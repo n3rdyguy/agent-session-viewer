@@ -35,22 +35,22 @@
   {% endif %}
 {% endmacro %}
 
-{% macro render_md_block(text, html='', extra_class='') %}
+{% macro render_md_block(text, html='', extra_class='', assume_markdown=false) %}
   <div class="md-block{{ (' ' ~ extra_class) if extra_class else '' }}">
     {# Separate sources keep raw copying unchanged while Markdown can safely fence code. #}
     <textarea class="raw-src" hidden readonly>{{ text }}</textarea>
-    <textarea class="md-src" hidden readonly>{{ text|markdown_content }}</textarea>
+    <textarea class="md-src" hidden readonly>{{ text|markdown_content(assume_markdown) }}</textarea>
     <div class="bubble-text md-plain">{% if html %}{{ html|safe }}{% else %}{{ text }}{% endif %}</div>
     <div class="bubble-text md-rich markdown-body" hidden></div>
   </div>
 {% endmacro %}
 
-{% macro render_foldable(text, html='') %}
+{% macro render_foldable(text, html='', assume_markdown=false) %}
   {# One full copy of the content; CSS clips when collapsed — no duplicate snippet. #}
   {% if text and text|length > 500 %}
   <div class="fold" data-collapsed="true">
     <div class="fold-body">
-      {{ render_md_block(text, html) }}
+      {{ render_md_block(text, html, '', assume_markdown) }}
     </div>
     <button type="button" class="fold-toggle" aria-expanded="false">
       <span class="fold-label-more">Show full</span>
@@ -59,7 +59,7 @@
     </button>
   </div>
   {% else %}
-    {{ render_md_block(text, html) }}
+    {{ render_md_block(text, html, '', assume_markdown) }}
   {% endif %}
 {% endmacro %}
 
@@ -69,6 +69,8 @@
   {% set raw_text = t.text.replace('<encrypted>', '') if t.role == 'reasoning' else t.text %}
   {% set fold_text = raw_text if t.role == 'reasoning' else (t.text or '') %}
   {% set is_foldable = fold_text and fold_text|length > 500 %}
+  {% set role_key = (t.role or '')|lower %}
+  {% set assumes_markdown = role_key in ['system', 'system_reminder', 'developer'] %}
   <div class="bubble {{ t.role.split(' ')[0] }}"
        data-role={{ (t.role or '')|tojson }}
        data-time={{ (t.time or '')|tojson }}
@@ -112,7 +114,7 @@
           <span class="encrypted-tag">&lt;encrypted&gt;</span>
         {% endif %}
       {% else %}
-        {{ render_foldable(t.text, t.html or '') }}
+        {{ render_foldable(t.text, t.html or '', assumes_markdown) }}
       {% endif %}
     </div>
   </div>

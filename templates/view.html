@@ -5,7 +5,10 @@
 
 <div class="view-header">
   <a href="/{% if agent %}?agent={{ agent }}{% endif %}" style="color:var(--accent); font-size:0.9rem;">← Back to list</a>
-  <h2>{{ title }}</h2>
+  <h2 class="view-title" title="{{ title }}">
+    {% if summary and summary.aborted %}<span class="badge aborted">aborted</span>{% endif %}
+    <span class="view-title-text">{{ title }}</span>
+  </h2>
   <div class="meta">
     <span class="badge {{ agent }}">{{ agent }}</span>
     {{ path }}
@@ -219,6 +222,9 @@
     <div class="artifact-docs">
       {% for a in artifacts %}
       {% set art_foldable = a.text and a.text|length > 500 %}
+      {% set artifact_kind = (a.kind or '')|lower %}
+      {% set artifact_title = (a.title or '')|lower %}
+      {% set artifact_is_markdown = artifact_kind in ['markdown', 'md', 'mdown', 'mkd', 'text/markdown'] or artifact_title.endswith(('.md', '.markdown', '.mdown', '.mkd')) %}
       <div class="artifact-doc"
            data-role={{ (a.title or 'document')|tojson }}
            data-time=""
@@ -250,7 +256,7 @@
           </div>
         </div>
         <div class="artifact-doc-body">
-          {{ render_foldable(a.text or '', '') }}
+          {{ render_foldable(a.text or '', '', artifact_is_markdown) }}
         </div>
       </div>
       {% endfor %}

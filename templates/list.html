@@ -24,8 +24,11 @@
   {% for s in sessions %}
   <div class="session-card">
     <a href="/view?path={{ s.path|urlencode }}&agent={{ s.agent }}">
-      <span class="badge {{ s.agent }}">{{ s.agent }}</span>
-      <strong>{{ s.title }}</strong>
+      <div class="session-title-row">
+        <span class="badge {{ s.agent }}">{{ s.agent }}</span>
+        {% if s.aborted %}<span class="badge aborted">aborted</span>{% endif %}
+        <strong title="{{ s.title }}">{{ s.title }}</strong>
+      </div>
       <div class="meta">
         {{ s.updated or s.created or s.id }}
         · {{ s.messages or '—' }} msgs

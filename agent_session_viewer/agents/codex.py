@@ -6,7 +6,11 @@ import re
 from pathlib import Path
 from typing import Any
 
-from ..discovery import load_codex_session_index
+from ..discovery import (
+    codex_headline_was_aborted,
+    load_codex_session_index,
+    safe_codex_headline,
+)
 from ..images import (
     extract_text,
     extract_text_and_images,
@@ -56,6 +60,7 @@ def codex_scan_session(path: Path, records: list[dict] | None = None) -> dict:
     plan_type = ""
     context_window = None
     context_used = None
+    aborted = False
 
     # Token accounting: prefer final cumulative total_token_usage; also sum last_token_usage
     last_total: dict = {}
@@ -127,16 +132,20 @@ def codex_scan_session(path: Path, records: list[dict] | None = None) -> dict:
                 counts["tool_result"] += 1
             elif ptype == "message" and (payload.get("role") or "").lower() == "user":
                 text = extract_text(payload.get("content"))
-                if text and not first_user and not text.lstrip().startswith(("# AGENTS.md", "<INSTRUCTIONS>")):
-                    first_user = text.strip()[:240]
+                candidate = safe_codex_headline(text)
+                if candidate and not first_user:
+                    first_user = candidate
+                    aborted = codex_headline_was_aborted(text)
 
         elif t == "event_msg":
             et = (payload.get("type") or "").lower()
             if et == "user_message":
                 counts["user"] += 1
                 msg = (payload.get("message") or "").strip()
-                if msg and not first_user:
-                    first_user = msg[:240]
+                candidate = safe_codex_headline(msg)
+                if candidate and not first_user:
+                    first_user = candidate
+                    aborted = codex_headline_was_aborted(msg)
             elif et == "agent_message":
                 counts["assistant"] += 1
             elif et == "task_started":
@@ -315,12 +324,20 @@ def codex_scan_session(path: Path, records: list[dict] | None = None) -> dict:
     )
     if m:
         sid = meta.get("id") or meta.get("session_id") or m.group(1)
-    title = (titles.get(str(sid)) or {}).get("thread_name") or first_user or path.name
+    headline = safe_codex_headline(first_user)
+    title = (
+        safe_codex_headline(
+            (titles.get(str(sid)) or {}).get("thread_name")
+        )
+        or headline
+        or path.name
+    )
 
     summary = {
         "id": sid,
-        "title": str(title)[:160],
-        "session_summary": first_user,
+        "title": str(title),
+        "session_summary": headline,
+        "aborted": aborted,
         "cwd": cwd or meta.get("cwd") or "",
         "created": human_time(created or meta.get("timestamp")),
         "updated": human_time(updated),

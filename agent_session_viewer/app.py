@@ -41,6 +41,7 @@ def index():
             or q in (s.get("cwd") or "").lower()
             or q in (s.get("path") or "").lower()
             or q in (s.get("model") or "").lower()
+            or q in (s.get("headline") or "").lower()
         ]
 
     return render_template(

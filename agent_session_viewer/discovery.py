@@ -8,7 +8,33 @@ from datetime import datetime
 from urllib.parse import unquote
 
 from .config import CLAUDE_HOME, CODEX_HOME, GROK_HOME
+from .images import extract_text
 from .util import iter_jsonl, load_json
+
+
+_CODEX_HEADLINE_PUNCTUATION = frozenset(" .,:;!?'-_()/&+")
+_TURN_ABORTED_RE = re.compile(r"\bturn_aborted\b", re.IGNORECASE)
+
+
+def safe_codex_headline(value: object) -> str:
+    """Return a short human-readable Codex headline, rejecting markup/code."""
+    if not isinstance(value, str):
+        return ""
+    line = next((part.strip() for part in value.splitlines() if part.strip()), "")
+    line = re.sub(r"\s+", " ", line)
+    if not line or not any(char.isalnum() for char in line):
+        return ""
+    if any(
+        not (char.isalnum() or char.isspace() or char in _CODEX_HEADLINE_PUNCTUATION)
+        for char in line
+    ):
+        return ""
+    return line
+
+
+def codex_headline_was_aborted(value: object) -> bool:
+    """Whether the user message selected for a headline contains an abort marker."""
+    return isinstance(value, str) and bool(_TURN_ABORTED_RE.search(value))
 
 
 def discover_grok() -> list[dict]:
@@ -49,7 +75,7 @@ def discover_grok() -> list[dict]:
                 "id": info.get("id") or sid_dir.name,
                 "path": str(sid_dir),
                 "cwd": info.get("cwd") or meta.get("cwd") or cwd_hint,
-                "title": str(title)[:120],
+                "title": str(title),
                 "created": meta.get("created_at") or meta.get("created"),
                 "updated": meta.get("updated_at") or meta.get("last_active_at") or meta.get("updated"),
                 "model": meta.get("current_model_id") or meta.get("model") or meta.get("model_id"),
@@ -154,6 +180,8 @@ def discover_codex() -> list[dict]:
                 sid = m.group(1)
 
             created = updated = model = cwd = None
+            headline = ""
+            aborted = False
             msg_count = 0
             try:
                 with f.open(encoding="utf-8", errors="replace") as fh:
@@ -162,7 +190,7 @@ def discover_codex() -> list[dict]:
                             continue
                         msg_count += 1
                         # Meta usually at the start; still accept model updates early
-                        if i > 120 and created and cwd and model:
+                        if i > 120 and created and cwd and model and headline:
                             # Fast-count the rest of the file without full JSON parse
                             for rest in fh:
                                 if rest.strip():
@@ -190,6 +218,27 @@ def discover_codex() -> list[dict]:
                         elif t == "turn_context":
                             model = payload.get("model") or model
                             cwd = payload.get("cwd") or cwd
+                        elif t == "response_item":
+                            if (
+                                payload.get("type") == "message"
+                                and (payload.get("role") or "").lower() == "user"
+                                and not headline
+                            ):
+                                message = extract_text(payload.get("content"))
+                                candidate = safe_codex_headline(message)
+                                if candidate:
+                                    headline = candidate
+                                    aborted = codex_headline_was_aborted(message)
+                        elif (
+                            t == "event_msg"
+                            and (payload.get("type") or "").lower() == "user_message"
+                            and not headline
+                        ):
+                            message = payload.get("message") or payload.get("text") or ""
+                            candidate = safe_codex_headline(message)
+                            if candidate:
+                                headline = candidate
+                                aborted = codex_headline_was_aborted(message)
                         elif t == "event_msg" and (payload.get("type") == "thread_settings_applied"):
                             settings = payload.get("thread_settings") or {}
                             model = settings.get("model") or model
@@ -203,7 +252,11 @@ def discover_codex() -> list[dict]:
             except Exception:
                 mtime_iso = None
             idx = titles.get(sid) or {}
-            title = idx.get("thread_name") or f.name[:55]
+            title = (
+                safe_codex_headline(idx.get("thread_name"))
+                or headline
+                or f.name
+            )
             if idx.get("updated_at"):
                 updated = idx["updated_at"]
             elif mtime_iso:
@@ -217,6 +270,8 @@ def discover_codex() -> list[dict]:
                 "path": str(f),
                 "cwd": cwd or "?",
                 "title": str(title)[:120],
+                "headline": headline,
+                "aborted": aborted,
                 "created": created,
                 "updated": updated,
                 "model": model,
