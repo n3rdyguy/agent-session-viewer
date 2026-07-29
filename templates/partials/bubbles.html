@@ -37,8 +37,9 @@
 
 {% macro render_md_block(text, html='', extra_class='') %}
   <div class="md-block{{ (' ' ~ extra_class) if extra_class else '' }}">
-    {# Hidden textarea avoids <script> parsing issues with quotes/newlines in transcript text #}
-    <textarea class="md-src" hidden readonly>{{ text }}</textarea>
+    {# Separate sources keep raw copying unchanged while Markdown can safely fence code. #}
+    <textarea class="raw-src" hidden readonly>{{ text }}</textarea>
+    <textarea class="md-src" hidden readonly>{{ text|markdown_content }}</textarea>
     <div class="bubble-text md-plain">{% if html %}{{ html|safe }}{% else %}{{ text }}{% endif %}</div>
     <div class="bubble-text md-rich markdown-body" hidden></div>
   </div>

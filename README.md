@@ -38,6 +38,7 @@ Claude Code discovery and basic viewing exist, but the experience is **not** at 
 - Collapsible long tool outputs
 - **Markdown** toggle (GFM via [marked](https://marked.js.org/), sanitized with DOMPurify)
   - Preference stored in `localStorage`
+  - Unfenced code-only messages and tool output are detected and rendered in language-tagged code blocks
   - Agent tags like `<user_info>` / `<system-reminder>` stay visible; headings, lists, and bold still render
   - Image syntax and raw `<img>` tags in transcript output become links/text instead of loading images
   - Only explicit session image attachments render in the separate image gallery
@@ -216,6 +217,7 @@ The fixture-based tests cover:
 - Agent-home path safety, traversal, prefix collisions, and symlink escapes
 - Image path detection and explicit mixed-content image extraction
 - Ensuring Markdown/HTML output hrefs are not treated as image attachments
+- Language-aware fencing of unfenced code in rendered, copied, and exported Markdown
 - Turn roles and message IDs from tiny Grok and Codex JSONL fixtures
 
 The suite intentionally uses hand-written fixtures rather than mocks and

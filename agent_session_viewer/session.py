@@ -16,6 +16,7 @@ from .agents.grok import (
     grok_terminal_logs,
     grok_updates_timeline,
 )
+from .markdown_output import format_markdown_content
 from .util import iter_jsonl
 
 
@@ -44,7 +45,7 @@ def turns_to_markdown(turns: list[dict], title: str, agent: str, path: str, extr
         if t.get("meta"):
             lines.append(f"*Meta: {t['meta']}*")
         lines.append("")
-        lines.append(t["text"])
+        lines.append(format_markdown_content(t["text"]))
         lines.append("")
         lines.append("---")
         lines.append("")
