@@ -117,17 +117,56 @@ Open **http://127.0.0.1:5050**
 
 The server binds to `127.0.0.1` only (local loopback).
 
-Flask debug mode is **off** by default. Enable with `ASV_DEBUG=1` (or `true` / `yes` / `on`).
+### Environment variables
+
+See [`.env.example`](.env.example). Copy to `.env` if useful (gitignored); the app does **not** load `.env` automatically — export vars in your shell or IDE. `~` in path overrides is expanded (home on all platforms).
+
+| Variable | Purpose | Default |
+|----------|---------|---------|
+| `ASV_DEBUG` | Flask debug / reloader (`1` / `true` / `yes` / `on`) | off |
+| `GROK_HOME` | Grok product root (sessions under `…/sessions`) | `~/.grok` |
+| `CLAUDE_HOME` | Claude Code root (projects under `…/projects`) | `~/.claude` |
+| `CODEX_HOME` | Codex root (sessions under `…/sessions`) | `~/.codex` |
+
+**Linux / macOS** (bash/zsh):
+
+```bash
+export ASV_DEBUG=1
+export GROK_HOME=~/.grok
+uv run python app.py
+
+# one-shot:
+ASV_DEBUG=1 uv run python app.py
+```
+
+**Windows PowerShell:**
+
+```powershell
+$env:ASV_DEBUG = "1"
+$env:GROK_HOME = "~/.grok"
+uv run python app.py
+
+# one-shot:
+$env:ASV_DEBUG = "1"; uv run python app.py
+```
+
+**Windows cmd.exe:**
+
+```bat
+set ASV_DEBUG=1
+set GROK_HOME=~/.grok
+uv run python app.py
+```
 
 ---
 
 ## Session locations
 
-| Agent | Default path | Override env var |
-|-------|----------------|------------------|
-| Grok Build | `~/.grok/sessions/` | `GROK_HOME` |
-| Claude Code | `~/.claude/projects/` | `CLAUDE_CONFIG_DIR` |
-| Codex CLI | `~/.codex/sessions/` (+ `archived_sessions`) | `CODEX_HOME` |
+| Agent | Default (Linux / macOS) | Default (Windows) | Override env var |
+|-------|-------------------------|-------------------|------------------|
+| Grok Build | `~/.grok/sessions/` | `%USERPROFILE%\.grok\sessions\` | `GROK_HOME` (product root) |
+| Claude Code | `~/.claude/projects/` | `%USERPROFILE%\.claude\projects\` | `CLAUDE_HOME` |
+| Codex CLI | `~/.codex/sessions/` (+ `archived_sessions`) | `%USERPROFILE%\.codex\sessions\` | `CODEX_HOME` |
 
 On Windows, Grok session group folders are URL-encoded paths under `sessions\` (e.g. `C%3A%5CUsers%5C…`).
 

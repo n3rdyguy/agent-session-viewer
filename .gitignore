@@ -9,6 +9,10 @@ wheels/
 # Virtual environments
 .venv
 
+# Local env (keep secrets / machine paths out of git)
+.env
+.env.local
+
 # Local saved page dumps (browser "save as" / debug exports)
 _view.html
 _view*.html
