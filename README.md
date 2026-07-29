@@ -39,6 +39,8 @@ Claude Code discovery and basic viewing exist, but the experience is **not** at 
 - **Markdown** toggle (GFM via [marked](https://marked.js.org/), sanitized with DOMPurify)
   - Preference stored in `localStorage`
   - Agent tags like `<user_info>` / `<system-reminder>` stay visible; headings, lists, and bold still render
+  - Image syntax and raw `<img>` tags in transcript output become links/text instead of loading images
+  - Only explicit session image attachments render in the separate image gallery
 - One-click **Markdown export**
 - Raw transcript / summary download
 - Path safety: only files under known agent home directories are served
@@ -95,6 +97,28 @@ uv sync
 
 The implementation lives in the flat `agent_session_viewer/` package. The
 root `app.py` remains as a compatibility entrypoint.
+
+### Package layout
+
+```text
+agent_session_viewer/
+  app.py          # Flask routes and local server
+  config.py       # Agent home-directory settings
+  discovery.py    # Session discovery and list metadata
+  images.py       # Image/content extraction and safe path handling
+  session.py      # Shared load/export shape
+  turns.py        # Canonical conversation turns
+  util.py         # JSONL, token, time, and path helpers
+  agents/
+    grok.py
+    codex.py
+    claude.py
+```
+
+The agent modules use explicit branches and imports—there is no plugin
+registry or framework layer. Codex rollout records are decoded once per
+session request and reused for the conversation, summary, tokens, events,
+and patches.
 
 ---
 
@@ -172,10 +196,30 @@ On Windows, Grok session group folders are URL-encoded paths under `sessions\` (
 | Path | Purpose |
 |------|---------|
 | `/` | Session list, search, agent filters |
-| `/view?agent=&path=` | Conversation + (for Grok) summary / artifacts / updates |
+| `/view?agent=&path=` | Conversation plus available summary, artifacts, patches, and events |
 | `/export?agent=&path=` | Download conversation as Markdown |
 | `/raw?path=` | Download raw `chat_history.jsonl` or `summary.json` |
 | `/media?path=` | Serve a local image under an allowed agent home |
+
+---
+
+## Tests
+
+Run the minimal parser suite with:
+
+```bash
+uv run pytest
+```
+
+The fixture-based tests cover:
+
+- Agent-home path safety, traversal, prefix collisions, and symlink escapes
+- Image path detection and explicit mixed-content image extraction
+- Ensuring Markdown/HTML output hrefs are not treated as image attachments
+- Turn roles and message IDs from tiny Grok and Codex JSONL fixtures
+
+The suite intentionally uses hand-written fixtures rather than mocks and
+does not require a browser or real agent session data.
 
 ---
 
