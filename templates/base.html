@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}{{ title }}{% endblock %} – Agent Session Viewer</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+</head>
+<body>
+  <header>
+    <h1><a href="/">Agent Session Viewer</a></h1>
+    <nav style="display:flex; gap:1.1rem;">
+      <a href="/">All</a>
+      <a href="/?agent=grok">Grok</a>
+      <a href="/?agent=claude">Claude</a>
+      <a href="/?agent=codex">Codex</a>
+    </nav>
+  </header>
+  <div class="container">
+    {% block content %}{% endblock %}
+  </div>
+  <footer>Local only • Reads ~/.grok · ~/.claude · ~/.codex</footer>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

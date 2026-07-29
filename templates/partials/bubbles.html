@@ -1,0 +1,120 @@
+{% macro render_images(images) %}
+  {% if images %}
+  <div class="chat-images">
+    {% for img in images %}
+      {% if img.kind == 'data' %}
+      <figure class="chat-image">
+        {% if img.snippet %}<div class="image-snippet">{{ img.snippet }}</div>{% endif %}
+        <img class="copyable-image" src="{{ img.url }}" alt="{{ img.label or 'image' }}"
+             title="Click to copy image to clipboard" loading="lazy">
+        <figcaption>Click image to copy · {{ img.mime or 'image' }}</figcaption>
+      </figure>
+      {% elif img.kind == 'url' %}
+      <figure class="chat-image">
+        {% if img.snippet %}<div class="image-snippet">{{ img.snippet }}</div>{% endif %}
+        <a href="{{ img.url }}" target="_blank" rel="noopener">
+          <img src="{{ img.url }}" alt="{{ img.label or 'image' }}" loading="lazy">
+        </a>
+        <figcaption><a href="{{ img.url }}" target="_blank" rel="noopener">{{ img.label or img.url }}</a></figcaption>
+      </figure>
+      {% else %}
+      <figure class="chat-image">
+        {% if img.snippet %}<div class="image-snippet">{{ img.snippet }}</div>{% endif %}
+        <a href="/media?path={{ img.path|urlencode }}" target="_blank" rel="noopener">
+          <img src="/media?path={{ img.path|urlencode }}" alt="{{ img.label or img.path }}" loading="lazy"
+               onerror="this.style.display='none'; this.nextElementSibling && (this.nextElementSibling.style.display='block');">
+        </a>
+        <div style="display:none;padding:0.75rem;color:var(--muted);font-size:0.8rem;">Preview unavailable</div>
+        <figcaption>
+          <a href="/media?path={{ img.path|urlencode }}" target="_blank" rel="noopener">{{ img.label or img.path }}</a>
+        </figcaption>
+      </figure>
+      {% endif %}
+    {% endfor %}
+  </div>
+  {% endif %}
+{% endmacro %}
+
+{% macro render_md_block(text, html='', extra_class='') %}
+  <div class="md-block{{ (' ' ~ extra_class) if extra_class else '' }}">
+    {# Hidden textarea avoids <script> parsing issues with quotes/newlines in transcript text #}
+    <textarea class="md-src" hidden readonly>{{ text }}</textarea>
+    <div class="bubble-text md-plain">{% if html %}{{ html|safe }}{% else %}{{ text }}{% endif %}</div>
+    <div class="bubble-text md-rich markdown-body" hidden></div>
+  </div>
+{% endmacro %}
+
+{% macro render_foldable(text, html='') %}
+  {# One full copy of the content; CSS clips when collapsed — no duplicate snippet. #}
+  {% if text and text|length > 500 %}
+  <div class="fold" data-collapsed="true">
+    <div class="fold-body">
+      {{ render_md_block(text, html) }}
+    </div>
+    <button type="button" class="fold-toggle" aria-expanded="false">
+      <span class="fold-label-more">Show full</span>
+      <span class="fold-label-less" hidden>Show less</span>
+      <span class="fold-chars">{{ text|length }} chars</span>
+    </button>
+  </div>
+  {% else %}
+    {{ render_md_block(text, html) }}
+  {% endif %}
+{% endmacro %}
+
+{% macro render_bubbles(turns) %}
+<div class="chat">
+  {% for t in turns %}
+  {% set raw_text = t.text.replace('<encrypted>', '') if t.role == 'reasoning' else t.text %}
+  {% set fold_text = raw_text if t.role == 'reasoning' else (t.text or '') %}
+  {% set is_foldable = fold_text and fold_text|length > 500 %}
+  <div class="bubble {{ t.role.split(' ')[0] }}"
+       data-role={{ (t.role or '')|tojson }}
+       data-time={{ (t.time or '')|tojson }}
+       data-id={{ (t.id or '')|tojson }}
+       data-model={{ (t.model or '')|tojson }}
+       data-meta={{ (t.meta or '')|tojson }}>
+    <div class="bubble-header">
+      <div class="bubble-header-main">
+        <span class="role">{{ t.role }}</span>
+        {# skip time/meta when they only echo msgid (common when display_time falls back to id) #}
+        {% if t.time and t.time != t.id %}<span>{{ t.time }}</span>{% endif %}
+        {% if t.id %}<span class="msgid">{{ t.id }}</span>{% endif %}
+        {% if t.model %}<span>{{ t.model }}</span>{% endif %}
+        {% if t.meta and t.meta != t.id %}<span>{{ t.meta }}</span>{% endif %}
+      </div>
+      <div class="bubble-header-actions">
+        {% if is_foldable %}
+        <button type="button" class="fold-header-btn" aria-expanded="false" title="Expand">
+          <span class="fold-chevron" aria-hidden="true">▾</span>
+        </button>
+        {% endif %}
+        <div class="copy-menu">
+          <button type="button" class="copy-btn" aria-haspopup="menu" aria-expanded="false" title="Copy block">
+            Copy ▾
+          </button>
+          <div class="copy-menu-panel" role="menu">
+            <div class="copy-hint">Copy this block</div>
+            <button type="button" role="menuitem" data-copy="markdown">As Markdown</button>
+            <button type="button" role="menuitem" data-copy="raw">As raw text</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="bubble-body">
+      {{ render_images(t.images) }}
+
+      {% if t.role == 'reasoning' %}
+        {{ render_foldable(raw_text, '') }}
+        {% if '<encrypted>' in t.text %}
+          <span class="encrypted-tag">&lt;encrypted&gt;</span>
+        {% endif %}
+      {% else %}
+        {{ render_foldable(t.text, t.html or '') }}
+      {% endif %}
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endmacro %}
