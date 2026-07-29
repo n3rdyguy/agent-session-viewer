@@ -21,9 +21,9 @@ from flask import Flask, Response, abort, render_template_string, request, send_
 app = Flask(__name__)
 
 HOME = Path.home()
-GROK_HOME = Path(os.environ.get("GROK_HOME", HOME / ".grok"))
-CLAUDE_DIR = Path(os.environ.get("CLAUDE_CONFIG_DIR", HOME / ".claude"))
-CODEX_HOME = Path(os.environ.get("CODEX_HOME", HOME / ".codex"))
+GROK_HOME = Path(os.environ.get("GROK_HOME", HOME / ".grok")).expanduser()
+CLAUDE_HOME = Path(os.environ.get("CLAUDE_HOME", HOME / ".claude")).expanduser()
+CODEX_HOME = Path(os.environ.get("CODEX_HOME", HOME / ".codex")).expanduser()
 
 
 # ─────────────────────────────────────────────
@@ -102,7 +102,7 @@ def path_allowed(path: Path) -> bool:
         resolved = path.resolve()
     except Exception:
         resolved = path
-    roots = [GROK_HOME, CLAUDE_DIR, CODEX_HOME]
+    roots = [GROK_HOME, CLAUDE_HOME, CODEX_HOME]
     for root in roots:
         try:
             resolved.relative_to(root.resolve())
@@ -649,7 +649,7 @@ def discover_grok() -> list[dict]:
 
 def discover_claude() -> list[dict]:
     sessions = []
-    root = CLAUDE_DIR / "projects"
+    root = CLAUDE_HOME / "projects"
     if not root.exists():
         return sessions
 
@@ -3929,7 +3929,7 @@ def index():
         agent=agent,
         q=q,
         grok_path=str(GROK_HOME / "sessions"),
-        claude_path=str(CLAUDE_DIR / "projects"),
+        claude_path=str(CLAUDE_HOME / "projects"),
         codex_path=str(CODEX_HOME / "sessions"),
     )
     return render_template_string(BASE, title="Sessions", content=content)
@@ -4176,7 +4176,7 @@ def run(host: str = "127.0.0.1", port: int = 5050) -> None:
     print("Agent Session Viewer")
     print(f"→ http://{host}:{port}")
     print(f"Grok   : {GROK_HOME / 'sessions'}")
-    print(f"Claude : {CLAUDE_DIR / 'projects'}")
+    print(f"Claude : {CLAUDE_HOME / 'projects'}")
     print(f"Codex  : {CODEX_HOME / 'sessions'}")
     if debug:
         print("Debug  : on (ASV_DEBUG)")
