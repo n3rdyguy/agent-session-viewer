@@ -2700,6 +2700,27 @@ BASE = """
     .copy-btn:hover, .copy-menu.open .copy-btn {
       color: var(--accent); border-color: var(--accent);
     }
+    /* Header expand/collapse chevron for foldable cards */
+    .fold-header-btn {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 1.7rem; height: 1.55rem; padding: 0;
+      border-radius: 6px; border: 1px solid var(--border);
+      background: #0c0e1288; color: var(--muted);
+      font-size: 0.72rem; cursor: pointer; line-height: 1;
+      flex-shrink: 0;
+    }
+    .fold-header-btn:hover {
+      color: var(--accent); border-color: var(--accent);
+    }
+    .fold-header-btn .fold-chevron {
+      display: inline-block;
+      transition: transform 0.15s ease;
+      /* Point right when collapsed, down when expanded */
+      transform: rotate(-90deg);
+    }
+    .fold-header-btn[aria-expanded="true"] .fold-chevron {
+      transform: rotate(0deg);
+    }
     .copy-menu-panel {
       position: absolute; right: 0; top: calc(100% + 4px);
       min-width: 9.5rem; z-index: 20;
@@ -3033,6 +3054,8 @@ BUBBLE_PARTIAL = """
 <div class="chat">
   {% for t in turns %}
   {% set raw_text = t.text.replace('<encrypted>', '') if t.role == 'reasoning' else t.text %}
+  {% set fold_text = raw_text if t.role == 'reasoning' else (t.text or '') %}
+  {% set is_foldable = fold_text and fold_text|length > 500 %}
   <div class="bubble {{ t.role.split(' ')[0] }}"
        data-role={{ (t.role or '')|tojson }}
        data-time={{ (t.time or '')|tojson }}
@@ -3048,6 +3071,11 @@ BUBBLE_PARTIAL = """
         {% if t.meta %}<span>{{ t.meta }}</span>{% endif %}
       </div>
       <div class="bubble-header-actions">
+        {% if is_foldable %}
+        <button type="button" class="fold-header-btn" aria-expanded="false" title="Expand">
+          <span class="fold-chevron" aria-hidden="true">▾</span>
+        </button>
+        {% endif %}
         <div class="copy-menu">
           <button type="button" class="copy-btn" aria-haspopup="menu" aria-expanded="false" title="Copy block">
             Copy ▾
@@ -3295,6 +3323,7 @@ VIEW_TEMPLATE = BUBBLE_PARTIAL + """
     <summary>Documents ({{ artifacts|length }})</summary>
     <div class="artifact-docs">
       {% for a in artifacts %}
+      {% set art_foldable = a.text and a.text|length > 500 %}
       <div class="artifact-doc"
            data-role={{ (a.title or 'document')|tojson }}
            data-time=""
@@ -3308,6 +3337,11 @@ VIEW_TEMPLATE = BUBBLE_PARTIAL + """
             {% if a.kind %}<span class="msgid">{{ a.kind }}</span>{% endif %}
           </div>
           <div class="bubble-header-actions">
+            {% if art_foldable %}
+            <button type="button" class="fold-header-btn" aria-expanded="false" title="Expand">
+              <span class="fold-chevron" aria-hidden="true">▾</span>
+            </button>
+            {% endif %}
             <div class="copy-menu">
               <button type="button" class="copy-btn" aria-haspopup="menu" aria-expanded="false" title="Copy document">
                 Copy ▾
@@ -3495,24 +3529,97 @@ VIEW_TEMPLATE = BUBBLE_PARTIAL + """
 
 
   // ── Fold / expand-all / copy (always — do not gate on marked CDN) ──
+  function cardRootForFold(fold) {
+    return fold ? fold.closest('.bubble, .artifact-doc') : null;
+  }
+
+  function headerBtnForFold(fold) {
+    var root = cardRootForFold(fold);
+    return root ? root.querySelector('.fold-header-btn') : null;
+  }
+
   function setFoldCollapsed(fold, collapsed) {
     if (!fold) return;
     fold.setAttribute('data-collapsed', collapsed ? 'true' : 'false');
+    var expanded = collapsed ? 'false' : 'true';
     var btn = fold.querySelector('.fold-toggle');
-    if (!btn) return;
-    btn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
-    var more = btn.querySelector('.fold-label-more');
-    var less = btn.querySelector('.fold-label-less');
-    if (more) more.hidden = !collapsed;
-    if (less) less.hidden = collapsed;
+    if (btn) {
+      btn.setAttribute('aria-expanded', expanded);
+      var more = btn.querySelector('.fold-label-more');
+      var less = btn.querySelector('.fold-label-less');
+      if (more) more.hidden = !collapsed;
+      if (less) less.hidden = collapsed;
+    }
+    var headerBtn = headerBtnForFold(fold);
+    if (headerBtn) {
+      headerBtn.setAttribute('aria-expanded', expanded);
+      headerBtn.title = collapsed ? 'Expand' : 'Collapse';
+    }
+  }
+
+  function toggleFold(fold) {
+    if (!fold) return;
+    var collapsed = fold.getAttribute('data-collapsed') !== 'false';
+    if (collapsed) {
+      // Expanding: content grows below — no scroll fix needed.
+      setFoldCollapsed(fold, false);
+    } else {
+      // Collapsing: keep this card from yanking the page.
+      var anchor = cardRootForFold(fold) || fold;
+      preserveAnchorScroll(anchor, function() {
+        setFoldCollapsed(fold, true);
+      });
+    }
+  }
+
+  // Keep the page from jumping when tall folds shrink. Pin a stable anchor's
+  // viewport Y across the mutation; if we were scrolled deep into content that
+  // collapsed away, bring that block back under the sticky header.
+  function scrollPad() {
+    return 72; // site header + a little breathing room
+  }
+
+  function preserveAnchorScroll(anchor, action) {
+    if (!anchor) {
+      action();
+      return;
+    }
+    var before = anchor.getBoundingClientRect().top;
+    action();
+    var after = anchor.getBoundingClientRect().top;
+    var delta = after - before;
+    if (Math.abs(delta) > 0.5) window.scrollBy(0, delta);
+    // If the anchor fully left the viewport (common when collapsing a block we
+    // were scrolled into the middle of), pin its top under the header.
+    var pad = scrollPad();
+    var r = anchor.getBoundingClientRect();
+    if (r.bottom < pad || r.top > window.innerHeight - 40) {
+      window.scrollBy(0, r.top - pad);
+    }
+  }
+
+  function firstVisibleBlock() {
+    var root = document.querySelector('.tab-panel.active') || document;
+    var nodes = root.querySelectorAll('.bubble, .artifact-doc');
+    var pad = scrollPad();
+    for (var i = 0; i < nodes.length; i++) {
+      var r = nodes[i].getBoundingClientRect();
+      if (r.bottom > pad && r.top < window.innerHeight) return nodes[i];
+    }
+    return null;
   }
 
   document.querySelectorAll('.fold-toggle').forEach(function(btn) {
     btn.addEventListener('click', function() {
-      var fold = btn.closest('.fold');
-      if (!fold) return;
-      var collapsed = fold.getAttribute('data-collapsed') !== 'false';
-      setFoldCollapsed(fold, !collapsed);
+      toggleFold(btn.closest('.fold'));
+    });
+  });
+
+  document.querySelectorAll('.fold-header-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var root = btn.closest('.bubble, .artifact-doc');
+      var fold = root ? root.querySelector('.fold') : null;
+      toggleFold(fold);
     });
   });
 
@@ -3530,7 +3637,10 @@ VIEW_TEMPLATE = BUBBLE_PARTIAL + """
   }
   if (collapseAll) {
     collapseAll.addEventListener('click', function() {
-      foldsInActiveTab().forEach(function(f) { setFoldCollapsed(f, true); });
+      var anchor = firstVisibleBlock();
+      preserveAnchorScroll(anchor, function() {
+        foldsInActiveTab().forEach(function(f) { setFoldCollapsed(f, true); });
+      });
     });
   }
 
