@@ -1,6 +1,6 @@
 """CLI entrypoint for Agent Session Viewer."""
 
-from app import run
+from agent_session_viewer.app import run
 
 
 def main() -> None:

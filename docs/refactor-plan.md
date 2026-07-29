@@ -10,7 +10,8 @@ Keep it simple. Ship small steps. Prefer boring structure over clever abstractio
 
 ## Current state (one sentence)
 
-`app.py` is a ~4k-line Flask app: helpers + three agents + HTML/CSS/JS + routes.
+The Flask routes, shared helpers, and three agent readers live in a flat
+`agent_session_viewer/` package; root `app.py` remains a compatibility entrypoint.
 
 ---
 
@@ -84,7 +85,7 @@ Today Codex walks the rollout twice (conversation + scan).
 
 ---
 
-## Phase 4 — Small shared utilities (only if still messy)
+## Phase 4 — Small shared utilities (only if still messy) ✅
 
 - [x] `iter_jsonl(path)` for all agents.
 - [x] `time` = real timestamp only; `id` always in msgid (keep template guards as belt-and-suspenders).
@@ -94,7 +95,7 @@ Today Codex walks the rollout twice (conversation + scan).
 
 ---
 
-## Phase 5 — Light package split (optional)
+## Phase 5 — Light package split (optional) ✅
 
 Only after phases 1–3 feel good. Keep packages flat:
 
@@ -111,8 +112,9 @@ agent_session_viewer/
     claude.py
 ```
 
-- Do **not** introduce registries, base classes, or plugin loaders unless a third agent forces it.
-- Claude implements the same `load_session` shape with empty extras.
+- [x] Keep explicit imports and agent branches; no registries, base classes, or plugin loaders.
+- [x] Claude implements the same `load_session` shape with empty extras.
+- [x] Keep root `app.py`, `main.py`, and the installed command working.
 
 **Done when:** files are under ~500–800 lines each; imports stay obvious.
 
@@ -169,6 +171,6 @@ Stop after any phase if the app is “good enough.” KISS means **you don’t h
 - [x] Phase 2 — `load_session` + thin routes  
 - [x] Phase 3 — Codex one pass  
 - [x] Phase 4 — shared jsonl / time / tokens
-- [ ] Phase 5 — package split (optional)  
+- [x] Phase 5 — package split (optional)
 - [ ] Phase 6 — fixture tests  
 - [ ] Phase 7 — Claude WIP items (README)

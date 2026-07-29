@@ -93,13 +93,8 @@ cd agent-session-viewer
 uv sync
 ```
 
-Or from scratch:
-
-```bash
-uv init
-uv add flask
-# keep app.py in the project root
-```
+The implementation lives in the flat `agent_session_viewer/` package. The
+root `app.py` remains as a compatibility entrypoint.
 
 ---
 
