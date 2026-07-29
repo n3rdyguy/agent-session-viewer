@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Agent Session Viewer – Flask Web UI (v2)
+Agent Session Viewer – local Flask UI
 Grok Build • Claude Code • Codex CLI
-+ Search • Markdown export • Clean chat layout
+Search • Markdown export • Chat layout
 """
 
 from __future__ import annotations
@@ -4170,10 +4170,18 @@ def media():
     return send_file(path, mimetype=mime, conditional=True)
 
 
-if __name__ == "__main__":
-    print("Agent Session Viewer v2")
-    print("→ http://127.0.0.1:5050")
+def run(host: str = "127.0.0.1", port: int = 5050) -> None:
+    """Start the local viewer (loopback only). Set ASV_DEBUG=1 for Flask debug mode."""
+    debug = os.environ.get("ASV_DEBUG", "").strip().lower() in ("1", "true", "yes", "on")
+    print("Agent Session Viewer")
+    print(f"→ http://{host}:{port}")
     print(f"Grok   : {GROK_HOME / 'sessions'}")
     print(f"Claude : {CLAUDE_DIR / 'projects'}")
     print(f"Codex  : {CODEX_HOME / 'sessions'}")
-    app.run(host="127.0.0.1", port=5050, debug=True)
+    if debug:
+        print("Debug  : on (ASV_DEBUG)")
+    app.run(host=host, port=port, debug=debug)
+
+
+if __name__ == "__main__":
+    run()
