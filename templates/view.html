@@ -1,0 +1,362 @@
+{% extends "base.html" %}
+{% from "partials/bubbles.html" import render_bubbles, render_foldable %}
+{% block title %}{{ title }}{% endblock %}
+{% block content %}
+
+<div class="view-header">
+  <a href="/{% if agent %}?agent={{ agent }}{% endif %}" style="color:var(--accent); font-size:0.9rem;">← Back to list</a>
+  <h2>{{ title }}</h2>
+  <div class="meta">
+    <span class="badge {{ agent }}">{{ agent }}</span>
+    {{ path }}
+  </div>
+  <div class="actions">
+    <label class="md-toggle" title="Render message bodies as Markdown">
+      <input type="checkbox" id="md-toggle" autocomplete="off">
+      <span class="track" aria-hidden="true"></span>
+      <span class="md-toggle-label">Markdown</span>
+    </label>
+    <a class="btn btn-primary" href="/export?path={{ path|urlencode }}&agent={{ agent }}">
+      ↓ Export Markdown
+    </a>
+    <a class="btn" href="/raw?path={{ path|urlencode }}&agent={{ agent }}">Raw file</a>
+  </div>
+</div>
+
+{% if summary %}
+<div class="panel">
+  <h3>Session summary</h3>
+  <div class="summary-grid">
+    <div><div class="label">ID</div><div class="value">{{ summary.id }}</div></div>
+    <div><div class="label">Model</div><div class="value">{{ summary.model or '—' }}</div></div>
+    <div><div class="label">Agent</div><div class="value">{{ summary.agent_name or '—' }}</div></div>
+    <div><div class="label">Reasoning</div><div class="value">{{ summary.reasoning_effort or '—' }}</div></div>
+    <div><div class="label">Sandbox</div><div class="value">{{ summary.sandbox_profile or '—' }}</div></div>
+    <div><div class="label">Created</div><div class="value">{{ summary.created or '—' }}</div></div>
+    <div><div class="label">Updated</div><div class="value">{{ summary.updated or '—' }}</div></div>
+    <div><div class="label">Messages</div><div class="value">{{ summary.num_chat_messages or '—' }} chat / {{ summary.num_messages or '—' }} total</div></div>
+    {% if summary.request_id %}
+    <div><div class="label">Request</div><div class="value">{{ summary.request_id }}</div></div>
+    {% endif %}
+    {% if summary.head_branch %}
+    <div><div class="label">Branch</div><div class="value">{{ summary.head_branch }}{% if summary.head_commit %} @ {{ summary.head_commit }}{% endif %}</div></div>
+    {% endif %}
+    {% if summary.personality %}
+    <div><div class="label">Personality</div><div class="value">{{ summary.personality }}</div></div>
+    {% endif %}
+    {% if summary.cli_version %}
+    <div><div class="label">CLI</div><div class="value">{{ summary.cli_version }}</div></div>
+    {% endif %}
+    {% if summary.plan_type %}
+    <div><div class="label">Plan</div><div class="value">{{ summary.plan_type }}</div></div>
+    {% endif %}
+  </div>
+  {% if summary.cwd %}
+  <div class="summary-blurb"><span class="label">CWD</span><br><span class="value">{{ summary.cwd }}</span></div>
+  {% endif %}
+  {% if summary.session_summary and summary.session_summary != summary.title %}
+  <div class="summary-blurb">{{ summary.session_summary }}</div>
+  {% endif %}
+
+  {% if summary.tokens and summary.tokens.available %}
+  {% set tok = summary.tokens %}
+  <div class="token-box">
+    <div class="token-title">
+      <h4>Estimated token usage</h4>
+      <span class="token-source">{{ tok.source }}{% if tok.turns %} · {{ tok.turns }} turn{{ 's' if tok.turns != 1 else '' }}{% endif %}{% if tok.model_calls %} · {{ tok.model_calls }} model call{{ 's' if tok.model_calls != 1 else '' }}{% endif %}</span>
+    </div>
+    <div class="token-stats">
+      <div class="token-stat in">
+        <div class="tlabel">Input</div>
+        <div class="tvalue">{{ tok.input_fmt }}</div>
+      </div>
+      <div class="token-stat out">
+        <div class="tlabel">Output</div>
+        <div class="tvalue">{{ tok.output_fmt }}</div>
+      </div>
+      <div class="token-stat cached">
+        <div class="tlabel">Cached read</div>
+        <div class="tvalue">{{ tok.cached_fmt }}</div>
+      </div>
+      <div class="token-stat reason">
+        <div class="tlabel">Reasoning</div>
+        <div class="tvalue">{{ tok.reasoning_fmt }}</div>
+      </div>
+      <div class="token-stat">
+        <div class="tlabel">Uncached in</div>
+        <div class="tvalue">{{ tok.uncached_fmt }}</div>
+      </div>
+      <div class="token-stat">
+        <div class="tlabel">Total (in+out)</div>
+        <div class="tvalue">{{ tok.total_fmt }}</div>
+      </div>
+    </div>
+
+    <div class="token-bar" title="uncached in / cached in / output / reasoning">
+      <span class="seg-in" style="width: {{ tok.bar.uncached_pct }}%"></span>
+      <span class="seg-cached" style="width: {{ tok.bar.cached_pct }}%"></span>
+      <span class="seg-out" style="width: {{ tok.bar.out_pct }}%"></span>
+      <span class="seg-reason" style="width: {{ tok.bar.reason_pct }}%"></span>
+    </div>
+    <div class="token-legend">
+      <span><i class="lg-in"></i>Uncached input</span>
+      <span><i class="lg-cached"></i>Cached input</span>
+      <span><i class="lg-out"></i>Output</span>
+      <span><i class="lg-reason"></i>Reasoning</span>
+    </div>
+
+    {% if tok.context_used is not none and tok.context_window %}
+    <div class="token-context">
+      Context window (latest): {{ tok.context_used_fmt }} / {{ tok.context_window_fmt }}
+      ({{ tok.context_pct }}%)
+      <div class="bar"><span style="width: {{ tok.context_pct if tok.context_pct < 100 else 100 }}%"></span></div>
+    </div>
+    {% endif %}
+
+    {% if tok.by_model_rows and tok.by_model_rows|length > 0 %}
+    <details style="margin-top:0.75rem;">
+      <summary>Per model</summary>
+      <table class="settings-table" style="margin-top:0.5rem;">
+        <thead>
+          <tr><th>Model</th><th>In</th><th>Out</th><th>Cached</th><th>Reasoning</th><th>Calls</th></tr>
+        </thead>
+        <tbody>
+        {% for m in tok.by_model_rows %}
+          <tr>
+            <td><code>{{ m.model }}</code></td>
+            <td>{{ m.input_fmt }}</td>
+            <td>{{ m.output_fmt }}</td>
+            <td>{{ m.cached_fmt }}</td>
+            <td>{{ m.reasoning_fmt }}</td>
+            <td>{{ m.model_calls }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </details>
+    {% endif %}
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+
+{% if resources and (resources.todos or resources.settings or resources.scheduler_tasks or resources.reported_completions) %}
+<div class="panel">
+  <h3>Resources · todos &amp; settings</h3>
+  {% if resources.todos %}
+  <p style="margin:0 0 0.5rem; color:var(--muted); font-size:0.85rem;">Todos ({{ resources.todos|length }})</p>
+  <ul class="todo-list">
+    {% for t in resources.todos %}
+    <li>
+      <span class="todo-id">{{ t.id }}</span>
+      <span class="todo-status {{ t.status }}">{{ t.status }}</span>
+      <span>{{ t.content }}{% if t.priority %} <span style="color:var(--muted)">({{ t.priority }})</span>{% endif %}</span>
+    </li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+
+  {% if resources.reported_completions %}
+  <details style="margin-top:0.85rem;">
+    <summary>Reported task completions ({{ resources.reported_completions|length }})</summary>
+    <ul class="artifact-list">
+      {% for id in resources.reported_completions %}
+      <li>{{ id }}</li>
+      {% endfor %}
+    </ul>
+  </details>
+  {% endif %}
+
+  {% if resources.scheduler_tasks %}
+  <details style="margin-top:0.85rem;">
+    <summary>Scheduler tasks ({{ resources.scheduler_tasks|length }})</summary>
+    <ul class="artifact-list">
+      {% for t in resources.scheduler_tasks %}
+      <li>{% if t is mapping %}{% for k,v in t.items() %}<div class="sub"><strong>{{ k }}</strong>: {{ v }}</div>{% endfor %}{% else %}{{ t }}{% endif %}</li>
+      {% endfor %}
+    </ul>
+  </details>
+  {% endif %}
+
+  {% if resources.settings %}
+  <details style="margin-top:0.85rem;">
+    <summary>Tool settings ({{ resources.settings|length }} non-null params)</summary>
+    <table class="settings-table">
+      <thead><tr><th>Tool</th><th>Key</th><th>Value</th></tr></thead>
+      <tbody>
+      {% for s in resources.settings %}
+        <tr>
+          <td><code>{{ s.tool }}</code></td>
+          <td>{{ s.key }}</td>
+          <td>{{ s.value }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </details>
+  {% endif %}
+
+  {% if resources.other_state %}
+  <details style="margin-top:0.85rem;">
+    <summary>Other resource state ({{ resources.other_state|length }})</summary>
+    <ul class="artifact-list">
+      {% for o in resources.other_state %}
+      <li><strong>{{ o.key }}</strong><div class="sub">{{ o.value }}</div></li>
+      {% endfor %}
+    </ul>
+  </details>
+  {% endif %}
+</div>
+{% endif %}
+
+{% if artifacts or hunks or terminal_logs or recaps %}
+<div class="panel">
+  <h3>Session artifacts</h3>
+
+  {% if artifacts %}
+  <details open>
+    <summary>Documents ({{ artifacts|length }})</summary>
+    <div class="artifact-docs">
+      {% for a in artifacts %}
+      {% set art_foldable = a.text and a.text|length > 500 %}
+      <div class="artifact-doc"
+           data-role={{ (a.title or 'document')|tojson }}
+           data-time=""
+           data-id={{ (a.id or '')|tojson }}
+           data-model=""
+           data-meta={{ (a.subtitle or a.kind or '')|tojson }}>
+        <div class="artifact-doc-head">
+          <div class="artifact-doc-head-main">
+            <strong>{{ a.title }}</strong>
+            {% if a.subtitle %}<span class="sub">{{ a.subtitle }}</span>{% endif %}
+            {% if a.kind %}<span class="msgid">{{ a.kind }}</span>{% endif %}
+          </div>
+          <div class="bubble-header-actions">
+            {% if art_foldable %}
+            <button type="button" class="fold-header-btn" aria-expanded="false" title="Expand">
+              <span class="fold-chevron" aria-hidden="true">▾</span>
+            </button>
+            {% endif %}
+            <div class="copy-menu">
+              <button type="button" class="copy-btn" aria-haspopup="menu" aria-expanded="false" title="Copy document">
+                Copy ▾
+              </button>
+              <div class="copy-menu-panel" role="menu">
+                <div class="copy-hint">Copy this document</div>
+                <button type="button" role="menuitem" data-copy="markdown">As Markdown</button>
+                <button type="button" role="menuitem" data-copy="raw">As raw text</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="artifact-doc-body">
+          {{ render_foldable(a.text or '', '') }}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </details>
+  {% endif %}
+
+  {% if hunks %}
+  <details style="margin-top:0.6rem;" {% if hunks|length <= 12 and not artifacts %}open{% endif %}>
+    <summary>{% if agent == 'codex' %}Patches{% else %}Hunk records{% endif %} ({{ hunks|length }}) · file edits</summary>
+    <ul class="artifact-list">
+      {% for h in hunks %}
+      <li>
+        <span class="msgid">{{ h.hunk_id }}</span>
+        · {{ h.event or 'edit' }}
+        · +{{ h.added or 0 }}/-{{ h.removed or 0 }}
+        {% if h.time %} · {{ h.time }}{% endif %}
+        <div class="sub">{{ h.file_path }}{% if h.start %} · lines {{ h.start }}–{{ h.end }}{% endif %}
+        {% if h.prompt_index is not none %} · prompt {{ h.prompt_index }}{% endif %}
+        {% if h.source %} · {{ h.source }}{% endif %}</div>
+      </li>
+      {% endfor %}
+    </ul>
+  </details>
+  {% endif %}
+
+  {% if terminal_logs %}
+  <details style="margin-top:0.6rem;" {% if terminal_logs|length <= 8 %}open{% endif %}>
+    <summary>Terminal logs ({{ terminal_logs|length }}) · matched by call id</summary>
+    <ul class="artifact-list">
+      {% for t in terminal_logs %}
+      <li>
+        <span class="msgid">{{ t.id }}</span> · {{ t.size }} bytes
+        {% if t.preview %}<div class="sub">{{ t.preview }}</div>{% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+  </details>
+  {% endif %}
+
+  {% if recaps %}
+  <details style="margin-top:0.6rem;">
+    <summary>Recap requests ({{ recaps|length }})</summary>
+    <ul class="artifact-list">
+      {% for r in recaps %}
+      <li>
+        <span class="msgid">{{ r.id }}</span>
+        {% if r.created %} · {{ r.created }}{% endif %}
+        {% if r.trigger %} · {{ r.trigger }}{% endif %}
+        {% if r.model %} · {{ r.model }}{% endif %}
+        · {{ r.size }} bytes
+        {% if r.chat_len is not none %} · {{ r.chat_len }} msgs{% endif %}
+        {% if r.x_grok_req_id %}<div class="sub">{{ r.x_grok_req_id }}</div>{% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+  </details>
+  {% endif %}
+</div>
+{% endif %}
+
+<div class="tabs-row">
+  <div class="tabs" id="view-tabs">
+    <button type="button" class="active" data-tab="chat">Chat history ({{ turns|length }})</button>
+    {% if updates is not none %}
+    <button type="button" data-tab="updates">
+      {% if agent == 'codex' %}Events timeline ({{ updates|length }}){% else %}Updates stream ({{ updates|length }}){% endif %}
+    </button>
+    {% endif %}
+  </div>
+  <div class="chat-toolbar">
+    <button type="button" class="btn" id="expand-all" title="Expand all folded blocks">Expand all</button>
+    <button type="button" class="btn" id="collapse-all" title="Collapse all folded blocks">Collapse all</button>
+  </div>
+</div>
+
+<div id="tab-chat" class="tab-panel active">
+{% if turns %}
+  {{ render_bubbles(turns) }}
+{% else %}
+  <div class="empty">Could not parse conversation from this session.</div>
+{% endif %}
+</div>
+
+{% if updates is not none %}
+<div id="tab-updates" class="tab-panel">
+  {% if updates %}
+    <p style="color:var(--muted); font-size:0.85rem; margin:0 0 1rem;">
+      {% if agent == 'codex' %}
+      Task / patch / image events from the Codex rollout (not the full chat — see Chat history).
+      {% else %}
+      Aggregated from <code>updates.jsonl</code> (stream chunks collapsed; tool ids preserved).
+      {% endif %}
+    </p>
+    {{ render_bubbles(updates) }}
+  {% else %}
+    <div class="empty">{% if agent == 'codex' %}No timeline events found.{% else %}No updates.jsonl events found.{% endif %}</div>
+  {% endif %}
+</div>
+{% endif %}
+
+<div class="copy-toast" id="copy-toast">Image copied to clipboard</div>
+{% endblock %}
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/marked@15.0.12/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dompurify@3.2.6/dist/purify.min.js"></script>
+<script src="{{ url_for('static', filename='app.js') }}"></script>
+{% endblock %}
+
