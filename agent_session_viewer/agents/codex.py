@@ -637,5 +637,3 @@ def get_codex_conversation(
         pass
 
     return turns
-
-

@@ -652,9 +652,3 @@ def get_grok_conversation(path: Path) -> list[dict]:
         pass
 
     return turns
-
-
-# ─────────────────────────────────────────────
-# Codex session context + conversation
-# ─────────────────────────────────────────────
-

@@ -276,7 +276,7 @@ def resolve_session_image_path(
     if not path_str:
         return None
     raw = path_str.strip().strip("`'\"")
-    # Expand ~ 
+    # Expand ~
     if raw.startswith("~"):
         raw = str(Path(raw).expanduser())
 
@@ -455,5 +455,3 @@ def linkify_image_paths_html(text: str, images: list[dict] | None = None) -> str
         )
         html = html.replace(esc_path, link)
     return html
-
-

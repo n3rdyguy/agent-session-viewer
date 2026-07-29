@@ -239,9 +239,3 @@ def all_sessions(agent: str | None = None) -> list[dict]:
 
     items.sort(key=key, reverse=True)
     return items
-
-
-# ─────────────────────────────────────────────
-# Grok session context (summary, todos, side files)
-# ─────────────────────────────────────────────
-
