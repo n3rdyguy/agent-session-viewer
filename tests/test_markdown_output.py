@@ -70,6 +70,13 @@ def test_does_not_decode_html_entities_in_prose() -> None:
     assert format_markdown_content(source) == source
 
 
+def test_markdown_hint_prevents_xml_fencing_of_system_instructions() -> None:
+    source = "<INSTRUCTIONS>\n# Project rules\n\n- Run tests\n- Keep changes focused\n</INSTRUCTIONS>"
+
+    assert detect_code_language(source) == "xml"
+    assert format_markdown_content(source, assume_markdown=True) == source
+
+
 def test_preserves_prose_around_an_existing_fence() -> None:
     source = "Try this:\n\n```python\nprint('hello')\n```\n\nThen continue."
 
@@ -128,3 +135,81 @@ def test_tool_result_template_keeps_raw_source_and_prepares_markdown_source() ->
     # Markdown source contains actual PHP characters inside its fence.
     assert '<textarea class="raw-src" hidden readonly>&amp;lt;?php' in rendered
     assert '<textarea class="md-src" hidden readonly>```php\n&lt;?php' in rendered
+
+
+def test_system_template_treats_tag_wrapped_instructions_as_markdown() -> None:
+    source = "<INSTRUCTIONS>\n# Project rules\n\n- Run tests\n</INSTRUCTIONS>"
+    turn = make_turn(role="system", id="#1", text=source)
+
+    with app.app_context():
+        rendered = str(
+            app.jinja_env.get_template("partials/bubbles.html").module.render_bubbles([turn])
+        )
+
+    assert '<textarea class="md-src" hidden readonly>&lt;INSTRUCTIONS&gt;\n# Project rules' in rendered
+    assert "```xml" not in rendered
+
+
+def test_markdown_artifact_hint_bypasses_code_detection() -> None:
+    source = "<document>\n# Notes\n\n- First item\n</document>"
+
+    with app.app_context():
+        rendered = str(
+            app.jinja_env.get_template("partials/bubbles.html").module.render_foldable(
+                source, "", True
+            )
+        )
+
+    assert '<textarea class="md-src" hidden readonly>&lt;document&gt;\n# Notes' in rendered
+    assert "```xml" not in rendered
+
+
+@pytest.mark.parametrize(
+    ("title", "kind"),
+    [
+        ("AGENTS.md", ""),
+        ("README.markdown", "document"),
+        ("Instructions", "markdown"),
+        ("Notes", "text/markdown"),
+    ],
+)
+def test_markdown_artifact_metadata_enables_markdown_source(
+    title: str,
+    kind: str,
+) -> None:
+    source = "<document>\n# Notes\n\n- First item\n</document>"
+
+    with app.test_request_context("/view"):
+        rendered = app.jinja_env.get_template("view.html").render(
+            title="Test",
+            agent="codex",
+            path="session.jsonl",
+            turns=[],
+            summary=None,
+            resources=None,
+            artifacts=[
+                {
+                    "id": "doc-1",
+                    "title": title,
+                    "kind": kind,
+                    "text": source,
+                }
+            ],
+            hunks=None,
+            terminal_logs=None,
+            recaps=None,
+            updates=None,
+        )
+
+    assert '<textarea class="md-src" hidden readonly>&lt;document&gt;\n# Notes' in rendered
+    assert "```xml" not in rendered
+
+
+def test_system_export_preserves_markdown_in_tag_wrapped_instructions() -> None:
+    source = "<INSTRUCTIONS>\n# Project rules\n\n- Run tests\n</INSTRUCTIONS>"
+    turns = [make_turn(role="system", id="#1", text=source)]
+
+    exported = turns_to_markdown(turns, "Test", "codex", "session.jsonl")
+
+    assert source in exported
+    assert "```xml" not in exported

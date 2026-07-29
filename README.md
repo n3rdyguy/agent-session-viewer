@@ -39,6 +39,7 @@ Claude Code discovery and basic viewing exist, but the experience is **not** at 
 - **Markdown** toggle (GFM via [marked](https://marked.js.org/), sanitized with DOMPurify)
   - Preference stored in `localStorage`
   - Unfenced code-only messages and tool output are detected and rendered in language-tagged code blocks
+  - System instruction boxes and Markdown-labeled/`.md` artifacts are always interpreted as Markdown
   - Agent tags like `<user_info>` / `<system-reminder>` stay visible; headings, lists, and bold still render
   - Image syntax and raw `<img>` tags in transcript output become links/text instead of loading images
   - Only explicit session image attachments render in the separate image gallery
@@ -68,7 +69,7 @@ Codex `rollout-*.jsonl` sessions under `~/.codex/sessions/` (and `archived_sessi
 
 | Area | What you get |
 |------|----------------|
-| **List titles** | From `~/.codex/session_index.jsonl` (`thread_name`) when available |
+| **List titles** | Safe `thread_name` from `~/.codex/session_index.jsonl`, plus a safe first-user-message headline when available |
 | **Summary** | Session id, model, originator/CLI, cwd, approval/sandbox, reasoning effort, personality, plan type, git branch/commit |
 | **Token usage** | From `event_msg` / `token_count` — last cumulative `total_token_usage` (in / out / cached / reasoning) + context window |
 | **Settings** | Approval policy, sandbox, effort, personality, provider, repo URL |
