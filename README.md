@@ -107,11 +107,17 @@ uv add flask
 
 ```bash
 uv run python app.py
+# or
+uv run python main.py
+# or after uv sync:
+uv run agent-session-viewer
 ```
 
 Open **http://127.0.0.1:5050**
 
 The server binds to `127.0.0.1` only (local loopback).
+
+Flask debug mode is **off** by default. Enable with `ASV_DEBUG=1` (or `true` / `yes` / `on`).
 
 ---
 
