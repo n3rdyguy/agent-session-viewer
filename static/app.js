@@ -302,7 +302,7 @@
   function isHashOnlyHref(href) {
     if (!href) return true;
     var h = String(href).trim();
-    return h.charAt(0) === '#' || h.indexOf('javascript:') === 0;
+    return h.charAt(0) === '#' || h.toLowerCase().indexOf('javascript:') === 0;
   }
 
   function stripHashOnlyLinks(html) {
@@ -333,7 +333,7 @@
 
   var MD_HTML_TAGS = {
     a:1, abbr:1, b:1, blockquote:1, br:1, code:1, del:1, div:1, em:1,
-    h1:1, h2:1, h3:1, h4:1, h5:1, h6:1, hr:1, i:1, img:1, input:1, li:1,
+    h1:1, h2:1, h3:1, h4:1, h5:1, h6:1, hr:1, i:1, input:1, li:1,
     ol:1, p:1, pre:1, s:1, span:1, strong:1, sub:1, sup:1, table:1,
     tbody:1, td:1, th:1, thead:1, tr:1, u:1, ul:1
   };
@@ -360,7 +360,8 @@
       html = DOMPurify.sanitize(html, {
         USE_PROFILES: { html: true },
         ADD_ATTR: ['target', 'rel', 'class'],
-        ADD_TAGS: ['pre']
+        ADD_TAGS: ['pre'],
+        FORBID_TAGS: ['img']
       });
       html = stripHashOnlyLinks(html);
     }
@@ -405,6 +406,18 @@
             if (isHashOnlyHref(href)) return text;
             var t = title ? ' title="' + escapeHtml(String(title)) + '"' : '';
             return '<a href="' + escapeHtml(String(href)) + '"' + t + ' rel="noopener">' + text + '</a>';
+          },
+          image: function(token) {
+            var href = token && token.href != null ? token.href : (arguments[0] || '');
+            var title = token && token.title != null ? token.title : (arguments[1] || '');
+            var alt = token && token.text != null ? token.text : (arguments[2] || href || 'image');
+            var text = escapeHtml(String(alt || href || 'image'));
+            if (isHashOnlyHref(href)) return text;
+            var t = title ? ' title="' + escapeHtml(String(title)) + '"' : '';
+            // Transcript Markdown may contain image syntax or raw output URLs.
+            // Keep it navigable, but never fetch/render it as an image here.
+            return '<a class="md-image-link" href="' + escapeHtml(String(href)) + '"' + t +
+              ' rel="noopener">' + text + '</a>';
           }
         }
       });
