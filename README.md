@@ -5,10 +5,25 @@ Local web UI for browsing, searching, and exporting coding-agent conversations.
 Supports:
 
 - **Grok Build** (`~/.grok/sessions`)
-- **Claude Code** (`~/.claude/projects`)
 - **Codex CLI** (`~/.codex/sessions`)
+- **Claude Code** (`~/.claude/projects`) — *work in progress*
 
 Everything stays on your machine. The app only reads session files; it does not send data anywhere.
+
+---
+
+## Claude support (WIP)
+
+Claude Code discovery and basic viewing exist, but the experience is **not** at Grok/Codex parity yet. Treat Claude as incomplete until the items below land.
+
+### TODO
+
+- [ ] Richer session summary (model, cwd, branch, message counts, etc.)
+- [ ] Token / usage summary when available on disk
+- [ ] Tool call / result ids and terminal enrichment comparable to Grok
+- [ ] Artifacts / secondary tabs (settings, patches, timeline) where Claude stores them
+- [ ] Image / media path handling parity
+- [ ] Validate list titles, search fields, and Markdown export against real `~/.claude/projects` layouts
 
 ---
 
@@ -17,7 +32,7 @@ Everything stays on your machine. The app only reads session files; it does not 
 ### All agents
 
 - Unified session list across Grok, Claude, and Codex
-- Filter by agent (All / Grok / Claude / Codex)
+- Filter by agent (All / Grok / Claude / Codex) — **Claude filter is WIP**
 - Search title, ID, path, model, and working directory
 - Chat-style conversation view with role-colored bubbles
 - Collapsible long tool outputs
@@ -147,6 +162,7 @@ Reasoning steps show the model **summary** text; full chain-of-thought is stored
 ## Notes
 
 - Read-only with respect to agent data: no writes to `~/.grok`, `~/.claude`, or `~/.codex`.
+- **Claude Code support is still work in progress** (see [Claude support (WIP)](#claude-support-wip)); Grok and Codex have the richer session views today.
 - Token totals are **estimates** reconstructed from `turn_completed.usage` (not a separate billing ledger). Reasoning is usually included in output tokens; the UI shows both.
 - Large tool outputs are collapsed until expanded.
 - Image and raw file access is restricted to paths under configured agent homes.

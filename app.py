@@ -2147,7 +2147,6 @@ def get_codex_conversation(path: Path) -> list[dict]:
                         time=display_time(ts_raw, call_id or seq),
                         id=call_id or seq,
                         text=text or "(empty tool result)",
-                        meta=call_id,
                         images=imgs,
                     ))
                     continue
@@ -3064,10 +3063,11 @@ BUBBLE_PARTIAL = """
     <div class="bubble-header">
       <div class="bubble-header-main">
         <span class="role">{{ t.role }}</span>
-        {% if t.time %}<span>{{ t.time }}</span>{% endif %}
+        {# skip time/meta when they only echo msgid (common when display_time falls back to id) #}
+        {% if t.time and t.time != t.id %}<span>{{ t.time }}</span>{% endif %}
         {% if t.id %}<span class="msgid">{{ t.id }}</span>{% endif %}
         {% if t.model %}<span>{{ t.model }}</span>{% endif %}
-        {% if t.meta %}<span>{{ t.meta }}</span>{% endif %}
+        {% if t.meta and t.meta != t.id %}<span>{{ t.meta }}</span>{% endif %}
       </div>
       <div class="bubble-header-actions">
         {% if is_foldable %}
