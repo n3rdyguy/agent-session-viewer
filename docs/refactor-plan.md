@@ -120,7 +120,7 @@ agent_session_viewer/
 
 ---
 
-## Phase 6 — Minimal tests (fixtures, not mocks)
+## Phase 6 — Minimal tests (fixtures, not mocks) ✅
 
 High value, small surface:
 
@@ -172,5 +172,5 @@ Stop after any phase if the app is “good enough.” KISS means **you don’t h
 - [x] Phase 3 — Codex one pass  
 - [x] Phase 4 — shared jsonl / time / tokens
 - [x] Phase 5 — package split (optional)
-- [ ] Phase 6 — fixture tests  
+- [x] Phase 6 — fixture tests
 - [ ] Phase 7 — Claude WIP items (README)
