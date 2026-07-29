@@ -171,5 +171,3 @@ def path_allowed(path: Path) -> bool:
             if rs == rr or rs.startswith(rr + "/"):
                 return True
     return False
-
-

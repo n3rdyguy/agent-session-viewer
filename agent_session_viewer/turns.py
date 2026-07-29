@@ -42,9 +42,3 @@ def format_tool_args(arguments: Any) -> str:
         except Exception:
             return arguments
     return pretty_json(arguments)
-
-
-# ─────────────────────────────────────────────
-# Discovery
-# ─────────────────────────────────────────────
-
