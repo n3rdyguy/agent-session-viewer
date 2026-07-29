@@ -698,48 +698,122 @@ def discover_claude() -> list[dict]:
     return sessions
 
 
+def load_codex_session_index() -> dict[str, dict]:
+    """Map session id → {thread_name, updated_at} from ~/.codex/session_index.jsonl."""
+    index: dict[str, dict] = {}
+    path = CODEX_HOME / "session_index.jsonl"
+    if not path.exists():
+        return index
+    try:
+        with path.open(encoding="utf-8", errors="replace") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    obj = json.loads(line)
+                except Exception:
+                    continue
+                sid = obj.get("id")
+                if not sid:
+                    continue
+                # Later lines win (index may list the same id more than once)
+                index[str(sid)] = {
+                    "thread_name": obj.get("thread_name") or "",
+                    "updated_at": obj.get("updated_at") or "",
+                }
+    except Exception:
+        pass
+    return index
+
+
 def discover_codex() -> list[dict]:
     sessions = []
+    titles = load_codex_session_index()
+
     for sub in ("sessions", "archived_sessions"):
         root = CODEX_HOME / sub
         if not root.exists():
             continue
         for f in root.rglob("rollout-*.jsonl"):
             sid = f.stem
+            # Prefer UUID from filename suffix when present
+            for part in f.stem.split("-"):
+                if len(part) >= 32 and part.count("-") >= 0:
+                    pass
+            # rollout-2026-07-26T16-39-31-019f9edd-ea9c-7741-ad03-59daedd955a2
+            m = re.search(
+                r"([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$",
+                f.stem,
+                re.I,
+            )
+            if m:
+                sid = m.group(1)
+
             created = updated = model = cwd = None
             msg_count = 0
             try:
                 with f.open(encoding="utf-8", errors="replace") as fh:
                     for i, line in enumerate(fh):
+                        if not line.strip():
+                            continue
                         msg_count += 1
-                        if i > 80:
+                        # Meta usually at the start; still accept model updates early
+                        if i > 120 and created and cwd and model:
+                            # Fast-count the rest of the file without full JSON parse
+                            for rest in fh:
+                                if rest.strip():
+                                    msg_count += 1
                             break
                         try:
                             obj = json.loads(line)
-                            ts = obj.get("timestamp")
-                            if ts:
-                                created = created or ts
-                                updated = ts
-                            t = obj.get("type")
-                            payload = obj.get("payload") or {}
-                            if t == "session_meta":
-                                meta = payload.get("meta") or payload
-                                cwd = meta.get("cwd") or cwd
-                                if isinstance(meta.get("id"), str):
-                                    sid = meta["id"]
-                            elif t == "turn_context":
-                                model = payload.get("model") or model
                         except Exception:
-                            pass
+                            continue
+                        ts = obj.get("timestamp")
+                        if ts:
+                            created = created or ts
+                            updated = ts
+                        t = obj.get("type")
+                        payload = obj.get("payload") if isinstance(obj.get("payload"), dict) else {}
+                        if t == "session_meta":
+                            meta = payload.get("meta") if isinstance(payload.get("meta"), dict) else payload
+                            cwd = meta.get("cwd") or cwd
+                            for key in ("id", "session_id"):
+                                if isinstance(meta.get(key), str) and meta[key]:
+                                    sid = meta[key]
+                                    break
+                            if meta.get("timestamp"):
+                                created = created or meta.get("timestamp")
+                        elif t == "turn_context":
+                            model = payload.get("model") or model
+                            cwd = payload.get("cwd") or cwd
+                        elif t == "event_msg" and (payload.get("type") == "thread_settings_applied"):
+                            settings = payload.get("thread_settings") or {}
+                            model = settings.get("model") or model
+                            cwd = settings.get("cwd") or cwd
             except Exception:
                 pass
+
+            # Prefer index timestamp / file mtime for "updated" (early scan may miss the end)
+            try:
+                mtime_iso = datetime.fromtimestamp(f.stat().st_mtime).isoformat()
+            except Exception:
+                mtime_iso = None
+            idx = titles.get(sid) or {}
+            title = idx.get("thread_name") or f.name[:55]
+            if idx.get("updated_at"):
+                updated = idx["updated_at"]
+            elif mtime_iso:
+                updated = mtime_iso
+            elif not updated and mtime_iso:
+                updated = mtime_iso
 
             sessions.append({
                 "agent": "codex",
                 "id": sid,
                 "path": str(f),
                 "cwd": cwd or "?",
-                "title": f.name[:55],
+                "title": str(title)[:120],
                 "created": created,
                 "updated": updated,
                 "model": model,
@@ -982,11 +1056,31 @@ def grok_resources(path: Path) -> dict:
             })
 
     other_state = []
+    artifacts = []
     skip = {"grok_build.Todo", "Todo", "grok_build.Scheduler", "grok_build.ReportedTaskCompletions"}
     for k, v in state.items():
         if k in skip:
             continue
-        other_state.append({"key": k.replace("grok_build.", ""), "value": pretty_json(v, 400)})
+        label = k.replace("grok_build.", "")
+        # Prefer collapsible artifacts for larger / document-like blobs
+        if isinstance(v, str) and len(v) > 200:
+            artifacts.append({
+                "id": f"state-{label}",
+                "title": label,
+                "subtitle": "resources_state",
+                "kind": "markdown",
+                "text": v,
+            })
+        elif isinstance(v, (dict, list)) and len(pretty_json(v, 50000)) > 400:
+            artifacts.append({
+                "id": f"state-{label}",
+                "title": label,
+                "subtitle": "resources_state · json",
+                "kind": "json",
+                "text": pretty_json(v, 200000),
+            })
+        else:
+            other_state.append({"key": label, "value": pretty_json(v, 400)})
 
     return {
         "todos": todos,
@@ -994,6 +1088,7 @@ def grok_resources(path: Path) -> dict:
         "reported_completions": reported,
         "settings": settings,
         "other_state": other_state,
+        "artifacts": artifacts,
     }
 
 
@@ -1490,6 +1585,701 @@ def get_grok_conversation(path: Path) -> list[dict]:
     return turns
 
 
+# ─────────────────────────────────────────────
+# Codex session context + conversation
+# ─────────────────────────────────────────────
+
+def _empty_token_usage() -> dict:
+    return {
+        "input": 0,
+        "output": 0,
+        "total": 0,
+        "cached": 0,
+        "reasoning": 0,
+        "model_calls": 0,
+        "api_duration_ms": 0,
+        "turns": 0,
+        "uncached_input": 0,
+        "by_model": {},
+        "by_model_rows": [],
+        "context_used": None,
+        "context_window": None,
+        "context_pct": None,
+        "available": False,
+        "input_fmt": "—",
+        "output_fmt": "—",
+        "total_fmt": "—",
+        "cached_fmt": "—",
+        "reasoning_fmt": "—",
+        "uncached_fmt": "—",
+        "source": "",
+        "bar": {"uncached_pct": 0, "cached_pct": 0, "out_pct": 0, "reason_pct": 0},
+    }
+
+
+def _finalize_token_usage(usage: dict) -> dict:
+    if usage["turns"] > 0 or usage["input"] or usage["output"]:
+        usage["available"] = True
+        usage["uncached_input"] = max(0, usage["input"] - usage["cached"])
+        usage["input_fmt"] = format_tokens(usage["input"])
+        usage["output_fmt"] = format_tokens(usage["output"])
+        usage["total_fmt"] = format_tokens(usage["total"] or (usage["input"] + usage["output"]))
+        usage["cached_fmt"] = format_tokens(usage["cached"])
+        usage["reasoning_fmt"] = format_tokens(usage["reasoning"])
+        usage["uncached_fmt"] = format_tokens(usage["uncached_input"])
+        bar_total = max(usage["input"] + usage["output"], 1)
+        out_non_reason = max(usage["output"] - usage["reasoning"], 0)
+        usage["bar"] = {
+            "uncached_pct": round(100.0 * usage["uncached_input"] / bar_total, 2),
+            "cached_pct": round(100.0 * usage["cached"] / bar_total, 2),
+            "out_pct": round(100.0 * out_non_reason / bar_total, 2),
+            "reason_pct": round(100.0 * usage["reasoning"] / bar_total, 2),
+        }
+        if usage.get("context_used") is not None and usage.get("context_window"):
+            usage["context_used_fmt"] = format_tokens(usage["context_used"])
+            usage["context_window_fmt"] = format_tokens(usage["context_window"])
+            usage["context_pct"] = round(
+                100.0 * usage["context_used"] / max(usage["context_window"], 1), 1
+            )
+    return usage
+
+
+def iter_codex_rollout(path: Path):
+    """Yield parsed JSON objects from a Codex rollout jsonl."""
+    with path.open(encoding="utf-8", errors="replace") as fh:
+        for line in fh:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                yield json.loads(line)
+            except Exception:
+                continue
+
+
+def codex_scan_session(path: Path) -> dict:
+    """
+    Single-pass scan of a Codex rollout file for summary, tokens, patches, settings.
+    """
+    meta: dict = {}
+    git: dict = {}
+    model = ""
+    cwd = ""
+    effort = ""
+    personality = ""
+    sandbox = ""
+    approval = ""
+    cli_version = ""
+    originator = ""
+    provider = ""
+    created = ""
+    updated = ""
+    first_user = ""
+    agents_md = ""
+    agents_md_dir = ""
+    plan_type = ""
+    context_window = None
+    context_used = None
+
+    # Token accounting: prefer final cumulative total_token_usage; also sum last_token_usage
+    last_total: dict = {}
+    sum_last = {"input": 0, "output": 0, "cached": 0, "reasoning": 0, "total": 0}
+    token_events = 0
+
+    counts = {
+        "lines": 0,
+        "user": 0,
+        "assistant": 0,
+        "reasoning": 0,
+        "tool_call": 0,
+        "tool_result": 0,
+        "task": 0,
+    }
+    patches: list[dict] = []
+    settings_rows: list[dict] = []
+    events: list[dict] = []  # lightweight timeline for "updates" tab
+
+    for obj in iter_codex_rollout(path):
+        counts["lines"] += 1
+        ts = obj.get("timestamp") or ""
+        if ts:
+            created = created or ts
+            updated = ts
+        t = obj.get("type")
+        payload = obj.get("payload") if isinstance(obj.get("payload"), dict) else {}
+
+        if t == "session_meta":
+            meta = payload.get("meta") if isinstance(payload.get("meta"), dict) else payload
+            cwd = meta.get("cwd") or cwd
+            cli_version = meta.get("cli_version") or cli_version
+            originator = meta.get("originator") or originator
+            provider = meta.get("model_provider") or provider
+            if meta.get("timestamp"):
+                created = meta.get("timestamp") or created
+            git = meta.get("git") if isinstance(meta.get("git"), dict) else git
+
+        elif t == "turn_context":
+            model = payload.get("model") or model
+            cwd = payload.get("cwd") or cwd
+            effort = payload.get("effort") or effort
+            personality = payload.get("personality") or personality
+            sp = payload.get("sandbox_policy")
+            if isinstance(sp, dict):
+                sandbox = sp.get("type") or sandbox
+            elif isinstance(sp, str):
+                sandbox = sp
+            approval = payload.get("approval_policy") or approval
+            collab = payload.get("collaboration_mode") if isinstance(payload.get("collaboration_mode"), dict) else {}
+            settings = collab.get("settings") if isinstance(collab.get("settings"), dict) else {}
+            effort = settings.get("reasoning_effort") or effort
+            model = settings.get("model") or model
+
+        elif t == "world_state":
+            state = payload.get("state") if isinstance(payload.get("state"), dict) else {}
+            amd = state.get("agents_md") if isinstance(state.get("agents_md"), dict) else {}
+            if amd.get("text"):
+                agents_md = amd.get("text") or agents_md
+                agents_md_dir = amd.get("directory") or agents_md_dir
+
+        elif t == "response_item":
+            ptype = payload.get("type")
+            if ptype == "reasoning":
+                counts["reasoning"] += 1
+            elif ptype in ("function_call", "custom_tool_call", "local_shell_call"):
+                counts["tool_call"] += 1
+            elif ptype in ("function_call_output", "custom_tool_call_output"):
+                counts["tool_result"] += 1
+            elif ptype == "message" and (payload.get("role") or "").lower() == "user":
+                text = extract_text(payload.get("content"))
+                if text and not first_user and not text.lstrip().startswith(("# AGENTS.md", "<INSTRUCTIONS>")):
+                    first_user = text.strip()[:240]
+
+        elif t == "event_msg":
+            et = (payload.get("type") or "").lower()
+            if et == "user_message":
+                counts["user"] += 1
+                msg = (payload.get("message") or "").strip()
+                if msg and not first_user:
+                    first_user = msg[:240]
+            elif et == "agent_message":
+                counts["assistant"] += 1
+            elif et == "task_started":
+                counts["task"] += 1
+                events.append({
+                    "role": "event",
+                    "time": display_time(ts, payload.get("turn_id")),
+                    "id": payload.get("turn_id") or "",
+                    "text": f"task_started\nid: {payload.get('turn_id') or ''}\nmodel_context_window: {payload.get('model_context_window') or ''}",
+                    "model": "",
+                    "meta": "task",
+                    "images": [],
+                    "html": "",
+                })
+            elif et == "task_complete":
+                events.append({
+                    "role": "event",
+                    "time": display_time(ts, payload.get("turn_id")),
+                    "id": payload.get("turn_id") or "",
+                    "text": (
+                        f"task_complete\nid: {payload.get('turn_id') or ''}\n"
+                        f"duration_ms: {payload.get('duration_ms')}\n"
+                        f"ttft_ms: {payload.get('time_to_first_token_ms')}\n"
+                        f"{(payload.get('last_agent_message') or '')[:500]}"
+                    ),
+                    "model": "",
+                    "meta": "task",
+                    "images": [],
+                    "html": "",
+                })
+            elif et == "token_count":
+                token_events += 1
+                info = payload.get("info") if isinstance(payload.get("info"), dict) else {}
+                total = info.get("total_token_usage") if isinstance(info.get("total_token_usage"), dict) else {}
+                last = info.get("last_token_usage") if isinstance(info.get("last_token_usage"), dict) else {}
+                if total:
+                    last_total = total
+                if last:
+                    sum_last["input"] += int(last.get("input_tokens") or 0)
+                    sum_last["output"] += int(last.get("output_tokens") or 0)
+                    sum_last["cached"] += int(last.get("cached_input_tokens") or 0)
+                    sum_last["reasoning"] += int(last.get("reasoning_output_tokens") or 0)
+                    sum_last["total"] += int(last.get("total_tokens") or 0)
+                if info.get("model_context_window"):
+                    context_window = int(info["model_context_window"])
+                # Approximate context used from last step total
+                if last.get("total_tokens"):
+                    context_used = int(last["total_tokens"])
+                rl = payload.get("rate_limits") if isinstance(payload.get("rate_limits"), dict) else {}
+                if rl.get("plan_type"):
+                    plan_type = rl.get("plan_type") or plan_type
+            elif et == "thread_settings_applied":
+                settings = payload.get("thread_settings") if isinstance(payload.get("thread_settings"), dict) else {}
+                model = settings.get("model") or model
+                cwd = settings.get("cwd") or cwd
+                effort = settings.get("reasoning_effort") or effort
+                personality = settings.get("personality") or personality
+                approval = settings.get("approval_policy") or approval
+                sp = settings.get("sandbox_policy") or settings.get("permission_profile")
+                if isinstance(sp, dict):
+                    sandbox = sp.get("type") or sandbox
+            elif et == "patch_apply_end":
+                call_id = payload.get("call_id") or ""
+                changes = payload.get("changes") if isinstance(payload.get("changes"), dict) else {}
+                for fpath, ch in changes.items():
+                    ch = ch if isinstance(ch, dict) else {}
+                    patches.append({
+                        "hunk_id": call_id or fpath,
+                        "file_path": fpath,
+                        "event": ch.get("type") or ("ok" if payload.get("success") else "error"),
+                        "source": "patch_apply",
+                        "added": None,
+                        "removed": None,
+                        "start": None,
+                        "end": None,
+                        "prompt_index": None,
+                        "time": human_time(ts),
+                        "author_id": "",
+                        "diff": (ch.get("unified_diff") or "")[:400],
+                    })
+                stdout = (payload.get("stdout") or "")[:300]
+                events.append({
+                    "role": "event",
+                    "time": display_time(ts, call_id),
+                    "id": call_id,
+                    "text": f"patch_apply_end · success={payload.get('success')}\n{stdout}\nfiles: {', '.join(list(changes)[:12])}",
+                    "model": "",
+                    "meta": "patch",
+                    "images": [],
+                    "html": "",
+                })
+            elif et == "image_generation_end":
+                events.append({
+                    "role": "event",
+                    "time": display_time(ts, payload.get("call_id")),
+                    "id": payload.get("call_id") or "",
+                    "text": (
+                        f"image_generation_end · {payload.get('status')}\n"
+                        f"saved: {payload.get('saved_path') or '—'}\n"
+                        f"{(payload.get('revised_prompt') or '')[:400]}"
+                    ),
+                    "model": "",
+                    "meta": "image",
+                    "images": [],
+                    "html": "",
+                })
+
+    # Token usage: cumulative total from last token_count (Codex running total)
+    tokens = _empty_token_usage()
+    if last_total:
+        tokens["input"] = int(last_total.get("input_tokens") or 0)
+        tokens["output"] = int(last_total.get("output_tokens") or 0)
+        tokens["cached"] = int(last_total.get("cached_input_tokens") or 0)
+        tokens["reasoning"] = int(last_total.get("reasoning_output_tokens") or 0)
+        tokens["total"] = int(last_total.get("total_tokens") or 0)
+        tokens["turns"] = token_events
+        tokens["model_calls"] = token_events
+        tokens["source"] = "rollout · last token_count.total_token_usage (cumulative)"
+    elif sum_last["input"] or sum_last["output"]:
+        tokens["input"] = sum_last["input"]
+        tokens["output"] = sum_last["output"]
+        tokens["cached"] = sum_last["cached"]
+        tokens["reasoning"] = sum_last["reasoning"]
+        tokens["total"] = sum_last["total"]
+        tokens["turns"] = token_events
+        tokens["source"] = "rollout · sum of token_count.last_token_usage"
+    if context_window:
+        tokens["context_window"] = context_window
+    if context_used is not None:
+        tokens["context_used"] = context_used
+    tokens = _finalize_token_usage(tokens)
+
+    # Settings rows for resources panel
+    for key, val in [
+        ("model", model),
+        ("provider", provider),
+        ("originator", originator),
+        ("cli_version", cli_version),
+        ("approval_policy", approval),
+        ("sandbox", sandbox),
+        ("reasoning_effort", effort),
+        ("personality", personality),
+        ("plan_type", plan_type),
+        ("cwd", cwd),
+    ]:
+        if val:
+            settings_rows.append({"tool": "session", "key": key, "value": str(val)})
+
+    if git:
+        for key in ("branch", "commit_hash", "repository_url"):
+            if git.get(key):
+                settings_rows.append({"tool": "git", "key": key, "value": str(git[key])})
+
+    # Documents for the artifacts panel (collapsible + markdown), not plain other_state dumps
+    artifacts: list[dict] = []
+    if agents_md:
+        artifacts.append({
+            "id": "agents-md",
+            "title": "AGENTS.md",
+            "subtitle": agents_md_dir or cwd or "",
+            "kind": "markdown",
+            "text": agents_md,
+        })
+    base_inst = meta.get("base_instructions")
+    if isinstance(base_inst, dict) and base_inst.get("text"):
+        artifacts.append({
+            "id": "base-instructions",
+            "title": "Base instructions",
+            "subtitle": "session_meta",
+            "kind": "markdown",
+            "text": str(base_inst.get("text") or ""),
+        })
+    elif isinstance(base_inst, str) and base_inst.strip():
+        artifacts.append({
+            "id": "base-instructions",
+            "title": "Base instructions",
+            "subtitle": "session_meta",
+            "kind": "markdown",
+            "text": base_inst,
+        })
+
+    titles = load_codex_session_index()
+    sid = meta.get("id") or meta.get("session_id") or path.stem
+    m = re.search(
+        r"([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$",
+        path.stem,
+        re.I,
+    )
+    if m:
+        sid = meta.get("id") or meta.get("session_id") or m.group(1)
+    title = (titles.get(str(sid)) or {}).get("thread_name") or first_user or path.name
+
+    summary = {
+        "id": sid,
+        "title": str(title)[:160],
+        "session_summary": first_user,
+        "cwd": cwd or meta.get("cwd") or "",
+        "created": human_time(created or meta.get("timestamp")),
+        "updated": human_time(updated),
+        "model": model,
+        "agent_name": originator or "codex",
+        "sandbox_profile": sandbox,
+        "reasoning_effort": effort,
+        "num_messages": counts["lines"],
+        "num_chat_messages": counts["user"] + counts["assistant"],
+        "request_id": str(sid),
+        "head_branch": (git.get("branch") or ""),
+        "head_commit": (git.get("commit_hash") or "")[:12],
+        "git_root_dir": git.get("repository_url") or "",
+        "tokens": tokens,
+        "personality": personality,
+        "cli_version": cli_version,
+        "plan_type": plan_type,
+        "counts": counts,
+    }
+
+    resources = {
+        "todos": [],
+        "scheduler_tasks": [],
+        "reported_completions": [],
+        "settings": settings_rows,
+        "other_state": [],
+    }
+
+    return {
+        "summary": summary,
+        "resources": resources,
+        "hunks": patches,
+        "events": events,
+        "artifacts": artifacts,
+        "meta": meta,
+    }
+
+
+def codex_summary_card(path: Path) -> dict:
+    return codex_scan_session(path)["summary"]
+
+
+def get_codex_conversation(path: Path) -> list[dict]:
+    """
+    Full Codex rollout transcript:
+    - event_msg user/agent messages (chat)
+    - response_item reasoning / tools
+    - developer / AGENTS.md injections as system
+    - patch / image events
+    """
+    turns: list[dict] = []
+    idx = 0
+    session_cwd = None
+
+    # Light cwd for image path resolution
+    try:
+        for obj in iter_codex_rollout(path):
+            if obj.get("type") == "session_meta":
+                p = obj.get("payload") or {}
+                session_cwd = p.get("cwd")
+                break
+    except Exception:
+        pass
+
+    def content_pair(raw: Any, extra_images: Any = None) -> tuple[str, list[dict]]:
+        return extract_text_and_images(
+            raw,
+            extra_images=extra_images,
+            session_dir=path.parent if path.is_file() else path,
+            cwd=session_cwd,
+        )
+
+    def tool_output_text(output: Any) -> str:
+        if output is None:
+            return ""
+        if isinstance(output, str):
+            return output
+        if isinstance(output, list):
+            return extract_text(output)
+        if isinstance(output, dict):
+            return extract_text(output.get("content") or output.get("text") or output)
+        return str(output)
+
+    try:
+        for obj in iter_codex_rollout(path):
+            idx += 1
+            seq = f"#{idx}"
+            ts_raw = obj.get("timestamp")
+            t = obj.get("type")
+            payload = obj.get("payload") if isinstance(obj.get("payload"), dict) else {}
+
+            if t == "response_item":
+                ptype = payload.get("type")
+
+                if ptype == "reasoning":
+                    rid = payload.get("id") or seq
+                    summary_parts = []
+                    for block in payload.get("summary") or []:
+                        if isinstance(block, dict):
+                            summary_parts.append(block.get("text") or extract_text(block))
+                        else:
+                            summary_parts.append(str(block))
+                    summary_text = "\n".join(p for p in summary_parts if p and str(p).strip())
+                    body = []
+                    if summary_text:
+                        body.append(summary_text)
+                    if payload.get("encrypted_content"):
+                        body.append("<encrypted>")
+                    if not body:
+                        body.append(
+                            "<encrypted>"
+                            if payload.get("encrypted_content") is not None
+                            else "(empty reasoning)"
+                        )
+                    turns.append(make_turn(
+                        role="reasoning",
+                        time=display_time(ts_raw, rid),
+                        id=rid,
+                        text="\n".join(body),
+                        meta="reasoning",
+                    ))
+                    continue
+
+                if ptype == "message":
+                    role = (payload.get("role") or "event").lower()
+                    text, images = content_pair(payload.get("content"))
+                    if not text.strip() and not images:
+                        continue
+                    # Skip assistant/user response_item duplicates of event_msg chat;
+                    # still show developer + injected project instructions.
+                    if role == "assistant":
+                        continue
+                    if role == "user":
+                        stripped = text.lstrip()
+                        if stripped.startswith(("# AGENTS.md", "<INSTRUCTIONS>", "# ")):
+                            turns.append(make_turn(
+                                role="system",
+                                time=display_time(ts_raw, seq),
+                                id=seq,
+                                text=text,
+                                meta="project_instructions",
+                                images=images,
+                            ))
+                        # else: prefer event_msg user_message
+                        continue
+                    if role == "developer":
+                        turns.append(make_turn(
+                            role="system",
+                            time=display_time(ts_raw, seq),
+                            id=seq,
+                            text=text,
+                            meta="developer",
+                            images=images,
+                        ))
+                        continue
+                    turns.append(make_turn(
+                        role=role,
+                        time=display_time(ts_raw, seq),
+                        id=seq,
+                        text=text,
+                        images=images,
+                    ))
+                    continue
+
+                if ptype in ("function_call", "custom_tool_call", "local_shell_call"):
+                    name = payload.get("name") or "tool"
+                    call_id = payload.get("call_id") or payload.get("id") or ""
+                    args = payload.get("arguments") or payload.get("input") or ""
+                    if not isinstance(args, str):
+                        args = pretty_json(args)
+                    body = f"{name}\nid: {call_id}\n{args}".strip()
+                    _, imgs = content_pair(body)
+                    turns.append(make_turn(
+                        role="tool_call",
+                        time=display_time(ts_raw, call_id or seq),
+                        id=call_id or seq,
+                        text=body,
+                        meta=name,
+                        images=imgs,
+                    ))
+                    continue
+
+                if ptype in ("function_call_output", "custom_tool_call_output"):
+                    call_id = payload.get("call_id") or payload.get("id") or ""
+                    out = tool_output_text(payload.get("output"))
+                    text, imgs = content_pair(out)
+                    turns.append(make_turn(
+                        role="tool_result",
+                        time=display_time(ts_raw, call_id or seq),
+                        id=call_id or seq,
+                        text=text or "(empty tool result)",
+                        meta=call_id,
+                        images=imgs,
+                    ))
+                    continue
+
+            elif t == "event_msg":
+                et = (payload.get("type") or "").lower()
+
+                if et == "user_message":
+                    msg = payload.get("message") or payload.get("text") or ""
+                    imgs_raw = []
+                    for key in ("images", "local_images"):
+                        val = payload.get(key)
+                        if isinstance(val, list):
+                            imgs_raw.extend(val)
+                    text, images = content_pair(msg, imgs_raw if imgs_raw else None)
+                    # Also attach local file paths as file images
+                    for pth in imgs_raw:
+                        if isinstance(pth, str) and pth and not any(
+                            (im.get("path") == pth or im.get("url") == pth) for im in images
+                        ):
+                            if pth.startswith("data:image"):
+                                images.append(image_ref_data(pth))
+                            else:
+                                images.append(image_ref_file(pth, pth))
+                    if text.strip() or images:
+                        turns.append(make_turn(
+                            role="user",
+                            time=display_time(ts_raw, seq),
+                            id=seq,
+                            text=text or "(image)",
+                            images=images,
+                        ))
+                    continue
+
+                if et == "agent_message":
+                    msg = payload.get("message") or payload.get("text") or ""
+                    phase = payload.get("phase") or ""
+                    if msg:
+                        turns.append(make_turn(
+                            role="assistant",
+                            time=display_time(ts_raw, seq),
+                            id=seq,
+                            text=str(msg),
+                            meta=phase,
+                        ))
+                    continue
+
+                if et == "patch_apply_end":
+                    call_id = payload.get("call_id") or seq
+                    changes = payload.get("changes") if isinstance(payload.get("changes"), dict) else {}
+                    lines = [
+                        f"patch_apply · success={payload.get('success')}",
+                        f"id: {call_id}",
+                    ]
+                    if payload.get("stdout"):
+                        lines.append(str(payload.get("stdout"))[:800])
+                    for fpath, ch in list(changes.items())[:30]:
+                        ch = ch if isinstance(ch, dict) else {}
+                        lines.append(f"\n{ch.get('type') or 'edit'}: {fpath}")
+                        diff = ch.get("unified_diff") or ""
+                        if diff:
+                            lines.append(diff[:600] + ("…" if len(diff) > 600 else ""))
+                    turns.append(make_turn(
+                        role="event",
+                        time=display_time(ts_raw, call_id),
+                        id=call_id,
+                        text="\n".join(lines),
+                        meta="patch",
+                    ))
+                    continue
+
+                if et == "image_generation_end":
+                    call_id = payload.get("call_id") or seq
+                    saved = payload.get("saved_path") or ""
+                    text = (
+                        f"image_generation · {payload.get('status')}\n"
+                        f"id: {call_id}\n"
+                        f"saved: {saved}\n"
+                        f"{(payload.get('revised_prompt') or '')[:500]}"
+                    )
+                    images = []
+                    if saved:
+                        images.append(image_ref_file(str(saved), str(saved)))
+                    turns.append(make_turn(
+                        role="event",
+                        time=display_time(ts_raw, call_id),
+                        id=call_id,
+                        text=text,
+                        meta="image",
+                        images=images,
+                    ))
+                    continue
+
+                if et in ("task_started", "task_complete", "turn_aborted"):
+                    turn_id = payload.get("turn_id") or seq
+                    extra = ""
+                    if et == "task_complete":
+                        extra = (
+                            f"\nduration_ms: {payload.get('duration_ms')}"
+                            f"\nttft_ms: {payload.get('time_to_first_token_ms')}"
+                        )
+                        if payload.get("last_agent_message"):
+                            extra += f"\n{(payload.get('last_agent_message') or '')[:400]}"
+                    turns.append(make_turn(
+                        role="event",
+                        time=display_time(ts_raw, turn_id),
+                        id=turn_id,
+                        text=f"{et}\nid: {turn_id}{extra}",
+                        meta="task",
+                    ))
+                    continue
+
+            elif t == "world_state" and payload.get("full"):
+                state = payload.get("state") if isinstance(payload.get("state"), dict) else {}
+                amd = state.get("agents_md") if isinstance(state.get("agents_md"), dict) else {}
+                if amd.get("text"):
+                    turns.append(make_turn(
+                        role="system",
+                        time=display_time(ts_raw, seq),
+                        id=seq,
+                        text=f"# AGENTS.md ({amd.get('directory') or ''})\n\n{amd.get('text')}",
+                        meta="agents_md",
+                    ))
+                continue
+
+    except Exception:
+        pass
+
+    return turns
+
+
 def get_conversation(agent: str, path: Path) -> list[dict]:
     turns: list[dict] = []
 
@@ -1512,71 +2302,16 @@ def get_conversation(agent: str, path: Path) -> list[dict]:
                 role = (msg.get("role") or obj.get("type")).lower()
                 text = extract_text(msg.get("content"))
                 if text.strip():
-                    turns.append({
-                        "role": role,
-                        "time": display_time(obj.get("timestamp")),
-                        "id": "",
-                        "text": text,
-                        "model": msg.get("model", ""),
-                        "meta": "",
-                    })
+                    turns.append(make_turn(
+                        role=role,
+                        time=display_time(obj.get("timestamp")),
+                        text=text,
+                        model=msg.get("model", "") or "",
+                    ))
+        return turns
 
-    elif agent == "codex":
-        with path.open(encoding="utf-8", errors="replace") as fh:
-            for line in fh:
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    obj = json.loads(line)
-                except Exception:
-                    continue
-                t = obj.get("type")
-                payload = obj.get("payload") or {}
-                ts = display_time(obj.get("timestamp"))
-
-                if t == "response_item":
-                    ptype = payload.get("type")
-                    if ptype == "message":
-                        role = (payload.get("role") or "?").lower()
-                        text = extract_text(payload.get("content"))
-                        if text and not text.strip().startswith(("<", "environment_context")):
-                            turns.append({"role": role, "time": ts, "id": "", "text": text, "model": "", "meta": ""})
-                    elif ptype in ("function_call", "custom_tool_call", "local_shell_call"):
-                        name = payload.get("name") or "tool"
-                        call_id = payload.get("id") or payload.get("call_id") or ""
-                        args = payload.get("arguments") or payload.get("input") or ""
-                        turns.append({
-                            "role": "tool_call",
-                            "time": display_time(obj.get("timestamp"), call_id),
-                            "id": call_id,
-                            "text": f"{name}\nid: {call_id}\n{args}",
-                            "model": "",
-                            "meta": name,
-                        })
-                    elif ptype in ("function_call_output", "custom_tool_call_output"):
-                        call_id = payload.get("call_id") or payload.get("id") or ""
-                        turns.append({
-                            "role": "tool_result",
-                            "time": display_time(obj.get("timestamp"), call_id),
-                            "id": call_id,
-                            "text": str(payload.get("output") or ""),
-                            "model": "",
-                            "meta": call_id,
-                        })
-                elif t == "event_msg":
-                    et = (payload.get("type") or "").lower()
-                    if et in ("user_message", "agent_message"):
-                        msg = payload.get("message") or payload.get("text") or ""
-                        if msg:
-                            turns.append({
-                                "role": "user" if "user" in et else "assistant",
-                                "time": ts,
-                                "id": "",
-                                "text": str(msg),
-                                "model": "",
-                                "meta": "",
-                            })
+    if agent == "codex":
+        return get_codex_conversation(path)
 
     return turns
 
@@ -1634,8 +2369,11 @@ BASE = """
       --accent: #6c9eff;
       --user-bg: #1e3a5f;
       --assistant-bg: #1a2e28;
-      --tool-bg: #2a2418;
-      --tool-border: #5c4a2a;
+      /* Tool bubbles: cool slate-indigo (matches accent), not warm brown */
+      --tool-bg: #1a2332;
+      --tool-border: #3a4d6b;
+      --tool-result-bg: #17242c;
+      --tool-result-border: #35565c;
       --reason-bg: #1a1a2e;
       --reason-border: #3d3d6b;
       --system-bg: #1a1d24;
@@ -1850,7 +2588,31 @@ BASE = """
     .artifact-list li:last-child { border-bottom: none; }
     .artifact-list .sub { color: var(--muted); font-size: 0.75rem; margin-top: 0.15rem; font-family: inherit; }
 
-    .tabs { display: flex; gap: 0.4rem; margin: 1.25rem 0 1rem; flex-wrap: wrap; }
+    .artifact-docs { display: flex; flex-direction: column; gap: 0.85rem; margin-top: 0.65rem; }
+    .artifact-doc {
+      border: 1px solid var(--border); border-radius: 10px; background: #12161f;
+      overflow: hidden;
+    }
+    .artifact-doc-head {
+      display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
+      gap: 0.5rem 0.75rem;
+      padding: 0.55rem 0.85rem; border-bottom: 1px solid var(--border);
+      background: #1a2030; font-size: 0.88rem;
+    }
+    .artifact-doc-head-main {
+      display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.75rem; min-width: 0;
+    }
+    .artifact-doc-head .sub {
+      color: var(--muted); font-size: 0.78rem;
+      font-family: ui-monospace, Menlo, Consolas, monospace;
+    }
+    .artifact-doc-body { padding: 0.75rem 0.9rem 0.85rem; }
+
+    .tabs-row {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 0.75rem; flex-wrap: wrap; margin: 1.25rem 0 1rem;
+    }
+    .tabs { display: flex; gap: 0.4rem; flex-wrap: wrap; margin: 0; }
     .tabs a, .tabs button {
       padding: 0.4rem 0.9rem; border-radius: 8px; border: 1px solid var(--border);
       background: var(--card); color: var(--muted); text-decoration: none; font-size: 0.85rem; cursor: pointer;
@@ -1858,14 +2620,20 @@ BASE = """
     .tabs a.active, .tabs button.active {
       background: var(--accent); color: #0c0e12; border-color: var(--accent); font-weight: 600;
     }
+    .chat-toolbar {
+      display: flex; gap: 0.45rem; flex-wrap: wrap; margin-left: auto;
+    }
+    .chat-toolbar .btn { font-size: 0.82rem; padding: 0.35rem 0.75rem; }
     .tab-panel { display: none; }
     .tab-panel.active { display: block; }
 
     .chat { display: flex; flex-direction: column; gap: 1.1rem; }
     .bubble {
-      max-width: 92%; padding: 0.9rem 1.15rem; border-radius: 14px;
+      max-width: 92%; padding: 0; border-radius: 14px;
       border: 1px solid var(--border); position: relative;
+      /* Do not set overflow:hidden/clip — it breaks position:sticky headers */
     }
+    .bubble-body { padding: 0.75rem 1.15rem 0.9rem; }
     .bubble.user { align-self: flex-end; background: var(--user-bg); border-bottom-right-radius: 4px; }
     .bubble.assistant, .bubble.agent_message {
       align-self: flex-start; background: var(--assistant-bg); border-bottom-left-radius: 4px;
@@ -1878,14 +2646,37 @@ BASE = """
       align-self: stretch; max-width: 100%; background: var(--system-bg);
       border-radius: 10px; font-size: 0.85rem; opacity: 0.92;
     }
-    .bubble.tool_call, .bubble.tool_result, .bubble.event {
+    .bubble.tool_call, .bubble.event {
       align-self: stretch; max-width: 100%; background: var(--tool-bg);
       border-color: var(--tool-border); border-radius: 10px; font-size: 0.88rem;
     }
-    .bubble-header {
-      display: flex; gap: 0.75rem; align-items: center; margin-bottom: 0.45rem;
-      font-size: 0.78rem; color: var(--muted); flex-wrap: wrap;
+    .bubble.tool_result {
+      align-self: stretch; max-width: 100%; background: var(--tool-result-bg);
+      border-color: var(--tool-result-border); border-radius: 10px; font-size: 0.88rem;
     }
+    .bubble-header {
+      display: flex; gap: 0.75rem; align-items: center; justify-content: space-between;
+      font-size: 0.78rem; color: var(--muted); flex-wrap: wrap;
+      /* Stick under the site header while scrolling long blocks */
+      position: sticky;
+      top: 3.35rem;
+      z-index: 8;
+      padding: 0.55rem 1.15rem;
+      border-bottom: 1px solid rgba(42, 47, 58, 0.85);
+      box-shadow: 0 1px 0 rgba(0,0,0,0.15);
+    }
+    .bubble-header-main {
+      display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap; min-width: 0;
+    }
+    .bubble-header-actions {
+      display: flex; align-items: center; gap: 0.35rem; margin-left: auto; flex-shrink: 0;
+    }
+    .bubble.user .bubble-header { background: var(--user-bg); }
+    .bubble.assistant .bubble-header, .bubble.agent_message .bubble-header { background: var(--assistant-bg); }
+    .bubble.reasoning .bubble-header { background: var(--reason-bg); }
+    .bubble.system .bubble-header, .bubble.system_reminder .bubble-header { background: var(--system-bg); }
+    .bubble.tool_call .bubble-header, .bubble.event .bubble-header { background: var(--tool-bg); }
+    .bubble.tool_result .bubble-header { background: var(--tool-result-bg); }
     .bubble-header .role { font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; }
     .bubble-header .msgid {
       font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.72rem;
@@ -1894,8 +2685,41 @@ BASE = """
     .bubble.user .role { color: #93c5fd; }
     .bubble.assistant .role { color: #6ee7b7; }
     .bubble.reasoning .role { color: #c4b5fd; }
-    .bubble.tool_call .role, .bubble.tool_result .role { color: #fbbf24; }
+    .bubble.tool_call .role, .bubble.event .role { color: #8eb6ff; }
+    .bubble.tool_result .role { color: #7ec8c0; }
     .bubble.system .role, .bubble.system_reminder .role { color: #9ca3af; }
+
+    .copy-menu { position: relative; }
+    .copy-btn {
+      display: inline-flex; align-items: center; gap: 0.25rem;
+      padding: 0.2rem 0.55rem; border-radius: 6px;
+      border: 1px solid var(--border); background: #0c0e1288;
+      color: var(--muted); font-size: 0.72rem; font-weight: 600;
+      cursor: pointer; letter-spacing: 0.02em;
+    }
+    .copy-btn:hover, .copy-menu.open .copy-btn {
+      color: var(--accent); border-color: var(--accent);
+    }
+    .copy-menu-panel {
+      position: absolute; right: 0; top: calc(100% + 4px);
+      min-width: 9.5rem; z-index: 20;
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+      padding: 0.3rem; display: none;
+    }
+    .copy-menu.open .copy-menu-panel { display: block; }
+    .copy-menu-panel button {
+      display: block; width: 100%; text-align: left;
+      padding: 0.4rem 0.6rem; border: none; border-radius: 6px;
+      background: transparent; color: var(--text);
+      font-size: 0.8rem; cursor: pointer;
+    }
+    .copy-menu-panel button:hover {
+      background: #6c9eff22; color: var(--accent);
+    }
+    .copy-menu-panel .copy-hint {
+      padding: 0.25rem 0.6rem 0.35rem; font-size: 0.68rem; color: var(--muted);
+    }
     .bubble-text {
       white-space: pre-wrap; word-break: break-word;
       font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
@@ -2037,11 +2861,37 @@ BASE = """
     }
     .copy-toast.show { opacity: 1; }
 
-    details.tool-details { margin-top: 0.3rem; }
-    details.tool-details summary {
-      cursor: pointer; color: var(--muted); font-size: 0.8rem; user-select: none;
+    /* In-place expand/collapse — one content copy, no duplicate snippet */
+    .fold { margin: 0; }
+    .fold-body {
+      position: relative;
+      transition: max-height 0.15s ease;
     }
-    details.tool-details summary:hover { color: var(--accent); }
+    .fold[data-collapsed="true"] .fold-body {
+      max-height: 14rem;
+      overflow: hidden;
+      -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 62%, transparent 100%);
+      mask-image: linear-gradient(to bottom, #000 0%, #000 62%, transparent 100%);
+    }
+    .fold[data-collapsed="false"] .fold-body {
+      max-height: none;
+      overflow: visible;
+      -webkit-mask-image: none;
+      mask-image: none;
+    }
+    .fold-toggle {
+      display: inline-flex; align-items: center; gap: 0.4rem;
+      margin-top: 0.55rem; padding: 0.3rem 0.7rem;
+      border-radius: 999px; border: 1px solid var(--border);
+      background: #0c0e1288; color: var(--accent);
+      font-size: 0.8rem; font-weight: 500; cursor: pointer;
+    }
+    .fold-toggle:hover {
+      border-color: var(--accent); background: #6c9eff22;
+    }
+    .fold-toggle .fold-chars {
+      color: var(--muted); font-weight: 400; font-size: 0.75rem;
+    }
 
     .empty { text-align: center; color: var(--muted); padding: 3.5rem 1rem; }
     footer { text-align: center; padding: 1.5rem; color: var(--muted); font-size: 0.8rem; }
@@ -2154,42 +3004,75 @@ BUBBLE_PARTIAL = """
 
 {% macro render_md_block(text, html='', extra_class='') %}
   <div class="md-block{{ (' ' ~ extra_class) if extra_class else '' }}">
-    <script type="application/json" class="md-src">{{ text|tojson }}</script>
+    {# Hidden textarea avoids <script> parsing issues with quotes/newlines in transcript text #}
+    <textarea class="md-src" hidden readonly>{{ text }}</textarea>
     <div class="bubble-text md-plain">{% if html %}{{ html|safe }}{% else %}{{ text }}{% endif %}</div>
     <div class="bubble-text md-rich markdown-body" hidden></div>
   </div>
 {% endmacro %}
 
+{% macro render_foldable(text, html='') %}
+  {# One full copy of the content; CSS clips when collapsed — no duplicate snippet. #}
+  {% if text and text|length > 500 %}
+  <div class="fold" data-collapsed="true">
+    <div class="fold-body">
+      {{ render_md_block(text, html) }}
+    </div>
+    <button type="button" class="fold-toggle" aria-expanded="false">
+      <span class="fold-label-more">Show full</span>
+      <span class="fold-label-less" hidden>Show less</span>
+      <span class="fold-chars">{{ text|length }} chars</span>
+    </button>
+  </div>
+  {% else %}
+    {{ render_md_block(text, html) }}
+  {% endif %}
+{% endmacro %}
+
 {% macro render_bubbles(turns) %}
 <div class="chat">
   {% for t in turns %}
-  <div class="bubble {{ t.role.split(' ')[0] }}">
+  {% set raw_text = t.text.replace('<encrypted>', '') if t.role == 'reasoning' else t.text %}
+  <div class="bubble {{ t.role.split(' ')[0] }}"
+       data-role={{ (t.role or '')|tojson }}
+       data-time={{ (t.time or '')|tojson }}
+       data-id={{ (t.id or '')|tojson }}
+       data-model={{ (t.model or '')|tojson }}
+       data-meta={{ (t.meta or '')|tojson }}>
     <div class="bubble-header">
-      <span class="role">{{ t.role }}</span>
-      {% if t.time %}<span>{{ t.time }}</span>{% endif %}
-      {% if t.id %}<span class="msgid">{{ t.id }}</span>{% endif %}
-      {% if t.model %}<span>{{ t.model }}</span>{% endif %}
-      {% if t.meta %}<span>{{ t.meta }}</span>{% endif %}
+      <div class="bubble-header-main">
+        <span class="role">{{ t.role }}</span>
+        {% if t.time %}<span>{{ t.time }}</span>{% endif %}
+        {% if t.id %}<span class="msgid">{{ t.id }}</span>{% endif %}
+        {% if t.model %}<span>{{ t.model }}</span>{% endif %}
+        {% if t.meta %}<span>{{ t.meta }}</span>{% endif %}
+      </div>
+      <div class="bubble-header-actions">
+        <div class="copy-menu">
+          <button type="button" class="copy-btn" aria-haspopup="menu" aria-expanded="false" title="Copy block">
+            Copy ▾
+          </button>
+          <div class="copy-menu-panel" role="menu">
+            <div class="copy-hint">Copy this block</div>
+            <button type="button" role="menuitem" data-copy="markdown">As Markdown</button>
+            <button type="button" role="menuitem" data-copy="raw">As raw text</button>
+          </div>
+        </div>
+      </div>
     </div>
 
-    {{ render_images(t.images) }}
+    <div class="bubble-body">
+      {{ render_images(t.images) }}
 
-    {% if t.role in ('tool_call', 'tool_result', 'system', 'system_reminder') and t.text|length > 500 %}
-      {{ render_md_block(t.text[:350] ~ '…', '') }}
-      <details class="tool-details">
-        <summary>Show full ({{ t.text|length }} chars)</summary>
-        <div style="margin-top:0.6rem;">
-          {{ render_md_block(t.text, t.html or '') }}
-        </div>
-      </details>
-    {% elif t.role == 'reasoning' %}
-      {{ render_md_block(t.text.replace('<encrypted>', ''), '') }}
-      {% if '<encrypted>' in t.text %}
-        <span class="encrypted-tag">&lt;encrypted&gt;</span>
+      {% if t.role == 'reasoning' %}
+        {{ render_foldable(raw_text, '') }}
+        {% if '<encrypted>' in t.text %}
+          <span class="encrypted-tag">&lt;encrypted&gt;</span>
+        {% endif %}
+      {% else %}
+        {{ render_foldable(t.text, t.html or '') }}
       {% endif %}
-    {% else %}
-      {{ render_md_block(t.text, t.html or '') }}
-    {% endif %}
+    </div>
   </div>
   {% endfor %}
 </div>
@@ -2234,6 +3117,15 @@ VIEW_TEMPLATE = BUBBLE_PARTIAL + """
     {% endif %}
     {% if summary.head_branch %}
     <div><div class="label">Branch</div><div class="value">{{ summary.head_branch }}{% if summary.head_commit %} @ {{ summary.head_commit }}{% endif %}</div></div>
+    {% endif %}
+    {% if summary.personality %}
+    <div><div class="label">Personality</div><div class="value">{{ summary.personality }}</div></div>
+    {% endif %}
+    {% if summary.cli_version %}
+    <div><div class="label">CLI</div><div class="value">{{ summary.cli_version }}</div></div>
+    {% endif %}
+    {% if summary.plan_type %}
+    <div><div class="label">Plan</div><div class="value">{{ summary.plan_type }}</div></div>
     {% endif %}
   </div>
   {% if summary.cwd %}
@@ -2394,13 +3286,52 @@ VIEW_TEMPLATE = BUBBLE_PARTIAL + """
 </div>
 {% endif %}
 
-{% if hunks or terminal_logs or recaps %}
+{% if artifacts or hunks or terminal_logs or recaps %}
 <div class="panel">
   <h3>Session artifacts</h3>
 
+  {% if artifacts %}
+  <details open>
+    <summary>Documents ({{ artifacts|length }})</summary>
+    <div class="artifact-docs">
+      {% for a in artifacts %}
+      <div class="artifact-doc"
+           data-role={{ (a.title or 'document')|tojson }}
+           data-time=""
+           data-id={{ (a.id or '')|tojson }}
+           data-model=""
+           data-meta={{ (a.subtitle or a.kind or '')|tojson }}>
+        <div class="artifact-doc-head">
+          <div class="artifact-doc-head-main">
+            <strong>{{ a.title }}</strong>
+            {% if a.subtitle %}<span class="sub">{{ a.subtitle }}</span>{% endif %}
+            {% if a.kind %}<span class="msgid">{{ a.kind }}</span>{% endif %}
+          </div>
+          <div class="bubble-header-actions">
+            <div class="copy-menu">
+              <button type="button" class="copy-btn" aria-haspopup="menu" aria-expanded="false" title="Copy document">
+                Copy ▾
+              </button>
+              <div class="copy-menu-panel" role="menu">
+                <div class="copy-hint">Copy this document</div>
+                <button type="button" role="menuitem" data-copy="markdown">As Markdown</button>
+                <button type="button" role="menuitem" data-copy="raw">As raw text</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="artifact-doc-body">
+          {{ render_foldable(a.text or '', '') }}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </details>
+  {% endif %}
+
   {% if hunks %}
-  <details {% if hunks|length <= 12 %}open{% endif %}>
-    <summary>Hunk records ({{ hunks|length }}) · file edits</summary>
+  <details style="margin-top:0.6rem;" {% if hunks|length <= 12 and not artifacts %}open{% endif %}>
+    <summary>{% if agent == 'codex' %}Patches{% else %}Hunk records{% endif %} ({{ hunks|length }}) · file edits</summary>
     <ul class="artifact-list">
       {% for h in hunks %}
       <li>
@@ -2452,11 +3383,19 @@ VIEW_TEMPLATE = BUBBLE_PARTIAL + """
 </div>
 {% endif %}
 
-<div class="tabs" id="view-tabs">
-  <button type="button" class="active" data-tab="chat">Chat history ({{ turns|length }})</button>
-  {% if updates is not none %}
-  <button type="button" data-tab="updates">Updates stream ({{ updates|length }})</button>
-  {% endif %}
+<div class="tabs-row">
+  <div class="tabs" id="view-tabs">
+    <button type="button" class="active" data-tab="chat">Chat history ({{ turns|length }})</button>
+    {% if updates is not none %}
+    <button type="button" data-tab="updates">
+      {% if agent == 'codex' %}Events timeline ({{ updates|length }}){% else %}Updates stream ({{ updates|length }}){% endif %}
+    </button>
+    {% endif %}
+  </div>
+  <div class="chat-toolbar">
+    <button type="button" class="btn" id="expand-all" title="Expand all folded blocks">Expand all</button>
+    <button type="button" class="btn" id="collapse-all" title="Collapse all folded blocks">Collapse all</button>
+  </div>
 </div>
 
 <div id="tab-chat" class="tab-panel active">
@@ -2471,11 +3410,15 @@ VIEW_TEMPLATE = BUBBLE_PARTIAL + """
 <div id="tab-updates" class="tab-panel">
   {% if updates %}
     <p style="color:var(--muted); font-size:0.85rem; margin:0 0 1rem;">
+      {% if agent == 'codex' %}
+      Task / patch / image events from the Codex rollout (not the full chat — see Chat history).
+      {% else %}
       Aggregated from <code>updates.jsonl</code> (stream chunks collapsed; tool ids preserved).
+      {% endif %}
     </p>
     {{ render_bubbles(updates) }}
   {% else %}
-    <div class="empty">No updates.jsonl events found.</div>
+    <div class="empty">{% if agent == 'codex' %}No timeline events found.{% else %}No updates.jsonl events found.{% endif %}</div>
   {% endif %}
 </div>
 {% endif %}
@@ -2550,27 +3493,183 @@ VIEW_TEMPLATE = BUBBLE_PARTIAL + """
     copyImageToClipboard(img);
   });
 
-  // ── Markdown toggle ──────────────────────────────────────
-  const mdToggle = document.getElementById('md-toggle');
-  if (!mdToggle || typeof marked === 'undefined') return;
 
-  if (typeof marked.use === 'function') {
-    marked.use({
-      gfm: true,
-      breaks: true,
+  // ── Fold / expand-all / copy (always — do not gate on marked CDN) ──
+  function setFoldCollapsed(fold, collapsed) {
+    if (!fold) return;
+    fold.setAttribute('data-collapsed', collapsed ? 'true' : 'false');
+    var btn = fold.querySelector('.fold-toggle');
+    if (!btn) return;
+    btn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+    var more = btn.querySelector('.fold-label-more');
+    var less = btn.querySelector('.fold-label-less');
+    if (more) more.hidden = !collapsed;
+    if (less) less.hidden = collapsed;
+  }
+
+  document.querySelectorAll('.fold-toggle').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var fold = btn.closest('.fold');
+      if (!fold) return;
+      var collapsed = fold.getAttribute('data-collapsed') !== 'false';
+      setFoldCollapsed(fold, !collapsed);
     });
-  } else if (marked.setOptions) {
-    marked.setOptions({ gfm: true, breaks: true });
+  });
+
+  function foldsInActiveTab() {
+    var active = document.querySelector('.tab-panel.active') || document;
+    return active.querySelectorAll('.fold');
+  }
+
+  var expandAll = document.getElementById('expand-all');
+  var collapseAll = document.getElementById('collapse-all');
+  if (expandAll) {
+    expandAll.addEventListener('click', function() {
+      foldsInActiveTab().forEach(function(f) { setFoldCollapsed(f, false); });
+    });
+  }
+  if (collapseAll) {
+    collapseAll.addEventListener('click', function() {
+      foldsInActiveTab().forEach(function(f) { setFoldCollapsed(f, true); });
+    });
+  }
+
+  function getBlockRoot(el) {
+    return el.closest('.bubble, .artifact-doc');
+  }
+
+  function getBubbleRawText(root) {
+    if (!root) return '';
+    var blocks = root.querySelectorAll('.md-block textarea.md-src, .md-block script.md-src');
+    if (!blocks.length) return '';
+    var best = '';
+    blocks.forEach(function(el) {
+      var t = '';
+      if (el.tagName === 'TEXTAREA') {
+        t = el.value || '';
+      } else {
+        try { t = JSON.parse(el.textContent || '""'); } catch (e) { t = el.textContent || ''; }
+      }
+      if (String(t).length >= best.length) best = String(t);
+    });
+    if (root.classList.contains('reasoning') && root.querySelector('.encrypted-tag')) {
+      if (best.indexOf('<encrypted>') === -1) {
+        best = best.replace(/\\s*$/, '') + '\\n<encrypted>';
+      }
+    }
+    return best;
+  }
+
+  function formatBubbleMarkdown(root, raw) {
+    if (!root) return raw || '';
+    var role = (root.dataset.role || 'message');
+    // Chat roles uppercase; document titles keep their casing
+    if (!root.classList.contains('artifact-doc')) {
+      role = String(role).toUpperCase();
+    }
+    var bits = [role];
+    if (root.dataset.time) bits.push(root.dataset.time);
+    if (root.dataset.id) bits.push('`' + root.dataset.id + '`');
+    if (root.dataset.model) bits.push(root.dataset.model);
+    if (root.dataset.meta) bits.push(root.dataset.meta);
+    return '### ' + bits.join(' · ') + '\\n\\n' + (raw || '') + '\\n';
+  }
+
+  function copyText(text, label) {
+    function ok() { showToast(label || 'Copied to clipboard'); }
+    function fail() { showToast('Copy failed'); }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(ok).catch(function() {
+        try {
+          var ta = document.createElement('textarea');
+          ta.value = text;
+          ta.style.position = 'fixed';
+          ta.style.left = '-9999px';
+          document.body.appendChild(ta);
+          ta.select();
+          document.execCommand('copy');
+          document.body.removeChild(ta);
+          ok();
+        } catch (e2) { fail(); }
+      });
+    } else {
+      try {
+        var ta2 = document.createElement('textarea');
+        ta2.value = text;
+        ta2.style.position = 'fixed';
+        ta2.style.left = '-9999px';
+        document.body.appendChild(ta2);
+        ta2.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta2);
+        ok();
+      } catch (e3) { fail(); }
+    }
+  }
+
+  function closeAllCopyMenus(except) {
+    document.querySelectorAll('.copy-menu.open').forEach(function(m) {
+      if (except && m === except) return;
+      m.classList.remove('open');
+      var b = m.querySelector('.copy-btn');
+      if (b) b.setAttribute('aria-expanded', 'false');
+    });
+  }
+
+  document.addEventListener('click', function(ev) {
+    var btn = ev.target.closest('.copy-btn');
+    if (btn) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      var menu = btn.closest('.copy-menu');
+      var open = menu.classList.contains('open');
+      closeAllCopyMenus();
+      if (!open) {
+        menu.classList.add('open');
+        btn.setAttribute('aria-expanded', 'true');
+      }
+      return;
+    }
+    var item = ev.target.closest('.copy-menu-panel [data-copy]');
+    if (item) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      var root = getBlockRoot(item);
+      var mode = item.getAttribute('data-copy');
+      var raw = getBubbleRawText(root);
+      if (mode === 'markdown') {
+        copyText(formatBubbleMarkdown(root, raw), 'Markdown copied');
+      } else {
+        copyText(raw, 'Raw text copied');
+      }
+      closeAllCopyMenus();
+      return;
+    }
+    if (!ev.target.closest('.copy-menu')) closeAllCopyMenus();
+  });
+
+  // ── Markdown toggle (optional — CDN may be offline) ──────
+  var mdToggle = document.getElementById('md-toggle');
+  var markedOk = (typeof marked !== 'undefined');
+
+  function isHashOnlyHref(href) {
+    if (!href) return true;
+    var h = String(href).trim();
+    return h.charAt(0) === '#' || h.indexOf('javascript:') === 0;
+  }
+
+  function stripHashOnlyLinks(html) {
+    return String(html)
+      .replace(/<a\\b([^>]*?)href\\s*=\\s*(["'])#(?:(?!\\2).)*\\2([^>]*)>([\\s\\S]*?)<\\/a>/gi, '$4')
+      .replace(/<a\\b([^>]*?)href\\s*=\\s*#([^\\s>]*)([^>]*)>([\\s\\S]*?)<\\/a>/gi, '$4');
   }
 
   function readSrc(block) {
-    const el = block.querySelector('script.md-src');
+    var el = block.querySelector('textarea.md-src, script.md-src');
     if (!el) return '';
-    try {
-      return JSON.parse(el.textContent || '""');
-    } catch (_) {
-      return el.textContent || '';
-    }
+    if (el.tagName === 'TEXTAREA') return el.value || '';
+    try { return JSON.parse(el.textContent || '""'); }
+    catch (e) { return el.textContent || ''; }
   }
 
   function escapeHtml(s) {
@@ -2585,9 +3684,7 @@ VIEW_TEMPLATE = BUBBLE_PARTIAL + """
     return String(src || '').replace(/\\r\\n/g, '\\n').replace(/\\r/g, '\\n');
   }
 
-  // Escape agent/XML tags so marked+DOMPurify do not strip them (and their newlines).
-  // Standard markdown HTML tags are left alone.
-  const MD_HTML_TAGS = {
+  var MD_HTML_TAGS = {
     a:1, abbr:1, b:1, blockquote:1, br:1, code:1, del:1, div:1, em:1,
     h1:1, h2:1, h3:1, h4:1, h5:1, h6:1, hr:1, i:1, img:1, input:1, li:1,
     ol:1, p:1, pre:1, s:1, span:1, strong:1, sub:1, sup:1, table:1,
@@ -2595,7 +3692,6 @@ VIEW_TEMPLATE = BUBBLE_PARTIAL + """
   };
 
   function escapeAgentTags(src) {
-    // Built with RegExp string so we avoid Python/JS slash-escaping fights
     var re = new RegExp('</?([A-Za-z][\\\\w:-]*)\\\\b[^>]*>', 'g');
     return src.replace(re, function(match, name) {
       if (MD_HTML_TAGS[String(name).toLowerCase()]) return match;
@@ -2607,10 +3703,9 @@ VIEW_TEMPLATE = BUBBLE_PARTIAL + """
     src = normalizeNewlines(src);
     var html = '';
     try {
-      // Tags like <system-reminder>, <user_info>, <user_query> become visible text;
-      // markdown inside (## headings, lists, **bold**) still renders.
       var prepared = escapeAgentTags(src);
       html = marked.parse(prepared);
+      html = stripHashOnlyLinks(html);
     } catch (err) {
       html = '<pre class="md-preserve">' + escapeHtml(src) + '</pre>';
     }
@@ -2620,17 +3715,18 @@ VIEW_TEMPLATE = BUBBLE_PARTIAL + """
         ADD_ATTR: ['target', 'rel', 'class'],
         ADD_TAGS: ['pre']
       });
+      html = stripHashOnlyLinks(html);
     }
     return html;
   }
 
   function setMarkdownMode(on) {
-    document.body.classList.toggle('md-on', on);
-    document.querySelectorAll('.md-block').forEach(block => {
-      const plain = block.querySelector('.md-plain');
-      const rich = block.querySelector('.md-rich');
+    document.body.classList.toggle('md-on', !!on);
+    document.querySelectorAll('.md-block').forEach(function(block) {
+      var plain = block.querySelector('.md-plain');
+      var rich = block.querySelector('.md-rich');
       if (!plain || !rich) return;
-      if (on) {
+      if (on && markedOk) {
         if (!rich.dataset.rendered) {
           rich.innerHTML = renderMarkdown(readSrc(block));
           rich.dataset.rendered = '1';
@@ -2644,29 +3740,52 @@ VIEW_TEMPLATE = BUBBLE_PARTIAL + """
     });
   }
 
-  // Default on; remember last choice
-  let prefer = true;
-  try {
-    const stored = localStorage.getItem(MD_KEY);
-    if (stored === '0') prefer = false;
-    if (stored === '1') prefer = true;
-  } catch (_) {}
+  if (mdToggle) {
+    if (markedOk && typeof marked.use === 'function') {
+      marked.use({
+        gfm: true,
+        breaks: true,
+        renderer: {
+          link: function(token) {
+            var href = token && token.href != null ? token.href : (arguments[0] || '');
+            var title = token && token.title != null ? token.title : (arguments[1] || '');
+            var text;
+            if (token && token.tokens && this.parser) {
+              text = this.parser.parseInline(token.tokens);
+            } else {
+              text = arguments[2] != null ? arguments[2] : String(href || '');
+            }
+            if (isHashOnlyHref(href)) return text;
+            var t = title ? ' title="' + escapeHtml(String(title)) + '"' : '';
+            return '<a href="' + escapeHtml(String(href)) + '"' + t + ' rel="noopener">' + text + '</a>';
+          }
+        }
+      });
+    } else if (markedOk && marked.setOptions) {
+      marked.setOptions({ gfm: true, breaks: true });
+    }
 
-  mdToggle.checked = prefer;
-  setMarkdownMode(prefer);
+    var prefer = true;
+    try {
+      var stored = localStorage.getItem(MD_KEY);
+      if (stored === '0') prefer = false;
+      if (stored === '1') prefer = true;
+    } catch (e) {}
 
-  mdToggle.addEventListener('change', () => {
-    const on = mdToggle.checked;
-    try { localStorage.setItem(MD_KEY, on ? '1' : '0'); } catch (_) {}
-    setMarkdownMode(on);
-  });
-
-  // Re-render when expanding long tool details (lazy content already in DOM)
-  document.querySelectorAll('details.tool-details').forEach(det => {
-    det.addEventListener('toggle', () => {
-      if (det.open && mdToggle.checked) setMarkdownMode(true);
+    if (!markedOk) {
+      prefer = false;
+      mdToggle.disabled = true;
+      mdToggle.title = 'Markdown library failed to load (CDN offline?)';
+    }
+    mdToggle.checked = prefer;
+    setMarkdownMode(prefer && markedOk);
+    mdToggle.addEventListener('change', function() {
+      var on = mdToggle.checked && markedOk;
+      try { localStorage.setItem(MD_KEY, mdToggle.checked ? '1' : '0'); } catch (e) {}
+      setMarkdownMode(on);
     });
-  });
+  }
+
 })();
 </script>
 """
@@ -2726,6 +3845,7 @@ def view():
 
     summary = None
     resources = None
+    artifacts = None
     hunks = None
     terminal_logs = None
     recaps = None
@@ -2735,10 +3855,36 @@ def view():
         summary = grok_summary_card(path)
         title = summary.get("title") or title
         resources = grok_resources(path)
+        artifacts = (resources or {}).get("artifacts") or []
         hunks = grok_hunk_records(path)
         terminal_logs = grok_terminal_logs(path)
         recaps = grok_recap_requests(path)
         updates = grok_updates_timeline(path)
+    elif agent == "codex" and path.is_file():
+        scan = codex_scan_session(path)
+        summary = scan["summary"]
+        title = summary.get("title") or title
+        resources = scan["resources"]
+        artifacts = scan.get("artifacts") or []
+        hunks = scan["hunks"]
+        # Reuse "updates" tab for Codex task/patch/image timeline
+        updates = scan["events"]
+        # Ensure timeline turns have html for markdown toggle
+        fixed = []
+        for ev in updates:
+            if "html" not in ev or not ev.get("html"):
+                fixed.append(make_turn(
+                    role=ev.get("role") or "event",
+                    text=ev.get("text") or "",
+                    time=ev.get("time") or "",
+                    id=ev.get("id") or "",
+                    model=ev.get("model") or "",
+                    meta=ev.get("meta") or "",
+                    images=ev.get("images"),
+                ))
+            else:
+                fixed.append(ev)
+        updates = fixed
 
     content = render_template_string(
         VIEW_TEMPLATE,
@@ -2748,6 +3894,7 @@ def view():
         turns=turns,
         summary=summary,
         resources=resources,
+        artifacts=artifacts,
         hunks=hunks,
         terminal_logs=terminal_logs,
         recaps=recaps,
@@ -2805,6 +3952,31 @@ def export_md():
                 mark = "x" if t["status"] == "completed" else " "
                 lines.append(f"- [{mark}] `{t['id']}` {t['content']} ({t['status']})")
         extra = "\n".join(lines)
+    elif agent == "codex" and path.is_file():
+        summary = codex_summary_card(path)
+        title = summary.get("title") or title
+        lines = [
+            f"**Model:** {summary.get('model') or '—'}  ",
+            f"**CWD:** `{summary.get('cwd') or '—'}`  ",
+            f"**Originator:** {summary.get('agent_name') or '—'}  ",
+            f"**Reasoning effort:** {summary.get('reasoning_effort') or '—'}  ",
+            f"**Sandbox:** {summary.get('sandbox_profile') or '—'}  ",
+            f"**Session id:** `{summary.get('id')}`  ",
+        ]
+        tok = summary.get("tokens") or {}
+        if tok.get("available"):
+            lines.extend([
+                "",
+                "### Estimated token usage",
+                f"- **Input:** {tok.get('input_fmt')}  ",
+                f"- **Output:** {tok.get('output_fmt')}  ",
+                f"- **Cached read:** {tok.get('cached_fmt')}  ",
+                f"- **Reasoning:** {tok.get('reasoning_fmt')}  ",
+                f"- **Uncached input:** {tok.get('uncached_fmt')}  ",
+                f"- **Total:** {tok.get('total_fmt')}  ",
+                f"- *Source: {tok.get('source')}*",
+            ])
+        extra = "\n".join(lines)
 
     md = turns_to_markdown(turns, title, agent, str(path), extra=extra)
 
@@ -2845,6 +4017,22 @@ def raw():
     )
 
 
+def _media_path_allowed(path: Path) -> bool:
+    if path_allowed(path):
+        return True
+    # Codex clipboard captures often live under the OS temp dir
+    try:
+        name = path.name.lower()
+        if name.startswith("codex-clipboard-") and is_image_path(path):
+            tmp = Path(os.environ.get("TEMP") or os.environ.get("TMP") or "/tmp").resolve()
+            path.resolve().relative_to(tmp)
+            return True
+    except Exception:
+        pass
+    # Codex generated images dir is under CODEX_HOME (already allowed via path_allowed)
+    return False
+
+
 @app.route("/media")
 def media():
     """Serve local image files under known agent home directories only."""
@@ -2863,9 +4051,7 @@ def media():
     if not path.exists() or not path.is_file():
         abort(404, "Image not found")
 
-    if not path_allowed(path):
-        # Session assets live under ~/.grok/sessions — allowed via GROK_HOME.
-        # Also allow project cwd images only if under home? Keep strict: agent homes only.
+    if not _media_path_allowed(path):
         abort(403, "Path not allowed")
 
     if not is_image_path(path):
