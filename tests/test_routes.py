@@ -30,6 +30,67 @@ def _write_claude_session(path: Path) -> None:
     )
 
 
+FIXTURES = Path(__file__).parent / "fixtures"
+
+
+def _install_claude_fixture(agent_homes: dict[str, Path]) -> Path:
+    """Copy the rich Claude fixture, including its subagent file, into a temp home."""
+    source = FIXTURES / "claude" / "session-fixture.jsonl"
+    project = agent_homes["claude"] / "projects" / "fixture-project"
+    subagents = project / "session-fixture" / "subagents"
+    subagents.mkdir(parents=True)
+    session = project / "session-fixture.jsonl"
+    session.write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
+    agent_source = source.parent / "session-fixture" / "subagents" / "agent-fixture1.jsonl"
+    (subagents / "agent-fixture1.jsonl").write_text(
+        agent_source.read_text(encoding="utf-8"), encoding="utf-8"
+    )
+    return session
+
+
+def test_claude_view_renders_summary_tokens_and_artifacts(
+    client, agent_homes: dict[str, Path]
+) -> None:
+    session = _install_claude_fixture(agent_homes)
+
+    response = client.get("/view", query_string={"agent": "claude", "path": session})
+    html = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    assert "Fixture session title" in html
+    assert "Session summary" in html
+    assert "Estimated token usage" in html
+    assert "claude-opus-5" in html
+    assert "acceptEdits" in html
+    # Artifacts, file edits, and the events tab all render.
+    assert "Available skills" in html
+    assert "parser.py" in html
+    assert "Updates stream" in html
+    # Subagent turns are inlined and tagged rather than hidden.
+    assert "subagent: Explore" in html
+
+
+def test_claude_export_includes_the_session_header(client, agent_homes: dict[str, Path]) -> None:
+    session = _install_claude_fixture(agent_homes)
+
+    response = client.get("/export", query_string={"agent": "claude", "path": session})
+    body = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    assert "**Model:** claude-opus-5" in body
+    assert "**Permission mode:** acceptEdits" in body
+    assert "### Estimated token usage" in body
+
+
+def test_claude_list_card_shows_real_title_and_cwd(client, agent_homes: dict[str, Path]) -> None:
+    _install_claude_fixture(agent_homes)
+
+    html = client.get("/").get_data(as_text=True)
+
+    assert "Fixture session title" in html
+    assert "C:/fixture" in html
+
+
 def test_index_uses_temporary_agent_homes(client, agent_homes: dict[str, Path]) -> None:
     session = agent_homes["claude"] / "projects" / "fixture-project" / "session.jsonl"
     session.parent.mkdir()

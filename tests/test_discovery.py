@@ -282,3 +282,126 @@ def test_session_list_decodes_html_entities_once(
     assert "Research &amp;amp; Development" not in rendered
     assert "GPT &#34;Test&#34;" in rendered
     assert "C:/A&amp;B" in rendered
+
+
+def _write_claude_records(path: Path, records: list[dict]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        "".join(json.dumps(record) + "\n" for record in records),
+        encoding="utf-8",
+    )
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("Examine this project", "Examine this project"),
+        ("  spaced   out  ", "spaced out"),
+        ("<system-reminder>hidden</system-reminder>", ""),
+        ("\n\nSecond line wins", "Second line wins"),
+        ("", ""),
+        (None, ""),
+    ],
+)
+def test_safe_claude_headline(value: object, expected: str) -> None:
+    assert discovery.safe_claude_headline(value) == expected
+
+
+@pytest.mark.parametrize(
+    ("records", "expected"),
+    [
+        ([{"type": "ai-title", "aiTitle": "Generated title"}], "Generated title"),
+        ([{"type": "custom-title", "customTitle": "Custom title"}], "Custom title"),
+        ([{"type": "last-prompt", "lastPrompt": "Prompt title"}], "Prompt title"),
+        (
+            [
+                {"type": "custom-title", "customTitle": "Custom title"},
+                {"type": "ai-title", "aiTitle": "Generated title"},
+            ],
+            "Generated title",
+        ),
+    ],
+)
+def test_claude_card_title_precedence(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    records: list[dict],
+    expected: str,
+) -> None:
+    home = tmp_path / "claude"
+    _write_claude_records(home / "projects" / "project" / "session.jsonl", records)
+    monkeypatch.setattr(discovery, "CLAUDE_HOME", home)
+    discovery.clear_discovery_cache()
+
+    assert discovery.discover_claude()[0]["title"] == expected
+
+
+def test_claude_card_prefers_recorded_cwd_over_encoded_folder_name(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    home = tmp_path / "claude"
+    encoded = "C--Users-Martin-projects-agent-session-viewer"
+    _write_claude_records(
+        home / "projects" / encoded / "session.jsonl",
+        [
+            {
+                "type": "user",
+                "timestamp": "2026-07-30T08:00:00Z",
+                "cwd": r"C:\Users\Martin\projects\agent-session-viewer",
+                "message": {"role": "user", "content": [{"type": "text", "text": "Hi there"}]},
+            }
+        ],
+    )
+    monkeypatch.setattr(discovery, "CLAUDE_HOME", home)
+    discovery.clear_discovery_cache()
+
+    card = discovery.discover_claude()[0]
+
+    # The encoded folder name cannot round-trip drive letters, separators, or the
+    # hyphens inside "agent-session-viewer".
+    assert card["cwd"] == r"C:\Users\Martin\projects\agent-session-viewer"
+    assert card["headline"] == "Hi there"
+
+
+def test_claude_card_falls_back_to_encoded_name_without_a_recorded_cwd(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    home = tmp_path / "claude"
+    _write_claude_records(
+        home / "projects" / "home--user--code" / "session.jsonl",
+        [{"type": "ai-title", "aiTitle": "No cwd here"}],
+    )
+    monkeypatch.setattr(discovery, "CLAUDE_HOME", home)
+    discovery.clear_discovery_cache()
+
+    assert discovery.discover_claude()[0]["cwd"] == "home/user/code"
+
+
+def test_claude_title_is_found_outside_the_bounded_edge_windows(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Title records are rewritten mid-session and fall outside first/last-N."""
+    home = tmp_path / "claude"
+    filler = [
+        {
+            "type": "user",
+            "timestamp": "2026-07-30T08:00:00Z",
+            "message": {"role": "user", "content": [{"type": "text", "text": "filler"}]},
+        }
+    ] * 40
+    records = [
+        *filler,
+        {"type": "ai-title", "aiTitle": "Buried title"},
+        *filler,
+    ]
+    _write_claude_records(home / "projects" / "project" / "session.jsonl", records)
+    monkeypatch.setattr(discovery, "CLAUDE_HOME", home)
+    discovery.clear_discovery_cache()
+
+    card = discovery.discover_claude()[0]
+
+    assert card["title"] == "Buried title"
+    assert card["messages"] == 81
