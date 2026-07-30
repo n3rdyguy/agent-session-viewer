@@ -12,11 +12,14 @@ from pathlib import Path
 from typing import Any, Iterator
 
 from .config import CLAUDE_HOME, CODEX_HOME, GROK_HOME
+from .types import ParseDiagnostic
 
 LOGGER = logging.getLogger(__name__)
 MAX_DIAGNOSTIC_MESSAGE = 160
 MAX_PARSE_DIAGNOSTICS = 100
-_DIAGNOSTICS: ContextVar[list[dict] | None] = ContextVar("asv_parse_diagnostics", default=None)
+_DIAGNOSTICS: ContextVar[list[ParseDiagnostic] | None] = ContextVar(
+    "asv_parse_diagnostics", default=None
+)
 
 
 def _record_parse_diagnostic(path: Path, line: int | None, category: str, message: str) -> None:
@@ -28,9 +31,9 @@ def _record_parse_diagnostic(path: Path, line: int | None, category: str, messag
 
 
 @contextmanager
-def collect_parse_diagnostics() -> Iterator[list[dict]]:
+def collect_parse_diagnostics() -> Iterator[list[ParseDiagnostic]]:
     """Collect diagnostics emitted by JSONL readers in this execution context."""
-    diagnostics: list[dict] = []
+    diagnostics: list[ParseDiagnostic] = []
     token = _DIAGNOSTICS.set(diagnostics)
     try:
         yield diagnostics
@@ -54,7 +57,7 @@ def safe_int(
         return default
     try:
         return int(value)
-    except TypeError, ValueError, OverflowError:
+    except (TypeError, ValueError, OverflowError):
         _record_parse_diagnostic(path, line, "invalid_number", f"{field} must be an integer")
         return default
 
@@ -118,7 +121,7 @@ def human_time(ts: str | float | int | None) -> str:
             .astimezone()
             .strftime("%Y-%m-%d %H:%M:%S")
         )
-    except Exception:
+    except (OverflowError, TypeError, ValueError):
         return ""
 
 
@@ -137,7 +140,7 @@ def format_tokens(n: int | float | None) -> str:
         return "—"
     try:
         n = int(n)
-    except Exception:
+    except (OverflowError, TypeError, ValueError):
         return str(n)
     if abs(n) >= 1_000_000:
         return f"{n / 1_000_000:.2f}M".rstrip("0").rstrip(".") + f" ({n:,})"
@@ -217,10 +220,10 @@ def pretty_json(obj: Any, max_len: int = 12000) -> str:
         if isinstance(obj, str):
             try:
                 obj = json.loads(obj)
-            except Exception:
+            except json.JSONDecodeError:
                 return obj
         text = json.dumps(obj, indent=2, ensure_ascii=False, default=str)
-    except Exception:
+    except (TypeError, ValueError):
         text = str(obj)
     if len(text) > max_len:
         return text[: max_len - 1] + "…"
@@ -230,7 +233,7 @@ def pretty_json(obj: Any, max_len: int = 12000) -> str:
 def load_json(path: Path) -> Any:
     try:
         return json.loads(path.read_text(encoding="utf-8", errors="replace"))
-    except OSError, json.JSONDecodeError:
+    except (OSError, json.JSONDecodeError):
         return None
 
 
@@ -276,14 +279,14 @@ def iter_jsonl(path: Path) -> Iterator[dict[str, Any]]:
 def path_allowed(path: Path) -> bool:
     try:
         resolved = path.resolve()
-    except Exception:
+    except (OSError, RuntimeError):
         resolved = path
     roots = [GROK_HOME, CLAUDE_HOME, CODEX_HOME]
     for root in roots:
         try:
             resolved.relative_to(root.resolve())
             return True
-        except Exception:
+        except (OSError, RuntimeError, ValueError):
             # Fallback for odd Windows path forms
             rs, rr = (
                 str(resolved).lower().replace("\\", "/"),

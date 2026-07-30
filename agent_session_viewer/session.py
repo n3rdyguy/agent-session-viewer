@@ -20,12 +20,13 @@ from .agents.grok import (
     grok_updates_timeline,
 )
 from .markdown_output import format_markdown_content
+from .types import SessionData, Turn
 from .util import collect_parse_diagnostics, iter_jsonl
 
 LOGGER = logging.getLogger(__name__)
 
 
-def turns_to_markdown(turns: list[dict], title: str, agent: str, path: str, extra: str = "") -> str:
+def turns_to_markdown(turns: list[Turn], title: str, agent: str, path: str, extra: str = "") -> str:
     lines = [
         f"# {title}",
         "",
@@ -68,7 +69,7 @@ def turns_to_markdown(turns: list[dict], title: str, agent: str, path: str, extr
 # ─────────────────────────────────────────────
 
 
-def load_session(agent: str, path: Path) -> dict:
+def load_session(agent: str, path: Path) -> SessionData:
     """
     Load everything the view/export routes need for one session.
 
@@ -95,7 +96,7 @@ def load_session(agent: str, path: Path) -> dict:
     return session
 
 
-def _load_session(agent: str, path: Path) -> dict:
+def _load_session(agent: str, path: Path) -> SessionData:
     """Load a session while the caller owns diagnostic collection."""
     title = path.name
     turns = []
@@ -152,10 +153,10 @@ def _load_session(agent: str, path: Path) -> dict:
 
 
 def summary_to_markdown(
-    summary: dict | None,
+    summary: dict[str, object] | None,
     *,
     agent: str,
-    resources: dict | None = None,
+    resources: dict[str, object] | None = None,
 ) -> str:
     """Shared export header (model/cwd/tokens/todos) for Grok and Codex."""
     if not summary:

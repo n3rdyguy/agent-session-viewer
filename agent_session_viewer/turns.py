@@ -6,6 +6,7 @@ import json
 from typing import Any
 
 from .images import linkify_image_paths_html
+from .types import ImageInfo, Turn
 from .util import decode_html_entities, pretty_json
 
 
@@ -17,8 +18,8 @@ def make_turn(
     id: str = "",
     model: str = "",
     meta: str = "",
-    images: list[dict] | None = None,
-) -> dict:
+    images: list[ImageInfo] | None = None,
+) -> Turn:
     imgs = images or []
     return {
         "role": role,
@@ -39,6 +40,6 @@ def format_tool_args(arguments: Any) -> str:
     if isinstance(arguments, str):
         try:
             return pretty_json(json.loads(arguments))
-        except Exception:
+        except json.JSONDecodeError:
             return arguments
     return pretty_json(arguments)
