@@ -2,16 +2,87 @@
 
 from __future__ import annotations
 
+import logging
+import os
 import re
+import threading
+import time
+from collections import deque
 from datetime import datetime
+from pathlib import Path
+from typing import Callable
 from urllib.parse import unquote
 
 from .config import CLAUDE_HOME, CODEX_HOME, GROK_HOME
 from .images import extract_text
 from .util import decode_jsonl_record, iter_jsonl, load_json
 
+LOGGER = logging.getLogger(__name__)
 _CODEX_HEADLINE_PUNCTUATION = frozenset(" .,:;!?'-_()/&+")
 _TURN_ABORTED_RE = re.compile(r"\bturn_aborted\b", re.IGNORECASE)
+_DISCOVERY_HEAD_RECORDS = 128
+_CLAUDE_EDGE_RECORDS = 8
+
+CacheKey = tuple[str, str, int, int]
+_DISCOVERY_CACHE: dict[CacheKey, dict] = {}
+_CACHE_LOCK = threading.RLock()
+
+
+def _timing_enabled() -> bool:
+    return os.environ.get("ASV_TIMING_DEBUG", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
+def _log_timing(operation: str, started: float) -> None:
+    if _timing_enabled():
+        LOGGER.info("%s completed in %.1f ms", operation, (time.perf_counter() - started) * 1000)
+
+
+def clear_discovery_cache() -> None:
+    """Clear process-local discovery metadata, primarily for tests and diagnostics."""
+    with _CACHE_LOCK:
+        _DISCOVERY_CACHE.clear()
+
+
+def _file_key(agent: str, path: Path) -> CacheKey | None:
+    try:
+        resolved = path.resolve(strict=True)
+        stat = resolved.stat()
+    except OSError:
+        return None
+    return (agent, str(resolved), stat.st_size, stat.st_mtime_ns)
+
+
+def _cached_card(agent: str, path: Path, loader: Callable[[Path], dict]) -> dict | None:
+    key = _file_key(agent, path)
+    if key is None:
+        return None
+    with _CACHE_LOCK:
+        cached = _DISCOVERY_CACHE.get(key)
+        if isinstance(cached, dict):
+            return dict(cached)
+        # The lock deliberately covers the small/bounded loader. This prevents duplicate
+        # reads and makes concurrent list requests observe a single complete cache entry.
+        value = loader(path)
+        if not isinstance(value, dict):
+            return None
+        path_identity = key[1]
+        for old_key in tuple(_DISCOVERY_CACHE):
+            if old_key[0] == agent and old_key[1] == path_identity and old_key != key:
+                del _DISCOVERY_CACHE[old_key]
+        _DISCOVERY_CACHE[key] = dict(value)
+        return dict(value)
+
+
+def _prune_agent_cache(agent: str, live_paths: set[str]) -> None:
+    with _CACHE_LOCK:
+        for key in tuple(_DISCOVERY_CACHE):
+            if key[0] == agent and key[1] not in live_paths:
+                del _DISCOVERY_CACHE[key]
 
 
 def safe_codex_headline(value: object) -> str:
@@ -39,8 +110,10 @@ def discover_grok() -> list[dict]:
     sessions = []
     root = GROK_HOME / "sessions"
     if not root.exists():
+        _prune_agent_cache("grok", set())
         return sessions
 
+    live_paths: set[str] = set()
     for group in sorted(root.iterdir()):
         if not group.is_dir():
             continue
@@ -53,13 +126,50 @@ def discover_grok() -> list[dict]:
             except OSError:
                 pass
 
-        for sid_dir in group.iterdir():
+        for sid_dir in sorted(group.iterdir()):
             if not sid_dir.is_dir():
                 continue
             summary_path = sid_dir / "summary.json"
+            key = _file_key("grok", summary_path)
+            if key is not None:
+                live_paths.add(key[1])
+
+            def load_grok_card(_path: Path) -> dict:
+                meta = load_json(summary_path) or {}
+                info = meta.get("info") if isinstance(meta.get("info"), dict) else {}
+                title = (
+                    meta.get("generated_title")
+                    or meta.get("session_summary")
+                    or meta.get("title")
+                    or meta.get("summary")
+                    or meta.get("name")
+                    or sid_dir.name[:12]
+                )
+                return {
+                    "agent": "grok",
+                    "id": info.get("id") or sid_dir.name,
+                    "path": str(sid_dir),
+                    "cwd": info.get("cwd") or meta.get("cwd") or cwd_hint,
+                    "title": str(title),
+                    "created": meta.get("created_at") or meta.get("created"),
+                    "updated": meta.get("updated_at")
+                    or meta.get("last_active_at")
+                    or meta.get("updated"),
+                    "model": meta.get("current_model_id")
+                    or meta.get("model")
+                    or meta.get("model_id"),
+                    "messages": meta.get("num_chat_messages")
+                    or meta.get("num_messages")
+                    or meta.get("message_count"),
+                }
+
+            card = _cached_card("grok", summary_path, load_grok_card)
+            if card is not None:
+                sessions.append(card)
+                continue
+
             meta = load_json(summary_path) or {}
             info = meta.get("info") if isinstance(meta.get("info"), dict) else {}
-
             title = (
                 meta.get("generated_title")
                 or meta.get("session_summary")
@@ -87,45 +197,75 @@ def discover_grok() -> list[dict]:
                     or meta.get("message_count"),
                 }
             )
+    _prune_agent_cache("grok", live_paths)
     return sessions
+
+
+def _scan_claude_card(path: Path) -> dict:
+    first: list[tuple[int, str]] = []
+    last: deque[tuple[int, str]] = deque(maxlen=_CLAUDE_EDGE_RECORDS)
+    nonblank_count = 0
+    try:
+        with path.open(encoding="utf-8", errors="replace") as fh:
+            for line_number, line in enumerate(fh, 1):
+                if not line.strip():
+                    continue
+                nonblank_count += 1
+                item = (line_number, line)
+                if len(first) < _CLAUDE_EDGE_RECORDS:
+                    first.append(item)
+                else:
+                    last.append(item)
+    except OSError:
+        return {}
+
+    created = updated = model = None
+    seen_lines: set[int] = set()
+    for line_number, line in [*first, *last]:
+        if line_number in seen_lines:
+            continue
+        seen_lines.add(line_number)
+        obj = decode_jsonl_record(path, line_number, line)
+        if obj is None:
+            continue
+        ts = obj.get("timestamp")
+        if ts:
+            created = created or ts
+            updated = ts
+        if obj.get("type") == "assistant":
+            message = obj.get("message") if isinstance(obj.get("message"), dict) else {}
+            model = message.get("model") or model
+    return {
+        "created": created,
+        "updated": updated,
+        "model": model,
+        "messages": nonblank_count,
+    }
 
 
 def discover_claude() -> list[dict]:
     sessions = []
     root = CLAUDE_HOME / "projects"
     if not root.exists():
+        _prune_agent_cache("claude", set())
         return sessions
 
-    for proj in root.iterdir():
+    live_paths: set[str] = set()
+    for proj in sorted(root.iterdir()):
         if not proj.is_dir():
             continue
         encoded = proj.name
         cwd_hint = "/" + encoded.lstrip("-").replace("--", "/.").replace("-", "/")
 
-        for f in proj.glob("*.jsonl"):
+        for f in sorted(proj.glob("*.jsonl")):
             if f.name.startswith("."):
                 continue
             sid = f.stem
-            created = updated = model = None
-            msg_count = 0
-            try:
-                with f.open(encoding="utf-8", errors="replace") as fh:
-                    lines = fh.readlines()
-                msg_count = len(lines)
-                sample = lines[:8] + lines[-8:]
-                for line_number, line in enumerate(sample, 1):
-                    obj = decode_jsonl_record(f, line_number, line)
-                    if obj is None:
-                        continue
-                    ts = obj.get("timestamp")
-                    if ts:
-                        created = created or ts
-                        updated = ts
-                    if obj.get("type") == "assistant":
-                        message = obj.get("message") if isinstance(obj.get("message"), dict) else {}
-                        model = message.get("model") or model
-            except OSError:
-                pass
+            key = _file_key("claude", f)
+            if key is None:
+                continue
+            live_paths.add(key[1])
+            card = _cached_card("claude", f, _scan_claude_card) or {}
 
             sessions.append(
                 {
@@ -134,12 +274,13 @@ def discover_claude() -> list[dict]:
                     "path": str(f),
                     "cwd": cwd_hint,
                     "title": sid[:18] + "…",
-                    "created": created,
-                    "updated": updated,
-                    "model": model,
-                    "messages": msg_count,
+                    "created": card.get("created"),
+                    "updated": card.get("updated"),
+                    "model": card.get("model"),
+                    "messages": card.get("messages"),
                 }
             )
+    _prune_agent_cache("claude", live_paths)
     return sessions
 
 
@@ -148,151 +289,158 @@ def load_codex_session_index() -> dict[str, dict]:
     index: dict[str, dict] = {}
     path = CODEX_HOME / "session_index.jsonl"
     if not path.exists():
+        _prune_agent_cache("codex-index", set())
         return index
-    for obj in iter_jsonl(path):
-        sid = obj.get("id")
-        if not sid:
-            continue
-        # Later lines win (index may list the same id more than once)
-        index[str(sid)] = {
-            "thread_name": obj.get("thread_name") or "",
-            "updated_at": obj.get("updated_at") or "",
-        }
-    return index
+
+    def load_index(index_path: Path) -> dict:
+        result: dict[str, dict] = {}
+        for obj in iter_jsonl(index_path):
+            sid = obj.get("id")
+            if not sid:
+                continue
+            result[str(sid)] = {
+                "thread_name": obj.get("thread_name") or "",
+                "updated_at": obj.get("updated_at") or "",
+            }
+        return result
+
+    key = _file_key("codex-index", path)
+    if key is None:
+        return index
+    _prune_agent_cache("codex-index", {key[1]})
+    cached = _cached_card("codex-index", path, load_index)
+    return cached or index
+
+
+def _scan_codex_card(path: Path) -> dict:
+    sid = path.stem
+    match = re.search(
+        r"([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$",
+        path.stem,
+        re.I,
+    )
+    if match:
+        sid = match.group(1)
+
+    created = model = cwd = None
+    headline = ""
+    aborted = False
+    try:
+        with path.open(encoding="utf-8", errors="replace") as fh:
+            for line_number, line in enumerate(fh, 1):
+                if line_number > _DISCOVERY_HEAD_RECORDS:
+                    break
+                if not line.strip():
+                    continue
+                obj = decode_jsonl_record(path, line_number, line)
+                if obj is None:
+                    continue
+                ts = obj.get("timestamp")
+                if ts:
+                    created = created or ts
+                record_type = obj.get("type")
+                payload = obj.get("payload") if isinstance(obj.get("payload"), dict) else {}
+                if record_type == "session_meta":
+                    meta = payload.get("meta") if isinstance(payload.get("meta"), dict) else payload
+                    cwd = meta.get("cwd") or cwd
+                    for key in ("id", "session_id"):
+                        if isinstance(meta.get(key), str) and meta[key]:
+                            sid = meta[key]
+                            break
+                    if meta.get("timestamp"):
+                        created = created or meta.get("timestamp")
+                elif record_type == "turn_context":
+                    model = payload.get("model") or model
+                    cwd = payload.get("cwd") or cwd
+                elif record_type == "response_item":
+                    if (
+                        payload.get("type") == "message"
+                        and (payload.get("role") or "").lower() == "user"
+                        and not headline
+                    ):
+                        message = extract_text(payload.get("content"))
+                        candidate = safe_codex_headline(message)
+                        if candidate:
+                            headline = candidate
+                            aborted = codex_headline_was_aborted(message)
+                elif (
+                    record_type == "event_msg"
+                    and (payload.get("type") or "").lower() == "user_message"
+                    and not headline
+                ):
+                    message = payload.get("message") or payload.get("text") or ""
+                    candidate = safe_codex_headline(message)
+                    if candidate:
+                        headline = candidate
+                        aborted = codex_headline_was_aborted(message)
+                elif (
+                    record_type == "event_msg" and payload.get("type") == "thread_settings_applied"
+                ):
+                    settings = (
+                        payload.get("thread_settings")
+                        if isinstance(payload.get("thread_settings"), dict)
+                        else {}
+                    )
+                    model = settings.get("model") or model
+                    cwd = settings.get("cwd") or cwd
+    except OSError:
+        return {}
+    return {
+        "id": sid,
+        "cwd": cwd or "?",
+        "headline": headline,
+        "aborted": aborted,
+        "created": created,
+        "model": model,
+    }
 
 
 def discover_codex() -> list[dict]:
     sessions = []
     titles = load_codex_session_index()
+    live_paths: set[str] = set()
 
     for sub in ("sessions", "archived_sessions"):
         root = CODEX_HOME / sub
         if not root.exists():
             continue
-        for f in root.rglob("rollout-*.jsonl"):
-            sid = f.stem
-            # Prefer UUID from filename suffix when present
-            for part in f.stem.split("-"):
-                if len(part) >= 32 and part.count("-") >= 0:
-                    pass
-            # rollout-2026-07-26T16-39-31-019f9edd-ea9c-7741-ad03-59daedd955a2
-            m = re.search(
-                r"([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$",
-                f.stem,
-                re.I,
-            )
-            if m:
-                sid = m.group(1)
-
-            created = updated = model = cwd = None
-            headline = ""
-            aborted = False
-            msg_count = 0
-            try:
-                with f.open(encoding="utf-8", errors="replace") as fh:
-                    for i, line in enumerate(fh):
-                        if not line.strip():
-                            continue
-                        msg_count += 1
-                        # Meta usually at the start; still accept model updates early
-                        if i > 120 and created and cwd and model and headline:
-                            # Fast-count the rest of the file without full JSON parse
-                            for rest in fh:
-                                if rest.strip():
-                                    msg_count += 1
-                            break
-                        obj = decode_jsonl_record(f, i + 1, line)
-                        if obj is None:
-                            continue
-                        ts = obj.get("timestamp")
-                        if ts:
-                            created = created or ts
-                            updated = ts
-                        t = obj.get("type")
-                        payload = obj.get("payload") if isinstance(obj.get("payload"), dict) else {}
-                        if t == "session_meta":
-                            meta = (
-                                payload.get("meta")
-                                if isinstance(payload.get("meta"), dict)
-                                else payload
-                            )
-                            cwd = meta.get("cwd") or cwd
-                            for key in ("id", "session_id"):
-                                if isinstance(meta.get(key), str) and meta[key]:
-                                    sid = meta[key]
-                                    break
-                            if meta.get("timestamp"):
-                                created = created or meta.get("timestamp")
-                        elif t == "turn_context":
-                            model = payload.get("model") or model
-                            cwd = payload.get("cwd") or cwd
-                        elif t == "response_item":
-                            if (
-                                payload.get("type") == "message"
-                                and (payload.get("role") or "").lower() == "user"
-                                and not headline
-                            ):
-                                message = extract_text(payload.get("content"))
-                                candidate = safe_codex_headline(message)
-                                if candidate:
-                                    headline = candidate
-                                    aborted = codex_headline_was_aborted(message)
-                        elif (
-                            t == "event_msg"
-                            and (payload.get("type") or "").lower() == "user_message"
-                            and not headline
-                        ):
-                            message = payload.get("message") or payload.get("text") or ""
-                            candidate = safe_codex_headline(message)
-                            if candidate:
-                                headline = candidate
-                                aborted = codex_headline_was_aborted(message)
-                        elif t == "event_msg" and (
-                            payload.get("type") == "thread_settings_applied"
-                        ):
-                            settings = (
-                                payload.get("thread_settings")
-                                if isinstance(payload.get("thread_settings"), dict)
-                                else {}
-                            )
-                            model = settings.get("model") or model
-                            cwd = settings.get("cwd") or cwd
-            except OSError:
-                pass
-
-            # Prefer index timestamp / file mtime for "updated" (early scan may miss the end)
-            try:
-                mtime_iso = datetime.fromtimestamp(f.stat().st_mtime).isoformat()
-            except OSError:
-                mtime_iso = None
+        for path in sorted(root.rglob("rollout-*.jsonl")):
+            key = _file_key("codex", path)
+            if key is None:
+                continue
+            live_paths.add(key[1])
+            card = _cached_card("codex", path, _scan_codex_card)
+            if not card:
+                continue
+            sid = card["id"]
             idx = titles.get(sid) or {}
-            title = safe_codex_headline(idx.get("thread_name")) or headline or f.name
-            if idx.get("updated_at"):
-                updated = idx["updated_at"]
-            elif mtime_iso:
-                updated = mtime_iso
-            elif not updated and mtime_iso:
-                updated = mtime_iso
-
+            headline = card.get("headline") or ""
+            title = safe_codex_headline(idx.get("thread_name")) or headline or path.name
+            updated = (
+                idx.get("updated_at") or datetime.fromtimestamp(path.stat().st_mtime).isoformat()
+            )
             sessions.append(
                 {
                     "agent": "codex",
                     "id": sid,
-                    "path": str(f),
-                    "cwd": cwd or "?",
+                    "path": str(path),
+                    "cwd": card.get("cwd") or "?",
                     "title": str(title)[:120],
                     "headline": headline,
-                    "aborted": aborted,
-                    "created": created,
+                    "aborted": bool(card.get("aborted")),
+                    "created": card.get("created"),
                     "updated": updated,
-                    "model": model,
-                    "messages": msg_count,
+                    "model": card.get("model"),
+                    # Exact counts require a full rollout scan and are deferred to /view.
+                    "messages": None,
                 }
             )
+    _prune_agent_cache("codex", live_paths)
     return sessions
 
 
 def all_sessions(agent: str | None = None) -> list[dict]:
+    started = time.perf_counter()
     items = []
     if agent in (None, "grok", "all"):
         items.extend(discover_grok())
@@ -305,4 +453,5 @@ def all_sessions(agent: str | None = None) -> list[dict]:
         return s.get("updated") or s.get("created") or ""
 
     items.sort(key=key, reverse=True)
+    _log_timing("session discovery", started)
     return items

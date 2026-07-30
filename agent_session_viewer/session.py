@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import logging
+import os
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -18,6 +21,8 @@ from .agents.grok import (
 )
 from .markdown_output import format_markdown_content
 from .util import collect_parse_diagnostics, iter_jsonl
+
+LOGGER = logging.getLogger(__name__)
 
 
 def turns_to_markdown(turns: list[dict], title: str, agent: str, path: str, extra: str = "") -> str:
@@ -70,8 +75,22 @@ def load_session(agent: str, path: Path) -> dict:
     Returns turns, title, summary, resources, artifacts, hunks,
     terminal_logs, recaps, and updates (timeline / events tab).
     """
-    with collect_parse_diagnostics() as diagnostics:
-        session = _load_session(agent, path)
+    started = time.perf_counter()
+    try:
+        with collect_parse_diagnostics() as diagnostics:
+            session = _load_session(agent, path)
+    finally:
+        if os.environ.get("ASV_TIMING_DEBUG", "").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }:
+            LOGGER.info(
+                "session loading (%s) completed in %.1f ms",
+                agent,
+                (time.perf_counter() - started) * 1000,
+            )
     session["diagnostics"] = diagnostics
     return session
 
