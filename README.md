@@ -90,11 +90,19 @@ Claude Code `<session-uuid>.jsonl` transcripts under `~/.claude/projects/<encode
 | **System turns** | Slash commands and hook/informational `system` records, injected attachments (plan mode, permissions, task reminders), and `isMeta` `<system-reminder>` records shown as **system reminders** rather than as user messages |
 | **Subagents** | Sidechain transcripts from `<session>/subagents/agent-*.jsonl` merged inline in timestamp order and tagged with the agent type; each is also viewable on its own |
 | **File edits** | Hunk records from `Edit` / `Write` / `MultiEdit` / `NotebookEdit` `toolUseResult`, with added/removed counts and line ranges from `structuredPatch` |
+| **Memory** | Project `<cwd>/CLAUDE.md` and user `~/.claude/CLAUDE.md` as artifact documents |
 | **Artifacts** | Skill and agent listings, plus the session's prompt history from `~/.claude/history.jsonl` |
 | **Events timeline** | Second tab: hook summaries, slash commands, turn durations, queue operations, permission-mode changes, file-history snapshots, attachments |
 
 Claude does not record a context-window size in the transcript, so the context bar stays
 hidden; token totals are summed per message rather than read from a running total.
+
+Claude also has no equivalent of Codex's `session_meta.base_instructions`: injected
+instructions are not written to the transcript at all. The memory documents are therefore
+read from disk and labelled **read from disk**, because they show those files as they
+stand now rather than what the session actually saw. Only a real file still named
+`CLAUDE.md` is read — a symlink pointing elsewhere resolves to a different name and is
+refused — and oversized files are truncated for display.
 
 ---
 
@@ -241,8 +249,11 @@ uv run python app.py
 On Windows, Grok session group folders are URL-encoded paths under `sessions\` (e.g. `C%3A%5CUsers%5C…`).
 
 Claude also reads two sibling files under `CLAUDE_HOME` when they exist: `todos/<session-id>-agent-*.json`
-for the todo checklist and `history.jsonl` for that session's prompt history. Neither is
-served by a route; both are read locally and degrade to empty when missing or damaged.
+for the todo checklist and `history.jsonl` for that session's prompt history. It reads
+`CLAUDE.md` from `CLAUDE_HOME` and from the session's recorded working directory — the one
+place the viewer reads outside an agent home, guarded by a fixed filename, a post-resolution
+name check, and a size cap. None of these are served by a route; all are read locally and
+degrade to empty when missing or damaged.
 
 ---
 
@@ -275,6 +286,12 @@ denied.
 The supported threat model is local, loopback-only use. The app has no authentication;
 binding it to a non-loopback interface is unsupported unless an authentication boundary is
 added. Session contents are untrusted, and remote media is not loaded automatically.
+
+One deliberate exception to "read only under an agent home": Claude memory documents are
+read from the working directory recorded in the session. That path is untrusted session
+data, so the read is constrained to a fixed `CLAUDE.md` filename, the resolved target must
+still be a regular file with that name (which refuses symlinks aimed at other files), the
+content is size-capped, and it is never exposed through `/media` or `/raw`.
 Markdown is sanitized in the browser and falls back to escaped plain text if either the
 parser or sanitizer is unavailable. Filesystem routes resolve and authorize paths against
 the selected agent and session before reading them.

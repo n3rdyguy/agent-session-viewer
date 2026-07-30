@@ -188,6 +188,90 @@ def test_prompt_history_is_filtered_by_session(
     assert [row["display"] for row in rows] == ["mine"]
 
 
+def _memory_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, Path]:
+    home = tmp_path / "claude-home"
+    project = tmp_path / "project"
+    home.mkdir()
+    project.mkdir()
+    monkeypatch.setattr(claude.config, "CLAUDE_HOME", home)
+    return home, project
+
+
+def test_memory_documents_cover_project_and_user_scope(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    home, project = _memory_home(tmp_path, monkeypatch)
+    (project / "CLAUDE.md").write_text("# Project rules", encoding="utf-8")
+    (home / "CLAUDE.md").write_text("# User rules", encoding="utf-8")
+
+    documents = claude.claude_memory_documents(str(project))
+
+    assert [d["title"] for d in documents] == ["Project memory", "User memory"]
+    # The transcript never captured this, so it must not claim to be session state.
+    assert all("read from disk" in d["subtitle"] for d in documents)
+
+
+@pytest.mark.parametrize("body", ["", "   \n\n  "])
+def test_empty_memory_files_produce_no_document(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, body: str
+) -> None:
+    home, project = _memory_home(tmp_path, monkeypatch)
+    (project / "CLAUDE.md").write_text(body, encoding="utf-8")
+    (home / "CLAUDE.md").write_text(body, encoding="utf-8")
+
+    assert claude.claude_memory_documents(str(project)) == []
+
+
+def test_missing_or_unreadable_memory_paths_are_ignored(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _memory_home(tmp_path, monkeypatch)
+
+    assert claude.claude_memory_documents("") == []
+    assert claude.claude_memory_documents(str(tmp_path / "does-not-exist")) == []
+    # A directory named CLAUDE.md is not a memory file.
+    weird = tmp_path / "weird"
+    (weird / "CLAUDE.md").mkdir(parents=True)
+    assert claude.claude_memory_documents(str(weird)) == []
+
+
+def test_memory_symlink_to_another_file_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A session-supplied cwd must not turn CLAUDE.md into an arbitrary file read."""
+    _home, project = _memory_home(tmp_path, monkeypatch)
+    secret = tmp_path / "id_rsa"
+    secret.write_text("PRIVATE KEY", encoding="utf-8")
+    try:
+        (project / "CLAUDE.md").symlink_to(secret)
+    except OSError as exc:
+        pytest.skip(f"symlinks unavailable: {exc}")
+
+    assert claude.claude_memory_documents(str(project)) == []
+
+
+def test_oversized_memory_is_truncated(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _home, project = _memory_home(tmp_path, monkeypatch)
+    (project / "CLAUDE.md").write_text("x" * (claude._MAX_MEMORY_CHARS + 500), encoding="utf-8")
+
+    document = claude.claude_memory_documents(str(project))[0]
+
+    assert len(document["text"]) < claude._MAX_MEMORY_CHARS + 200
+    assert document["text"].endswith("truncated for display …")
+
+
+def test_memory_documents_lead_the_artifact_list(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    home, _project = _memory_home(tmp_path, monkeypatch)
+    (home / "CLAUDE.md").write_text("# User rules", encoding="utf-8")
+
+    artifacts = claude_scan_session(CLAUDE_SESSION)["artifacts"]
+
+    assert artifacts[0]["title"] == "User memory"
+    assert "Available skills" in [a["title"] for a in artifacts]
+
+
 def test_subagent_transcript_loads_as_its_own_session() -> None:
     path = FIXTURES / "claude" / "session-fixture" / "subagents" / "agent-fixture1.jsonl"
 

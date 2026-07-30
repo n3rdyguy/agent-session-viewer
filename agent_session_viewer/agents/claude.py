@@ -33,6 +33,8 @@ _DOCUMENT_ATTACHMENTS = {
     "agent_listing_delta": "Available agents",
 }
 _NOISE_ATTACHMENTS = frozenset(("deferred_tools_delta",))
+MEMORY_FILENAME = "CLAUDE.md"
+_MAX_MEMORY_CHARS = 64_000
 
 
 # ─────────────────────────────────────────────
@@ -110,6 +112,52 @@ def claude_todos(session_id: str) -> list[dict[str, Any]]:
     status_rank = {"in_progress": 0, "pending": 1, "completed": 2, "cancelled": 3}
     todos.sort(key=lambda t: (status_rank.get(t["status"], 9), t["id"]))
     return todos
+
+
+def _read_memory_file(path: Path, title: str, subtitle: str) -> dict[str, Any] | None:
+    """Read one CLAUDE.md, refusing anything that is not still a real CLAUDE.md."""
+    try:
+        resolved = path.resolve(strict=True)
+    except (OSError, RuntimeError, ValueError):
+        return None
+    # A symlink aimed elsewhere resolves to a different name, so this also stops
+    # `<cwd>/CLAUDE.md -> ~/.ssh/id_rsa` from being rendered as memory.
+    if resolved.name != MEMORY_FILENAME or not resolved.is_file():
+        return None
+    try:
+        text = resolved.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+    if not text.strip():
+        return None
+    if len(text) > _MAX_MEMORY_CHARS:
+        text = text[:_MAX_MEMORY_CHARS] + "\n\n… truncated for display …"
+    return {
+        "id": f"memory-{title.lower().replace(' ', '-')}",
+        "title": title,
+        # Claude does not record injected memory in the transcript, so this is the
+        # file as it stands now rather than a snapshot of what the session saw.
+        "subtitle": f"{subtitle} · read from disk",
+        "kind": "markdown",
+        "text": text,
+    }
+
+
+def claude_memory_documents(cwd: str) -> list[dict[str, Any]]:
+    """CLAUDE.md memory that applies to a session, newest scope first."""
+    documents: list[dict[str, Any]] = []
+    if cwd:
+        project = _read_memory_file(
+            Path(cwd) / MEMORY_FILENAME, "Project memory", f"{cwd}/{MEMORY_FILENAME}"
+        )
+        if project:
+            documents.append(project)
+    user = _read_memory_file(
+        config.CLAUDE_HOME / MEMORY_FILENAME, "User memory", f"~/.claude/{MEMORY_FILENAME}"
+    )
+    if user:
+        documents.append(user)
+    return documents
 
 
 def claude_prompt_history(session_id: str, limit: int = 200) -> list[dict[str, Any]]:
@@ -482,6 +530,10 @@ def claude_scan_session(
         tokens["total"] = tokens["input"] + tokens["output"]
         tokens["source"] = "transcript · sum of message.usage"
     tokens = finalize_token_usage(tokens)
+
+    # Memory documents lead the artifact list: they are the closest Claude has to
+    # Codex's injected AGENTS.md / base instructions.
+    artifacts[:0] = claude_memory_documents(cwd)
 
     history = claude_prompt_history(session_id)
     if history:
