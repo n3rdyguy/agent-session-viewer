@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import socket
 import subprocess
 import tarfile
 import tempfile
@@ -118,18 +119,25 @@ for url in %r:
 
 
 def verify_server(command: list[str], env: dict[str, str], cwd: Path) -> None:
-    port = 5050
+    with socket.socket() as listener:
+        listener.bind(("127.0.0.1", 0))
+        port = listener.getsockname()[1]
+    command = [*command, "--port", str(port)]
     process = subprocess.Popen(
         command,
         env=env,
         cwd=cwd,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
     )
     try:
         for _ in range(100):
             if process.poll() is not None:
-                raise SystemExit(f"Installed entrypoint exited early: {' '.join(command)}")
+                output = process.communicate()[0]
+                raise SystemExit(
+                    f"Installed entrypoint exited early: {' '.join(command)}\n{output}"
+                )
             try:
                 with urllib.request.urlopen(f"http://127.0.0.1:{port}/", timeout=0.2) as response:
                     if response.status == 200:
@@ -150,7 +158,8 @@ def main() -> None:
     wheel, sdist = built_artifacts()
     verify_artifact_contents(wheel, sdist)
     with tempfile.TemporaryDirectory() as temporary:
-        directory = Path(temporary)
+        # Expand Windows 8.3/redirected temp paths before venv writes launcher metadata.
+        directory = Path(os.path.realpath(temporary))
         python, env = isolated_environment(directory, wheel)
         verify_test_client(python, env, directory)
 
