@@ -104,13 +104,16 @@ cd agent-session-viewer
 uv sync
 ```
 
-The implementation lives in the flat `agent_session_viewer/` package. The
-root `app.py` remains as a compatibility entrypoint.
+The installed application, including its templates and static assets, lives in the
+`agent_session_viewer/` package. The root `app.py` and `main.py` files remain deprecated
+source-checkout compatibility entrypoints for the v1 command forms.
 
 ### Package layout
 
 ```text
 agent_session_viewer/
+  __main__.py     # python -m agent_session_viewer
+  cli.py          # installed console entrypoint
   app.py          # Flask routes and local server
   config.py       # Agent home-directory settings
   discovery.py    # Session discovery and list metadata
@@ -118,6 +121,8 @@ agent_session_viewer/
   session.py      # Shared load/export shape
   turns.py        # Canonical conversation turns
   util.py         # JSONL, token, time, and path helpers
+  templates/      # package-owned Jinja templates
+  static/         # package-owned CSS, JavaScript, icons, and vendored libraries
   agents/
     grok.py
     codex.py
@@ -139,6 +144,8 @@ uv run python app.py
 uv run python main.py
 # or after uv sync:
 uv run agent-session-viewer
+# or:
+uv run python -m agent_session_viewer
 ```
 
 Open **http://127.0.0.1:5050**

@@ -1,45 +1,164 @@
-"""Verify that a built wheel contains and can load the current runtime assets."""
+"""Install built artifacts in isolation and verify package-owned runtime assets."""
 
 from __future__ import annotations
 
 import os
-import sys
+import subprocess
+import tarfile
 import tempfile
+import time
+import urllib.request
+import venv
 import zipfile
 from pathlib import Path
 
+PACKAGE_ASSETS = {
+    "agent_session_viewer/__main__.py",
+    "agent_session_viewer/app.py",
+    "agent_session_viewer/cli.py",
+    "agent_session_viewer/static/app.css",
+    "agent_session_viewer/static/app.js",
+    "agent_session_viewer/static/apple-touch-icon.png",
+    "agent_session_viewer/static/favicon-16.png",
+    "agent_session_viewer/static/favicon-32.png",
+    "agent_session_viewer/static/favicon.ico",
+    "agent_session_viewer/static/favicon.svg",
+    "agent_session_viewer/static/vendor/README.md",
+    "agent_session_viewer/static/vendor/dompurify/LICENSE",
+    "agent_session_viewer/static/vendor/dompurify/purify.min.js",
+    "agent_session_viewer/static/vendor/marked/LICENSE.md",
+    "agent_session_viewer/static/vendor/marked/marked.min.js",
+    "agent_session_viewer/templates/base.html",
+    "agent_session_viewer/templates/list.html",
+    "agent_session_viewer/templates/partials/bubbles.html",
+    "agent_session_viewer/templates/view.html",
+}
+FORBIDDEN_WHEEL_PREFIXES = ("app.py", "main.py", "templates/", "static/")
+STATIC_URLS = (
+    "/static/app.css",
+    "/static/app.js",
+    "/static/apple-touch-icon.png",
+    "/static/favicon-16.png",
+    "/static/favicon-32.png",
+    "/static/favicon.ico",
+    "/static/favicon.svg",
+    "/static/vendor/dompurify/purify.min.js",
+    "/static/vendor/marked/marked.min.js",
+)
+
+
+def built_artifacts() -> tuple[Path, Path]:
+    wheels = sorted(Path("dist").glob("agent_session_viewer-*.whl"))
+    sdists = sorted(Path("dist").glob("agent_session_viewer-*.tar.gz"))
+    if not wheels or not sdists:
+        raise SystemExit("Build both a wheel and source distribution before running smoke test")
+    return wheels[-1].resolve(), sdists[-1].resolve()
+
+
+def verify_artifact_contents(wheel: Path, sdist: Path) -> None:
+    with zipfile.ZipFile(wheel) as archive:
+        wheel_names = set(archive.namelist())
+    missing = sorted(PACKAGE_ASSETS - wheel_names)
+    if missing:
+        raise SystemExit(f"Wheel is missing runtime files: {', '.join(missing)}")
+    collisions = sorted(
+        name
+        for name in wheel_names
+        if any(name == prefix or name.startswith(prefix) for prefix in FORBIDDEN_WHEEL_PREFIXES)
+    )
+    if collisions:
+        raise SystemExit(f"Wheel contains top-level runtime collisions: {', '.join(collisions)}")
+
+    with tarfile.open(sdist, "r:gz") as archive:
+        sdist_names = {name.partition("/")[2] for name in archive.getnames() if "/" in name}
+    missing = sorted(PACKAGE_ASSETS - sdist_names)
+    if missing:
+        raise SystemExit(f"Source distribution is missing runtime files: {', '.join(missing)}")
+
+
+def python_in(venv_dir: Path) -> Path:
+    directory = "Scripts" if os.name == "nt" else "bin"
+    executable = "python.exe" if os.name == "nt" else "python"
+    return venv_dir / directory / executable
+
+
+def console_script_in(venv_dir: Path) -> Path:
+    directory = "Scripts" if os.name == "nt" else "bin"
+    executable = "agent-session-viewer.exe" if os.name == "nt" else "agent-session-viewer"
+    return venv_dir / directory / executable
+
+
+def isolated_environment(directory: Path, wheel: Path) -> tuple[Path, dict[str, str]]:
+    venv_dir = directory / "venv"
+    venv.EnvBuilder(with_pip=True).create(venv_dir)
+    python = python_in(venv_dir)
+    subprocess.run(
+        [str(python), "-m", "pip", "install", "--disable-pip-version-check", str(wheel)],
+        check=True,
+    )
+    env = os.environ.copy()
+    for name in ("GROK_HOME", "CLAUDE_HOME", "CODEX_HOME"):
+        env[name] = str(directory / name.lower())
+    return python, env
+
+
+def verify_test_client(python: Path, env: dict[str, str], cwd: Path) -> None:
+    code = """
+from agent_session_viewer.app import app
+client = app.test_client()
+response = client.get("/")
+assert response.status_code == 200
+assert b"Agent Session Viewer" in response.data
+for url in %r:
+    asset = client.get(url)
+    assert asset.status_code == 200, (url, asset.status_code)
+    assert asset.data, url
+""" % (STATIC_URLS,)
+    subprocess.run([str(python), "-c", code], check=True, env=env, cwd=cwd)
+
+
+def verify_server(command: list[str], env: dict[str, str], cwd: Path) -> None:
+    port = 5050
+    process = subprocess.Popen(
+        command,
+        env=env,
+        cwd=cwd,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    try:
+        for _ in range(100):
+            if process.poll() is not None:
+                raise SystemExit(f"Installed entrypoint exited early: {' '.join(command)}")
+            try:
+                with urllib.request.urlopen(f"http://127.0.0.1:{port}/", timeout=0.2) as response:
+                    if response.status == 200:
+                        return
+            except OSError:
+                time.sleep(0.05)
+        raise SystemExit(f"Installed entrypoint did not start: {' '.join(command)}")
+    finally:
+        process.terminate()
+        try:
+            process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait()
+
 
 def main() -> None:
-    wheels = sorted(Path("dist").glob("agent_session_viewer-*.whl"))
-    if not wheels:
-        raise SystemExit("No built wheel found in dist/")
+    wheel, sdist = built_artifacts()
+    verify_artifact_contents(wheel, sdist)
+    with tempfile.TemporaryDirectory() as temporary:
+        directory = Path(temporary)
+        python, env = isolated_environment(directory, wheel)
+        verify_test_client(python, env, directory)
 
-    required = {
-        "agent_session_viewer/app.py",
-        "app.py",
-        "main.py",
-        "static/app.css",
-        "static/app.js",
-        "templates/base.html",
-        "templates/list.html",
-        "templates/view.html",
-    }
-    with zipfile.ZipFile(wheels[-1]) as wheel:
-        names = set(wheel.namelist())
-        missing = sorted(required - names)
-        if missing:
-            raise SystemExit(f"Wheel is missing runtime files: {', '.join(missing)}")
-
-        with tempfile.TemporaryDirectory() as directory:
-            wheel.extractall(directory)
-            for name in ("GROK_HOME", "CLAUDE_HOME", "CODEX_HOME"):
-                os.environ[name] = str(Path(directory) / name.lower())
-            sys.path.insert(0, directory)
-            from agent_session_viewer.app import app
-
-            response = app.test_client().get("/")
-            if response.status_code != 200 or b"Agent Session Viewer" not in response.data:
-                raise SystemExit("Installed-wheel Flask smoke test failed")
+        console_script = console_script_in(directory / "venv")
+        if not console_script.is_file():
+            raise SystemExit("Installed console script was not created")
+        verify_server([str(console_script)], env, directory)
+        verify_server([str(python), "-m", "agent_session_viewer"], env, directory)
 
 
 if __name__ == "__main__":

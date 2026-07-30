@@ -6,7 +6,6 @@ import logging
 import mimetypes
 import os
 from io import BytesIO
-from pathlib import Path
 from typing import NoReturn
 
 from flask import Flask, Response, abort, render_template, request, send_file
@@ -27,11 +26,7 @@ from .markdown_output import format_markdown_content
 from .session import load_session, summary_to_markdown, turns_to_markdown
 from .util import decode_html_entities, decode_view_data
 
-app = Flask(
-    __name__,
-    template_folder=str(Path(__file__).parent.parent / "templates"),
-    static_folder=str(Path(__file__).parent.parent / "static"),
-)
+app = Flask(__name__)
 app.jinja_env.filters["markdown_content"] = format_markdown_content
 app.jinja_env.filters["decode_html_entities"] = decode_html_entities
 

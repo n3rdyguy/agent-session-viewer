@@ -1,11 +1,6 @@
-"""CLI entrypoint for Agent Session Viewer."""
+"""Deprecated source-checkout shim; use ``agent_session_viewer.cli`` instead."""
 
-from agent_session_viewer.app import run
-
-
-def main() -> None:
-    run()
-
+from agent_session_viewer.cli import main
 
 if __name__ == "__main__":
     main()

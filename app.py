@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Backward-compatible module entrypoint."""
+"""Deprecated source-checkout shim; use ``agent_session_viewer.app`` instead."""
 
 from agent_session_viewer.app import app, run
 
