@@ -160,32 +160,43 @@ platforms.
 | `CLAUDE_HOME` | Claude Code root (projects under `…/projects`) | `~/.claude` |
 | `CODEX_HOME` | Codex root (sessions under `…/sessions`) | `~/.codex` |
 
+`ASV_TIMING_DEBUG` is independent of `ASV_DEBUG`. After enabling it, reload the session
+list or open a session. Timing entries are written to the terminal running the server:
+
+```text
+INFO agent_session_viewer.discovery: session discovery completed in 12.4 ms
+INFO agent_session_viewer.session: session loading (codex) completed in 48.7 ms
+```
+
 **Linux / macOS** (bash/zsh):
 
 ```bash
 export ASV_DEBUG=1
+export ASV_TIMING_DEBUG=1
 export GROK_HOME=~/.grok
 uv run python app.py
 
 # one-shot:
-ASV_DEBUG=1 uv run python app.py
+ASV_DEBUG=1 ASV_TIMING_DEBUG=1 uv run python app.py
 ```
 
 **Windows PowerShell:**
 
 ```powershell
 $env:ASV_DEBUG = "1"
+$env:ASV_TIMING_DEBUG = "1"
 $env:GROK_HOME = "~/.grok"
 uv run python app.py
 
 # one-shot:
-$env:ASV_DEBUG = "1"; uv run python app.py
+$env:ASV_DEBUG = "1"; $env:ASV_TIMING_DEBUG = "1"; uv run python app.py
 ```
 
 **Windows cmd.exe:**
 
 ```bat
 set ASV_DEBUG=1
+set ASV_TIMING_DEBUG=1
 set GROK_HOME=~/.grok
 uv run python app.py
 ```
