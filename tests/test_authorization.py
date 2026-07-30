@@ -65,6 +65,31 @@ def test_claude_requires_exact_recognized_layout(client, agent_homes, relative: 
     assert response.status_code == 403
 
 
+def test_claude_subagent_transcript_is_authorized(client, agent_homes) -> None:
+    path = _jsonl(agent_homes["claude"] / "projects/project/session/subagents/agent-fixture1.jsonl")
+    response = client.get("/view", query_string={"agent": "claude", "path": path})
+    assert response.status_code == 200
+
+
+@pytest.mark.parametrize(
+    "relative",
+    [
+        # Right depth, wrong directory name.
+        Path("projects/project/session/other/agent-fixture1.jsonl"),
+        # Right directory, wrong filename prefix.
+        Path("projects/project/session/subagents/notes.jsonl"),
+        # Right shape, wrong suffix.
+        Path("projects/project/session/subagents/agent-fixture1.txt"),
+        # Deeper than the recognized subagent layout.
+        Path("projects/project/session/subagents/nested/agent-fixture1.jsonl"),
+    ],
+)
+def test_claude_subagent_lookalikes_are_denied(client, agent_homes, relative: Path) -> None:
+    path = _jsonl(agent_homes["claude"] / relative)
+    response = client.get("/view", query_string={"agent": "claude", "path": path})
+    assert response.status_code == 403
+
+
 def test_prefix_collision_and_traversal_are_denied(client, agent_homes, tmp_path) -> None:
     outside = _jsonl(tmp_path / "claude-other/projects/project/session.jsonl")
     traversal = agent_homes["claude"] / "projects" / ".." / ".." / outside.relative_to(tmp_path)
