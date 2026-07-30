@@ -74,7 +74,13 @@ def resolve_session_path(agent: Agent, requested: str) -> AuthorizedSession:
         recognized = len(parts) == 2 and resolved.is_dir()
     elif agent == "claude":
         resolved, parts = _relative_to_resolved(path, config.CLAUDE_HOME / "projects")
-        recognized = len(parts) == 2 and resolved.is_file() and resolved.suffix.lower() == ".jsonl"
+        is_jsonl = resolved.is_file() and resolved.suffix.lower() == ".jsonl"
+        # <project>/<session>.jsonl, or a subagent transcript recorded beside it at
+        # <project>/<session>/subagents/agent-<id>.jsonl. Nothing else in between.
+        recognized = is_jsonl and (
+            len(parts) == 2
+            or (len(parts) == 4 and parts[2] == "subagents" and parts[3].startswith("agent-"))
+        )
     else:
         candidates = (
             config.CODEX_HOME / "sessions",
@@ -135,7 +141,10 @@ def resolve_media_path(session: AuthorizedSession, requested: str) -> Path:
     if session.agent == "grok":
         roots = (session.path,)
     elif session.agent == "claude":
-        roots = (session.path.parent,)
+        # Subagent transcripts live two levels below the project directory that owns
+        # any associated media, so authorize against the project directory itself.
+        parent = session.path.parent
+        roots = (parent.parent.parent,) if parent.name == "subagents" else (parent,)
     else:
         roots = (
             session.path.parent,
