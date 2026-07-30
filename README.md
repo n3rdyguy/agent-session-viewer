@@ -144,7 +144,10 @@ The server binds to `127.0.0.1` only (local loopback).
 
 ### Environment variables
 
-See [`.env.example`](.env.example). Copy to `.env` if useful (gitignored); the app does **not** load `.env` automatically — export vars in your shell or IDE. `~` in path overrides is expanded (home on all platforms).
+See [`.env.example`](.env.example). Copy it to `.env` in the directory where you start the
+app (the file is gitignored). The app loads it automatically. Variables explicitly set by
+your shell or IDE take precedence over `.env`; `~` in path overrides is expanded on all
+platforms.
 
 | Variable | Purpose | Default |
 |----------|---------|---------|
