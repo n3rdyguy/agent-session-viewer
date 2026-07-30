@@ -48,6 +48,21 @@ def test_view_characterization(client, agent_homes: dict[str, Path]) -> None:
     assert response.status_code == 200
     assert b"Hello from fixture" in response.data
     assert b"Fixture response" in response.data
+    assert b"cdn.jsdelivr.net" not in response.data
+    assert b"/static/vendor/marked/marked.min.js" in response.data
+    assert b"/static/vendor/dompurify/purify.min.js" in response.data
+
+
+def test_html_responses_have_security_headers(client) -> None:
+    response = client.get("/")
+
+    assert response.headers["X-Content-Type-Options"] == "nosniff"
+    assert response.headers["Referrer-Policy"] == "no-referrer"
+    csp = response.headers["Content-Security-Policy"]
+    assert "script-src 'self'" in csp
+    assert "connect-src 'none'" in csp
+    assert "frame-ancestors 'none'" in csp
+    assert "object-src 'none'" in csp
 
 
 def test_export_characterization(client, agent_homes: dict[str, Path]) -> None:

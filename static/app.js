@@ -303,9 +303,14 @@
     if (!ev.target.closest('.copy-menu')) closeAllCopyMenus();
   });
 
-  // ── Markdown toggle (optional — CDN may be offline) ──────
+  // ── Markdown toggle (optional and fail-closed) ────────────
   var mdToggle = document.getElementById('md-toggle');
-  var markedOk = (typeof marked !== 'undefined');
+  var markdownLibrariesOk = (
+    typeof marked !== 'undefined' &&
+    typeof marked.parse === 'function' &&
+    typeof DOMPurify !== 'undefined' &&
+    typeof DOMPurify.sanitize === 'function'
+  );
 
   function isHashOnlyHref(href) {
     if (!href) return true;
@@ -339,87 +344,40 @@
     return String(src || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
   }
 
-  var MD_HTML_TAGS = {
-    a:1, abbr:1, b:1, blockquote:1, br:1, code:1, del:1, div:1, em:1,
-    h1:1, h2:1, h3:1, h4:1, h5:1, h6:1, hr:1, i:1, input:1, li:1,
-    ol:1, p:1, pre:1, s:1, span:1, strong:1, sub:1, sup:1, table:1,
-    tbody:1, td:1, th:1, thead:1, tr:1, u:1, ul:1
-  };
-
-  function escapeAgentTags(src) {
-    var re = new RegExp('</?([A-Za-z][\\w:-]*)\\b[^>]*>', 'g');
-    var fenceChar = '';
-    var fenceLength = 0;
-    function escapeTagsOutsideInlineCode(line) {
-      var result = '';
-      var cursor = 0;
-      var codeSpan = /(`+)([\s\S]*?)\1(?!`)/g;
-      var match;
-
-      function escapeTags(text) {
-        return text.replace(re, function(tag, name) {
-          if (MD_HTML_TAGS[String(name).toLowerCase()]) return tag;
-          return escapeHtml(tag);
-        });
-      }
-
-      while ((match = codeSpan.exec(line)) !== null) {
-        result += escapeTags(line.slice(cursor, match.index));
-        result += match[0];
-        cursor = match.index + match[0].length;
-      }
-      return result + escapeTags(line.slice(cursor));
-    }
-
-    // Never pre-escape content inside Markdown fences. marked will escape code
-    // exactly once; escaping it here too makes tags such as <form> visibly
-    // render as "&lt;form&gt;" in the resulting code block. Inline code spans
-    // need the same treatment.
-    return String(src).split('\n').map(function(line) {
-      if (fenceChar) {
-        var close = line.match(/^ {0,3}(`+|~+)\s*$/);
-        if (
-          close &&
-          close[1].charAt(0) === fenceChar &&
-          close[1].length >= fenceLength
-        ) {
-          fenceChar = '';
-          fenceLength = 0;
-        }
-        return line;
-      }
-
-      var open = line.match(/^ {0,3}(`{3,}|~{3,})/);
-      if (open) {
-        fenceChar = open[1].charAt(0);
-        fenceLength = open[1].length;
-        return line;
-      }
-
-      return escapeTagsOutsideInlineCode(line);
-    }).join('\n');
-  }
-
   function renderMarkdown(src) {
     src = normalizeNewlines(src);
-    var html = '';
+    if (!markdownLibrariesOk) return null;
     try {
-      var prepared = escapeAgentTags(src);
-      html = marked.parse(prepared);
+      var html = marked.parse(src);
       html = stripHashOnlyLinks(html);
-    } catch (err) {
-      html = '<pre class="md-preserve">' + escapeHtml(src) + '</pre>';
-    }
-    if (typeof DOMPurify !== 'undefined') {
       html = DOMPurify.sanitize(html, {
-        USE_PROFILES: { html: true },
-        ADD_ATTR: ['target', 'rel', 'class'],
-        ADD_TAGS: ['pre'],
-        FORBID_TAGS: ['img']
+        ALLOWED_TAGS: [
+          'a', 'abbr', 'b', 'blockquote', 'br', 'code', 'del', 'div', 'em',
+          'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'hr', 'i', 'li', 'ol', 'p',
+          'pre', 's', 'span', 'strong', 'sub', 'sup', 'table', 'tbody', 'td',
+          'th', 'thead', 'tr', 'u', 'ul'
+        ],
+        ALLOWED_ATTR: ['class', 'href', 'rel', 'title'],
+        ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto):|[/?#.]|[^a-z+.-][^:]*$)/i,
+        ALLOW_DATA_ATTR: false,
+        ALLOW_ARIA_ATTR: false,
+        FORBID_TAGS: [
+          'form', 'iframe', 'img', 'input', 'math', 'object', 'script', 'style',
+          'svg', 'template'
+        ]
       });
       html = stripHashOnlyLinks(html);
+      return html;
+    } catch (err) {
+      return null;
     }
-    return html;
+  }
+
+  function renderPlainFallback(container, src) {
+    var pre = document.createElement('pre');
+    pre.className = 'md-preserve';
+    pre.textContent = normalizeNewlines(src);
+    container.replaceChildren(pre);
   }
 
   function setMarkdownMode(on) {
@@ -428,9 +386,17 @@
       var plain = block.querySelector('.md-plain');
       var rich = block.querySelector('.md-rich');
       if (!plain || !rich) return;
-      if (on && markedOk) {
+      if (on && markdownLibrariesOk) {
         if (!rich.dataset.rendered) {
-          rich.innerHTML = renderMarkdown(readSrc(block));
+          var source = readSrc(block);
+          var sanitized = renderMarkdown(source);
+          if (sanitized === null) {
+            renderPlainFallback(rich, source);
+          } else {
+            // This is the only session-derived HTML sink. `sanitized` can only
+            // be returned after DOMPurify succeeds with the allowlist above.
+            rich.innerHTML = sanitized;
+          }
           rich.dataset.rendered = '1';
         }
         plain.hidden = true;
@@ -443,7 +409,7 @@
   }
 
   if (mdToggle) {
-    if (markedOk && typeof marked.use === 'function') {
+    if (markdownLibrariesOk && typeof marked.use === 'function') {
       marked.use({
         gfm: true,
         breaks: true,
@@ -475,7 +441,7 @@
           }
         }
       });
-    } else if (markedOk && marked.setOptions) {
+    } else if (markdownLibrariesOk && marked.setOptions) {
       marked.setOptions({ gfm: true, breaks: true });
     }
 
@@ -486,15 +452,15 @@
       if (stored === '1') prefer = true;
     } catch (e) {}
 
-    if (!markedOk) {
+    if (!markdownLibrariesOk) {
       prefer = false;
       mdToggle.disabled = true;
-      mdToggle.title = 'Markdown library failed to load (CDN offline?)';
+      mdToggle.title = 'Markdown parser or sanitizer failed to load';
     }
     mdToggle.checked = prefer;
-    setMarkdownMode(prefer && markedOk);
+    setMarkdownMode(prefer && markdownLibrariesOk);
     mdToggle.addEventListener('change', function() {
-      var on = mdToggle.checked && markedOk;
+      var on = mdToggle.checked && markdownLibrariesOk;
       try { localStorage.setItem(MD_KEY, mdToggle.checked ? '1' : '0'); } catch (e) {}
       setMarkdownMode(on);
     });
