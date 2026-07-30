@@ -5,11 +5,11 @@ from __future__ import annotations
 import os
 import socket
 import subprocess
+import sys
 import tarfile
 import tempfile
 import time
 import urllib.request
-import venv
 import zipfile
 from pathlib import Path
 
@@ -91,10 +91,13 @@ def console_script_in(venv_dir: Path) -> Path:
 
 def isolated_environment(directory: Path, wheel: Path) -> tuple[Path, dict[str, str]]:
     venv_dir = directory / "venv"
-    venv.EnvBuilder(with_pip=True).create(venv_dir)
+    subprocess.run(
+        ["uv", "venv", "--python", sys.executable, str(venv_dir)],
+        check=True,
+    )
     python = python_in(venv_dir)
     subprocess.run(
-        [str(python), "-m", "pip", "install", "--disable-pip-version-check", str(wheel)],
+        ["uv", "pip", "install", "--python", str(python), str(wheel)],
         check=True,
     )
     env = os.environ.copy()
