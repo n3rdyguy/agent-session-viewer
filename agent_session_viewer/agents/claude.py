@@ -32,7 +32,9 @@ _DOCUMENT_ATTACHMENTS = {
     "skill_listing": "Available skills",
     "agent_listing_delta": "Available agents",
 }
-_NOISE_ATTACHMENTS = frozenset(("deferred_tools_delta",))
+# Kept out of the chat: tool-registry deltas are pure bookkeeping, and task
+# reminders are re-emitted after almost every turn but render as the todo list.
+_NOISE_ATTACHMENTS = frozenset(("deferred_tools_delta", "task_reminder"))
 MEMORY_FILENAME = "CLAUDE.md"
 _MAX_MEMORY_CHARS = 64_000
 # Claude never writes injected memory into the transcript, so these documents are
@@ -160,6 +162,32 @@ def claude_memory_documents(cwd: str) -> list[dict[str, Any]]:
     if user:
         documents.append(user)
     return documents
+
+
+def tasks_to_todos(items: Any) -> list[dict[str, Any]]:
+    """Map a ``task_reminder`` task list onto the shared todo shape."""
+    todos: list[dict[str, Any]] = []
+    if not isinstance(items, list):
+        return todos
+    for index, item in enumerate(items, 1):
+        if not isinstance(item, dict):
+            continue
+        content = item.get("subject") or item.get("activeForm") or item.get("description") or ""
+        blocked_by = item.get("blockedBy")
+        todos.append(
+            {
+                "id": str(item.get("id") or index),
+                "content": str(content),
+                "status": str(item.get("status") or "unknown"),
+                # Tasks have no priority; surfacing blockers is more useful here.
+                "priority": (
+                    f"blocked by {', '.join(str(b) for b in blocked_by)}"
+                    if isinstance(blocked_by, list) and blocked_by
+                    else ""
+                ),
+            }
+        )
+    return todos
 
 
 def claude_prompt_history(session_id: str, limit: int = 200) -> list[dict[str, Any]]:
@@ -321,6 +349,7 @@ def claude_scan_session(
     artifacts: list[dict[str, Any]] = []
     tool_names: dict[str, str] = {}
     seen_documents: set[str] = set()
+    task_items: list[Any] = []
 
     for obj in records if records is not None else iter_jsonl(path):
         counts["lines"] += 1
@@ -405,6 +434,12 @@ def claude_scan_session(
         elif record_type == "attachment":
             attachment = obj.get("attachment") if isinstance(obj.get("attachment"), dict) else {}
             kind = str(attachment.get("type") or "attachment")
+            if kind == "task_reminder":
+                items = attachment.get("content")
+                # Reminders are re-emitted throughout a session and go empty once the
+                # list is cleared, so keep the most recent one that still had tasks.
+                if isinstance(items, list) and items:
+                    task_items = items
             title = _DOCUMENT_ATTACHMENTS.get(kind)
             if title and kind not in seen_documents:
                 body = attachment.get("content")
@@ -597,7 +632,9 @@ def claude_scan_session(
     }
 
     resources = {
-        "todos": claude_todos(session_id),
+        # Newer Claude Code records tasks in the transcript; older versions wrote
+        # them to CLAUDE_HOME/todos, which is kept as a fallback.
+        "todos": tasks_to_todos(task_items) or claude_todos(session_id),
         "scheduler_tasks": [],
         "reported_completions": [],
         "settings": settings_rows,

@@ -9,6 +9,7 @@ from agent_session_viewer.agents import claude
 from agent_session_viewer.agents.claude import (
     claude_scan_session,
     claude_todos,
+    get_claude_conversation,
     load_session,
     load_subagent_records,
 )
@@ -133,6 +134,46 @@ def test_damaged_record_keeps_later_turns_and_summary(tmp_path: Path) -> None:
     assert any(d["category"] == "invalid_json" for d in diagnostics)
     assert session["summary"]["title"] == "Fixture session title"
     assert any(turn["text"] == "The parser looks good." for turn in session["turns"])
+
+
+def test_todos_come_from_the_transcript_task_reminders() -> None:
+    todos = claude_scan_session(CLAUDE_SESSION)["resources"]["todos"]
+
+    assert [(t["id"], t["content"], t["status"]) for t in todos] == [
+        ("1", "Read the parser", "completed"),
+        ("2", "Patch the parser", "in_progress"),
+    ]
+    # Tasks have no priority, so blockers occupy that slot.
+    assert todos[1]["priority"] == "blocked by 1"
+
+
+def test_a_cleared_task_reminder_does_not_wipe_the_last_populated_one() -> None:
+    """The fixture ends with an empty reminder, as real sessions do."""
+    todos = claude_scan_session(CLAUDE_SESSION)["resources"]["todos"]
+
+    assert len(todos) == 2
+
+
+def test_task_reminders_stay_out_of_the_chat_now_that_they_are_todos() -> None:
+    turns = get_claude_conversation(CLAUDE_SESSION)
+
+    assert all(turn["meta"] != "task_reminder" for turn in turns)
+    assert all("Read the parser" not in turn["text"] for turn in turns)
+
+
+def test_transcript_tasks_take_precedence_over_the_legacy_todos_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    todos_dir = tmp_path / "todos"
+    todos_dir.mkdir(parents=True)
+    (todos_dir / "session-fixture-agent-session-fixture.json").write_text(
+        json.dumps([{"content": "Legacy todo", "status": "pending"}]), encoding="utf-8"
+    )
+    monkeypatch.setattr(claude.config, "CLAUDE_HOME", tmp_path)
+
+    todos = claude_scan_session(CLAUDE_SESSION)["resources"]["todos"]
+
+    assert [t["content"] for t in todos] == ["Read the parser", "Patch the parser"]
 
 
 def test_todos_are_read_from_the_claude_home(
