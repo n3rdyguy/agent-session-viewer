@@ -20,13 +20,13 @@
       {% else %}
       <figure class="chat-image">
         {% if img.snippet %}<div class="image-snippet">{{ img.snippet }}</div>{% endif %}
-        <a href="/media?path={{ img.path|urlencode }}" target="_blank" rel="noopener">
-          <img src="/media?path={{ img.path|urlencode }}" alt="{{ img.label or img.path }}" loading="lazy"
+        <a href="{{ url_for('media', agent=agent, session=path, path=img.path) }}" target="_blank" rel="noopener">
+          <img src="{{ url_for('media', agent=agent, session=path, path=img.path) }}" alt="{{ img.label or img.path }}" loading="lazy"
                onerror="this.style.display='none'; this.nextElementSibling && (this.nextElementSibling.style.display='block');">
         </a>
         <div style="display:none;padding:0.75rem;color:var(--muted);font-size:0.8rem;">Preview unavailable</div>
         <figcaption>
-          <a href="/media?path={{ img.path|urlencode }}" target="_blank" rel="noopener">{{ img.label or img.path }}</a>
+          <a href="{{ url_for('media', agent=agent, session=path, path=img.path) }}" target="_blank" rel="noopener">{{ img.label or img.path }}</a>
         </figcaption>
       </figure>
       {% endif %}

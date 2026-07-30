@@ -4,17 +4,27 @@ from __future__ import annotations
 
 import mimetypes
 import os
+from io import BytesIO
 from pathlib import Path
-from urllib.parse import unquote
+from typing import NoReturn
 
 from flask import Flask, Response, abort, render_template, request, send_file
 
+from .authorization import (
+    AuthorizationError,
+    AuthorizedSession,
+    InvalidAgent,
+    PathMissing,
+    parse_agent,
+    resolve_media_path,
+    resolve_raw_path,
+    resolve_session_path,
+)
 from .config import CLAUDE_HOME, CODEX_HOME, GROK_HOME
 from .discovery import all_sessions
-from .images import is_image_path
 from .markdown_output import format_markdown_content
 from .session import load_session, summary_to_markdown, turns_to_markdown
-from .util import decode_html_entities, decode_view_data, path_allowed
+from .util import decode_html_entities, decode_view_data
 
 app = Flask(
     __name__,
@@ -82,15 +92,11 @@ def index():
 def view():
     path_str = request.args.get("path")
     agent = request.args.get("agent")
-    if not path_str or not agent:
+    if not path_str:
         abort(400, "Missing path or agent")
-
-    path = Path(path_str)
-    if not path.exists():
-        abort(404, "Session not found")
-
-    if not path_allowed(path):
-        abort(403, "Path not allowed")
+    authorized = _authorized_session(agent, path_str)
+    path = authorized.path
+    agent = authorized.agent
 
     session = decode_view_data(load_session(agent, path))
     return render_template(
@@ -113,15 +119,11 @@ def view():
 def export_md():
     path_str = request.args.get("path")
     agent = request.args.get("agent")
-    if not path_str or not agent:
+    if not path_str:
         abort(400)
-
-    path = Path(path_str)
-    if not path.exists():
-        abort(404)
-
-    if not path_allowed(path):
-        abort(403)
+    authorized = _authorized_session(agent, path_str)
+    path = authorized.path
+    agent = authorized.agent
 
     session = decode_view_data(load_session(agent, path))
     extra = summary_to_markdown(
@@ -138,84 +140,66 @@ def export_md():
     )
 
     filename = f"{agent}-{path.stem[:40]}.md"
-    return Response(
-        md,
+    return send_file(
+        BytesIO(md.encode("utf-8")),
         mimetype="text/markdown",
-        headers={"Content-Disposition": f"attachment; filename={filename}"},
+        as_attachment=True,
+        download_name=filename,
     )
 
 
 @app.route("/raw")
 def raw():
     path_str = request.args.get("path")
+    agent = request.args.get("agent")
     if not path_str:
         abort(400)
-    path = Path(path_str)
-    if not path.exists():
-        abort(404)
-
-    if not path_allowed(path):
-        abort(403, "Path not allowed")
-
-    # For directories (Grok) prefer chat_history, else summary
-    if path.is_dir():
-        for name in ("chat_history.jsonl", "summary.json"):
-            candidate = path / name
-            if candidate.exists():
-                path = candidate
-                break
-        else:
-            abort(404, "No single raw file for this session")
-
-    return Response(
-        path.read_text(encoding="utf-8", errors="replace"),
+    session = _authorized_session(agent, path_str)
+    try:
+        path = resolve_raw_path(session)
+    except AuthorizationError as exc:
+        _abort_authorization(exc)
+    return send_file(
+        path,
         mimetype="text/plain",
-        headers={"Content-Disposition": f"attachment; filename={path.name}"},
+        as_attachment=True,
+        download_name=path.name,
+        conditional=True,
     )
 
 
-def _media_path_allowed(path: Path) -> bool:
-    if path_allowed(path):
-        return True
-    # Codex clipboard captures often live under the OS temp dir
+def _abort_authorization(exc: AuthorizationError) -> NoReturn:
+    if isinstance(exc, InvalidAgent):
+        abort(400, str(exc))
+    if isinstance(exc, PathMissing):
+        abort(404, str(exc))
+    abort(403, str(exc))
+
+
+def _authorized_session(agent_value: str | None, path: str) -> AuthorizedSession:
     try:
-        name = path.name.lower()
-        if name.startswith("codex-clipboard-") and is_image_path(path):
-            tmp = Path(os.environ.get("TEMP") or os.environ.get("TMP") or "/tmp").resolve()
-            path.resolve().relative_to(tmp)
-            return True
-    except Exception:
-        pass
-    # Codex generated images dir is under CODEX_HOME (already allowed via path_allowed)
-    return False
+        agent = parse_agent(agent_value)
+        return resolve_session_path(agent, path)
+    except AuthorizationError as exc:
+        _abort_authorization(exc)
 
 
 @app.route("/media")
 def media():
-    """Serve local image files under known agent home directories only."""
+    """Serve passive image media associated with an authorized session."""
     path_str = request.args.get("path")
-    if not path_str:
-        abort(400, "Missing path")
-
-    path = Path(path_str)
-    # Also try unquoted forms
-    if not path.exists():
-        try:
-            path = Path(unquote(path_str))
-        except Exception:
-            pass
-
-    if not path.exists() or not path.is_file():
-        abort(404, "Image not found")
-
-    if not _media_path_allowed(path):
-        abort(403, "Path not allowed")
-
-    if not is_image_path(path):
-        abort(400, "Not an image file")
+    session_path = request.args.get("session")
+    agent = request.args.get("agent")
+    if not path_str or not session_path:
+        abort(400, "Missing path, session, or agent")
+    session = _authorized_session(agent, session_path)
+    try:
+        path = resolve_media_path(session, path_str)
+    except AuthorizationError as exc:
+        _abort_authorization(exc)
 
     mime = mimetypes.guess_type(str(path))[0] or "application/octet-stream"
-    return send_file(path, mimetype=mime, conditional=True)
+    return send_file(path, mimetype=mime, conditional=True, download_name=path.name)
 
 
 def run(host: str = "127.0.0.1", port: int = 5050) -> None:

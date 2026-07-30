@@ -45,7 +45,8 @@ Claude Code discovery and basic viewing exist, but the experience is **not** at 
   - Only explicit session image attachments render in the separate image gallery
 - One-click **Markdown export**
 - Raw transcript / summary download
-- Path safety: only files under known agent home directories are served
+- Agent-aware path safety: only recognized sessions and their associated passive image
+  media are served
 
 ### Grok-focused (rich session view)
 
@@ -77,7 +78,7 @@ Codex `rollout-*.jsonl` sessions under `~/.codex/sessions/` (and `archived_sessi
 | **Chat history** | User + agent messages, **reasoning** (`<encrypted>` when present), tool calls/results with **call ids**, patches, image generation, task start/complete |
 | **Patches** | File edits from `patch_apply_end` (paths + diff snippets) |
 | **Events timeline** | Second tab: tasks, patches, image generation (not the full chat) |
-| **Images** | User `local_images` / generated images; clipboard captures under temp (`codex-clipboard-*`) allowed for `/media` |
+| **Images** | User `local_images` / generated images; narrowly named clipboard captures under temp (`codex-clipboard-*`) can be previewed when linked from an authorized Codex session |
 
 ---
 
@@ -86,7 +87,8 @@ Codex `rollout-*.jsonl` sessions under `~/.codex/sessions/` (and `archived_sessi
 - Python **3.14+** (see `.python-version` / `pyproject.toml`)
 - [uv](https://github.com/astral-sh/uv)
 
-Markdown rendering loads **marked** and **DOMPurify** from a CDN when you open a session (needs network once for those scripts). Session data itself is never uploaded.
+Markdown rendering uses package-vendored **marked** and **DOMPurify** assets and has no
+runtime CDN dependency. Session data itself is never uploaded.
 
 ---
 
@@ -200,8 +202,18 @@ On Windows, Grok session group folders are URL-encoded paths under `sessions\` (
 | `/` | Session list, search, agent filters |
 | `/view?agent=&path=` | Conversation plus available summary, artifacts, patches, and events |
 | `/export?agent=&path=` | Download conversation as Markdown |
-| `/raw?path=` | Download raw `chat_history.jsonl` or `summary.json` |
-| `/media?path=` | Serve a local image under an allowed agent home |
+| `/raw?agent=&path=` | Download the raw file derived from an authorized session |
+| `/media?agent=&session=&path=` | Serve passive image media associated with an authorized session |
+
+All filesystem routes validate the agent and the expected on-disk session layout. A path
+is not authorized merely because it is somewhere below an agent home. Resolved paths that
+escape through traversal or symlinks, cross-agent paths, home-level configuration files,
+and active SVG media are denied. Grok raw downloads prefer `chat_history.jsonl` and fall
+back to `summary.json`; Claude and Codex raw downloads are their authorized JSONL file.
+
+The supported threat model is local, loopback-only use. The app has no authentication;
+binding it to a non-loopback interface is unsupported unless an authentication boundary is
+added. Session contents are untrusted, and remote media is not loaded automatically.
 
 ---
 

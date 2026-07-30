@@ -98,7 +98,11 @@ def test_media_characterization(client, agent_homes: dict[str, Path]) -> None:
     image.parent.mkdir(parents=True)
     image.write_bytes(b"\x89PNG\r\n\x1a\nfixture")
 
-    response = client.get("/media", query_string={"path": image})
+    session = image.parent
+    response = client.get(
+        "/media",
+        query_string={"agent": "grok", "session": session, "path": image},
+    )
 
     assert response.status_code == 200
     assert response.mimetype == "image/png"
