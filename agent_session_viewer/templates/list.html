@@ -9,10 +9,10 @@
     <button class="btn" type="submit">Search</button>
   </form>
   <div class="filters">
-    <a href="/?q={{ q or '' }}" class="{{ 'active' if not agent else '' }}">All</a>
-    <a href="/?agent=grok&q={{ q or '' }}" class="{{ 'active' if agent == 'grok' else '' }}">Grok</a>
-    <a href="/?agent=claude&q={{ q or '' }}" class="{{ 'active' if agent == 'claude' else '' }}">Claude</a>
-    <a href="/?agent=codex&q={{ q or '' }}" class="{{ 'active' if agent == 'codex' else '' }}">Codex</a>
+    <a href="{{ url_for('index', q=q or '') }}" class="{{ 'active' if not agent else '' }}">All</a>
+    <a href="{{ url_for('index', agent='grok', q=q or '') }}" class="{{ 'active' if agent == 'grok' else '' }}">Grok</a>
+    <a href="{{ url_for('index', agent='claude', q=q or '') }}" class="{{ 'active' if agent == 'claude' else '' }}">Claude</a>
+    <a href="{{ url_for('index', agent='codex', q=q or '') }}" class="{{ 'active' if agent == 'codex' else '' }}">Codex</a>
   </div>
 </div>
 
@@ -23,7 +23,7 @@
   </p>
   {% for s in sessions %}
   <div class="session-card">
-    <a href="/view?path={{ s.path|urlencode }}&agent={{ s.agent }}">
+    <a href="{{ url_for('view', path=s.path, agent=s.agent) }}">
       <div class="session-title-row">
         <span class="badge {{ s.agent }}">{{ s.agent }}</span>
         {% if s.aborted %}<span class="badge aborted">aborted</span>{% endif %}

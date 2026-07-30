@@ -35,7 +35,7 @@ DATA_IMAGE_URL_RE = re.compile(
 def is_image_path(path: str | Path) -> bool:
     try:
         return Path(str(path)).suffix.lower() in IMAGE_EXTS
-    except Exception:
+    except (TypeError, ValueError):
         return False
 
 
@@ -85,7 +85,7 @@ def image_ref_data(url: str, label: str = "", snippet: str | None = None) -> dic
     if url.startswith("data:"):
         try:
             mime = url.split(";", 1)[0].split(":", 1)[1] or mime
-        except Exception:
+        except (IndexError, TypeError):
             pass
     return {
         "kind": "data",
@@ -306,14 +306,14 @@ def resolve_session_image_path(
         try:
             if c.is_file() and is_image_path(c):
                 return c.resolve()
-        except Exception:
+        except (OSError, RuntimeError, ValueError):
             continue
 
     # Absolute path that exists even if Path quirks on encoded session folders
     try:
         if p.is_file() and is_image_path(p):
             return p.resolve()
-    except Exception:
+    except (OSError, RuntimeError, ValueError):
         pass
     return None
 

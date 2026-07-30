@@ -4,7 +4,7 @@
 {% block content %}
 
 <div class="view-header">
-  <a href="/{% if agent %}?agent={{ agent }}{% endif %}" style="color:var(--accent); font-size:0.9rem;">← Back to list</a>
+  <a href="{{ url_for('index', agent=agent) }}" style="color:var(--accent); font-size:0.9rem;">← Back to list</a>
   <h2 class="view-title" title="{{ title }}">
     {% if summary and summary.aborted %}<span class="badge aborted">aborted</span>{% endif %}
     <span class="view-title-text">{{ title }}</span>
@@ -19,10 +19,10 @@
       <span class="track" aria-hidden="true"></span>
       <span class="md-toggle-label">Markdown</span>
     </label>
-    <a class="btn btn-primary" href="/export?path={{ path|urlencode }}&agent={{ agent }}">
+    <a class="btn btn-primary" href="{{ url_for('export_md', path=path, agent=agent) }}">
       ↓ Export Markdown
     </a>
-    <a class="btn" href="/raw?path={{ path|urlencode }}&agent={{ agent }}">Raw file</a>
+    <a class="btn" href="{{ url_for('raw', path=path, agent=agent) }}">Raw file</a>
   </div>
 </div>
 

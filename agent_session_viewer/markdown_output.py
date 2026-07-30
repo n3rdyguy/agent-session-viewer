@@ -133,7 +133,7 @@ def detect_code_language(text: str) -> str | None:
     if stripped[:1] in "[{":
         try:
             decoded = json.loads(stripped)
-        except TypeError, ValueError, json.JSONDecodeError:
+        except (TypeError, ValueError, json.JSONDecodeError):
             pass
         else:
             if isinstance(decoded, (dict, list)):
