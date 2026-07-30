@@ -39,7 +39,7 @@ _MAX_MEMORY_CHARS = 64_000
 # whatever is on disk right now. Say so where it is always visible: the subtitle
 # renders in the artifact header and is not part of either copy action, so the
 # document body stays a byte-for-byte copy of the file.
-MEMORY_DISK_NOTE = "current file on disk, not necessarily what this session used"
+MEMORY_DISK_NOTE = "on disk now, may differ from this session"
 
 
 # ─────────────────────────────────────────────
