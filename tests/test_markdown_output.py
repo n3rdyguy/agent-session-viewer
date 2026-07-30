@@ -64,10 +64,29 @@ def test_decodes_html_entities_inside_existing_fences() -> None:
     )
 
 
-def test_does_not_decode_html_entities_in_prose() -> None:
+def test_decodes_html_entities_in_prose() -> None:
     source = "Use &lt;name&gt; as a placeholder and keep AT&amp;T unchanged."
 
-    assert format_markdown_content(source) == source
+    assert format_markdown_content(source) == "Use <name> as a placeholder and keep AT&T unchanged."
+
+
+def test_decodes_nested_html_entities_in_tool_result() -> None:
+    turn = make_turn(
+        role="tool_result",
+        text=(
+            "{&amp;quot;html&amp;quot;:"
+            "&amp;quot;&amp;lt;div&amp;gt;Done&amp;lt;/div&amp;gt;&amp;quot;}"
+        ),
+    )
+
+    with app.app_context():
+        rendered = str(
+            app.jinja_env.get_template("partials/bubbles.html").module.render_bubbles([turn])
+        )
+
+    assert "{&#34;html&#34;:&#34;&lt;div&gt;Done&lt;/div&gt;&#34;}" in rendered
+    assert "&amp;quot;" not in rendered
+    assert "&amp;gt;" not in rendered
 
 
 def test_markdown_hint_prevents_xml_fencing_of_system_instructions() -> None:
@@ -130,11 +149,25 @@ def test_tool_result_template_keeps_raw_source_and_prepares_markdown_source() ->
             app.jinja_env.get_template("partials/bubbles.html").module.render_bubbles([turn])
         )
 
-    # HTML escaping is expected in the serialized template. In the browser,
-    # textarea.value decodes one layer: raw remains entity text while the
-    # Markdown source contains actual PHP characters inside its fence.
-    assert '<textarea class="raw-src" hidden readonly>&amp;lt;?php' in rendered
+    # HTML escaping is expected in serialized markup; textarea.value contains
+    # the decoded source in the browser.
+    assert '<textarea class="raw-src" hidden readonly>&lt;?php' in rendered
     assert '<textarea class="md-src" hidden readonly>```php\n&lt;?php' in rendered
+
+
+def test_plain_bubble_decodes_entities_without_interpreting_decoded_tags() -> None:
+    turn = make_turn(
+        role="assistant",
+        text="Use &lt;strong&gt;care&lt;/strong&gt; &amp; stay safe.",
+    )
+
+    with app.app_context():
+        rendered = str(
+            app.jinja_env.get_template("partials/bubbles.html").module.render_bubbles([turn])
+        )
+
+    assert "Use &lt;strong&gt;care&lt;/strong&gt; &amp; stay safe." in rendered
+    assert "Use &amp;lt;strong&amp;gt;" not in rendered
 
 
 def test_system_template_treats_tag_wrapped_instructions_as_markdown() -> None:

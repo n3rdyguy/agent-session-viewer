@@ -14,7 +14,7 @@ from .discovery import all_sessions
 from .images import is_image_path
 from .markdown_output import format_markdown_content
 from .session import load_session, summary_to_markdown, turns_to_markdown
-from .util import path_allowed
+from .util import decode_html_entities, decode_view_data, path_allowed
 
 app = Flask(
     __name__,
@@ -22,6 +22,7 @@ app = Flask(
     static_folder=str(Path(__file__).parent.parent / "static"),
 )
 app.jinja_env.filters["markdown_content"] = format_markdown_content
+app.jinja_env.filters["decode_html_entities"] = decode_html_entities
 
 
 @app.route("/")
@@ -31,7 +32,7 @@ def index():
         agent = None
     q = (request.args.get("q") or "").strip().lower()
 
-    sessions = all_sessions(agent)
+    sessions = decode_view_data(all_sessions(agent))
 
     if q:
         sessions = [
@@ -70,7 +71,7 @@ def view():
     if not path_allowed(path):
         abort(403, "Path not allowed")
 
-    session = load_session(agent, path)
+    session = decode_view_data(load_session(agent, path))
     return render_template(
         "view.html",
         agent=agent,
@@ -101,7 +102,7 @@ def export_md():
     if not path_allowed(path):
         abort(403)
 
-    session = load_session(agent, path)
+    session = decode_view_data(load_session(agent, path))
     extra = summary_to_markdown(
         session["summary"],
         agent=agent,

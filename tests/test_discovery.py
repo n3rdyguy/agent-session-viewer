@@ -1,3 +1,4 @@
+import importlib
 import json
 from pathlib import Path
 
@@ -261,3 +262,33 @@ def test_session_list_places_aborted_badge_before_title() -> None:
     )
     assert "session-headline" not in rendered
     assert "A useful headline</div>" not in rendered
+def test_session_list_decodes_html_entities_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    app_module = importlib.import_module("agent_session_viewer.app")
+    monkeypatch.setattr(
+        app_module,
+        "all_sessions",
+        lambda _agent: [
+            {
+                "agent": "codex",
+                "id": "codex-test",
+                "path": "rollout-test.jsonl",
+                "title": "Research &amp; Development",
+                "updated": "",
+                "created": "",
+                "messages": 1,
+                "model": "GPT &quot;Test&quot;",
+                "cwd": "C:/A&amp;B",
+            }
+        ],
+    )
+
+    response = app.test_client().get("/")
+    rendered = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    assert "Research &amp; Development" in rendered
+    assert "Research &amp;amp; Development" not in rendered
+    assert "GPT &#34;Test&#34;" in rendered
+    assert "C:/A&amp;B" in rendered

@@ -5,6 +5,29 @@ import pytest
 from agent_session_viewer import util
 
 
+def test_decode_view_data_decodes_display_values_but_preserves_sources() -> None:
+    source = {
+        "title": "Research &amp; Development",
+        "nested": [{"label": "A &lt; B", "text": "Keep &amp;lt; once"}],
+        "path": "C:/Research&amp;Development/session.jsonl",
+        "url": "https://example.test/?a=1&amp;b=2",
+        "html": "Already &amp; escaped",
+    }
+
+    decoded = util.decode_view_data(source)
+
+    assert decoded["title"] == "Research & Development"
+    assert decoded["nested"][0]["label"] == "A < B"
+    assert decoded["nested"][0]["text"] == "Keep &amp;lt; once"
+    assert decoded["path"] == source["path"]
+    assert decoded["url"] == source["url"]
+    assert decoded["html"] == source["html"]
+
+
+def test_decode_html_entities_decodes_nested_layers() -> None:
+    assert util.decode_html_entities("&amp;amp;quot;done&amp;amp;quot;") == '"done"'
+
+
 @pytest.fixture
 def agent_roots(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, Path]:
     allowed = tmp_path / "grok"

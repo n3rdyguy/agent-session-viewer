@@ -3,17 +3,14 @@
 from __future__ import annotations
 
 import ast
-import html
 import json
 import re
+
+from .util import decode_html_entities
 
 
 _FULL_FENCE_RE = re.compile(r"^\s*(`{3,}|~{3,})[^\n]*\n[\s\S]*\n\1\s*$")
 _FENCE_LINE_RE = re.compile(r"(?:^|\n)\s*(?:`{3,}|~{3,})(?:[A-Za-z0-9_+-]+)?\s*(?:\n|$)")
-_FENCED_BLOCK_RE = re.compile(
-    r"(?ms)^(?P<indent>[ \t]*)(?P<fence>`{3,}|~{3,})(?P<info>[^\n]*)\n"
-    r"(?P<body>.*?)(?P<end>\n[ \t]*(?P=fence)[ \t]*)(?=\n|$)"
-)
 
 _LANGUAGE_RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("php", (r"<\?php\b", r"\bnamespace\s+[\w\\]+;", r"\$\w+\s*=", r"->\w+\s*\(")),
@@ -179,16 +176,10 @@ def detect_code_language(text: str) -> str | None:
 
 
 def format_markdown_content(text: str, assume_markdown: bool = False) -> str:
-    """Prepare Markdown content, optionally bypassing automatic code detection."""
-    source = str(text or "")
+    """Decode and prepare Markdown content, optionally bypassing code detection."""
+    source = decode_html_entities(text)
     if _FENCE_LINE_RE.search(source):
-        return _FENCED_BLOCK_RE.sub(
-            lambda match: (
-                f"{match.group('indent')}{match.group('fence')}{match.group('info')}\n"
-                f"{html.unescape(match.group('body'))}{match.group('end')}"
-            ),
-            source,
-        )
+        return source
 
     # System instructions and Markdown documents often contain XML-like wrapper
     # tags around otherwise normal Markdown. Preserve their Markdown structure
@@ -196,12 +187,11 @@ def format_markdown_content(text: str, assume_markdown: bool = False) -> str:
     if assume_markdown:
         return source
 
-    decoded_source = html.unescape(source)
-    language = detect_code_language(decoded_source)
+    language = detect_code_language(source)
     if not language:
         return source
 
     # Use a fence longer than any backtick run already present in the code.
-    longest_run = max((len(run) for run in re.findall(r"`+", decoded_source)), default=0)
+    longest_run = max((len(run) for run in re.findall(r"`+", source)), default=0)
     fence = "`" * max(3, longest_run + 1)
-    return f"{fence}{language}\n{decoded_source.rstrip()}\n{fence}"
+    return f"{fence}{language}\n{source.rstrip()}\n{fence}"
