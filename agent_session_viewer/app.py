@@ -36,7 +36,8 @@ def index():
 
     if q:
         sessions = [
-            s for s in sessions
+            s
+            for s in sessions
             if q in (s.get("title") or "").lower()
             or q in (s.get("id") or "").lower()
             or q in (s.get("cwd") or "").lower()

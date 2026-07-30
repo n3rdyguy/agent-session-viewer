@@ -8,7 +8,6 @@ import re
 
 from .util import decode_html_entities
 
-
 _FULL_FENCE_RE = re.compile(r"^\s*(`{3,}|~{3,})[^\n]*\n[\s\S]*\n\1\s*$")
 _FENCE_LINE_RE = re.compile(r"(?:^|\n)\s*(?:`{3,}|~{3,})(?:[A-Za-z0-9_+-]+)?\s*(?:\n|$)")
 
@@ -66,7 +65,10 @@ _LANGUAGE_RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
             r"(?:^|\n)\s*(?:param|function)\s*(?:\(|[\w-]+)",
         ),
     ),
-    ("diff", (r"^diff --git ", r"^@@\s+-\d", r"^\*\*\* (?:Begin|Update|Add|Delete) (?:Patch|File)")),
+    (
+        "diff",
+        (r"^diff --git ", r"^@@\s+-\d", r"^\*\*\* (?:Begin|Update|Add|Delete) (?:Patch|File)"),
+    ),
     (
         "yaml",
         (
@@ -76,13 +78,48 @@ _LANGUAGE_RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
         ),
     ),
     ("xml", (r"^\s*<\?xml\b", r"<[A-Za-z_][\w:.-]+(?:\s[^>]*)?>[\s\S]*</[A-Za-z_][\w:.-]+>")),
-    ("csharp", (r"\busing\s+System(?:\.\w+)*;", r"\bnamespace\s+[\w.]+\s*[{;]", r"\bpublic\s+(?:static\s+)?class\s+\w+")),
-    ("java", (r"\bpackage\s+[\w.]+;", r"\bimport\s+java\.[\w.*]+;", r"\bpublic\s+(?:final\s+)?class\s+\w+")),
-    ("cpp", (r"#include\s*<(?:iostream|vector|string|memory)>", r"\bstd::\w+", r"\busing\s+namespace\s+std\s*;")),
+    (
+        "csharp",
+        (
+            r"\busing\s+System(?:\.\w+)*;",
+            r"\bnamespace\s+[\w.]+\s*[{;]",
+            r"\bpublic\s+(?:static\s+)?class\s+\w+",
+        ),
+    ),
+    (
+        "java",
+        (
+            r"\bpackage\s+[\w.]+;",
+            r"\bimport\s+java\.[\w.*]+;",
+            r"\bpublic\s+(?:final\s+)?class\s+\w+",
+        ),
+    ),
+    (
+        "cpp",
+        (
+            r"#include\s*<(?:iostream|vector|string|memory)>",
+            r"\bstd::\w+",
+            r"\busing\s+namespace\s+std\s*;",
+        ),
+    ),
     ("c", (r"#include\s*<(?:stdio|stdlib|string)\.h>", r"\b(?:int|void)\s+main\s*\(")),
-    ("rust", (r"\bfn\s+main\s*\(", r"\b(?:pub\s+)?(?:struct|enum|trait|impl)\s+\w+", r"\blet\s+mut\s+\w+")),
+    (
+        "rust",
+        (
+            r"\bfn\s+main\s*\(",
+            r"\b(?:pub\s+)?(?:struct|enum|trait|impl)\s+\w+",
+            r"\blet\s+mut\s+\w+",
+        ),
+    ),
     ("go", (r"^package\s+\w+", r"\bfunc\s+(?:\([^)]*\)\s*)?\w+\s*\(", r"\bimport\s+\(")),
-    ("ruby", (r"(?:^|\n)\s*def\s+\w+[!?=]?", r"(?:^|\n)\s*class\s+\w+(?:\s*<\s*\w+)?", r"\b(?:require|require_relative)\s+['\"]")),
+    (
+        "ruby",
+        (
+            r"(?:^|\n)\s*def\s+\w+[!?=]?",
+            r"(?:^|\n)\s*class\s+\w+(?:\s*<\s*\w+)?",
+            r"\b(?:require|require_relative)\s+['\"]",
+        ),
+    ),
 )
 
 
@@ -96,7 +133,7 @@ def detect_code_language(text: str) -> str | None:
     if stripped[:1] in "[{":
         try:
             decoded = json.loads(stripped)
-        except (TypeError, ValueError, json.JSONDecodeError):
+        except TypeError, ValueError, json.JSONDecodeError:
             pass
         else:
             if isinstance(decoded, (dict, list)):
@@ -133,25 +170,32 @@ def detect_code_language(text: str) -> str | None:
         for node in tree.body
     ):
         return "python"
-    if tree and len(tree.body) == 1 and isinstance(tree.body[0], ast.Expr) and isinstance(
-        tree.body[0].value,
-        (
-            ast.Call,
-            ast.Await,
-            ast.Lambda,
-            ast.Dict,
-            ast.Set,
-            ast.Tuple,
-            ast.ListComp,
-            ast.SetComp,
-            ast.DictComp,
-            ast.GeneratorExp,
-        ),
+    if (
+        tree
+        and len(tree.body) == 1
+        and isinstance(tree.body[0], ast.Expr)
+        and isinstance(
+            tree.body[0].value,
+            (
+                ast.Call,
+                ast.Await,
+                ast.Lambda,
+                ast.Dict,
+                ast.Set,
+                ast.Tuple,
+                ast.ListComp,
+                ast.SetComp,
+                ast.DictComp,
+                ast.GeneratorExp,
+            ),
+        )
     ):
         return "python"
 
     for language, patterns in _LANGUAGE_RULES:
-        matches = sum(bool(re.search(pattern, stripped, re.IGNORECASE | re.MULTILINE)) for pattern in patterns)
+        matches = sum(
+            bool(re.search(pattern, stripped, re.IGNORECASE | re.MULTILINE)) for pattern in patterns
+        )
         threshold = 2 if language == "yaml" else 1
         if matches >= threshold:
             return language

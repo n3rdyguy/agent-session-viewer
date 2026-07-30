@@ -14,7 +14,10 @@ from agent_session_viewer.turns import make_turn
     [
         ('{"name": "viewer", "enabled": true}', "json"),
         ("<?php\n$user = find_user(1);\necho $user->name;", "php"),
-        ("from pathlib import Path\n\ndef load(path: Path):\n    return path.read_text()", "python"),
+        (
+            "from pathlib import Path\n\ndef load(path: Path):\n    return path.read_text()",
+            "python",
+        ),
         ("print('hello')", "python"),
         ("const answer = items.map((item) => item.value);\nconsole.log(answer);", "javascript"),
         ("const answer = 42;", "javascript"),
@@ -90,7 +93,9 @@ def test_decodes_nested_html_entities_in_tool_result() -> None:
 
 
 def test_markdown_hint_prevents_xml_fencing_of_system_instructions() -> None:
-    source = "<INSTRUCTIONS>\n# Project rules\n\n- Run tests\n- Keep changes focused\n</INSTRUCTIONS>"
+    source = (
+        "<INSTRUCTIONS>\n# Project rules\n\n- Run tests\n- Keep changes focused\n</INSTRUCTIONS>"
+    )
 
     assert detect_code_language(source) == "xml"
     assert format_markdown_content(source, assume_markdown=True) == source
@@ -116,7 +121,7 @@ def test_markdown_export_fences_code_turns_but_not_prose() -> None:
 
     exported = turns_to_markdown(turns, "Test", "codex", "session.jsonl")
 
-    assert "```json\n{\"ok\": true}\n```" in exported
+    assert '```json\n{"ok": true}\n```' in exported
     assert "Please explain the result." in exported
     assert "```text\nPlease explain the result." not in exported
 
@@ -179,7 +184,9 @@ def test_system_template_treats_tag_wrapped_instructions_as_markdown() -> None:
             app.jinja_env.get_template("partials/bubbles.html").module.render_bubbles([turn])
         )
 
-    assert '<textarea class="md-src" hidden readonly>&lt;INSTRUCTIONS&gt;\n# Project rules' in rendered
+    assert (
+        '<textarea class="md-src" hidden readonly>&lt;INSTRUCTIONS&gt;\n# Project rules' in rendered
+    )
     assert "```xml" not in rendered
 
 

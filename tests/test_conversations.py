@@ -3,7 +3,6 @@ from pathlib import Path
 from agent_session_viewer.agents.codex import get_codex_conversation
 from agent_session_viewer.agents.grok import get_grok_conversation
 
-
 FIXTURES = Path(__file__).parent / "fixtures"
 
 
