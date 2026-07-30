@@ -14,8 +14,9 @@ def get_conversation(path: Path) -> list[dict]:
     for obj in iter_jsonl(path):
         if obj.get("type") not in ("user", "assistant"):
             continue
-        msg = obj.get("message") or {}
-        role = (msg.get("role") or obj.get("type")).lower()
+        msg = obj.get("message") if isinstance(obj.get("message"), dict) else {}
+        role_value = msg.get("role") or obj.get("type")
+        role = str(role_value).lower()
         text = extract_text(msg.get("content"))
         if text.strip():
             turns.append(

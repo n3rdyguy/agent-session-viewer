@@ -47,6 +47,8 @@ Claude Code discovery and basic viewing exist, but the experience is **not** at 
 - Raw transcript / summary download
 - Agent-aware path safety: only recognized sessions and their associated passive image
   media are served
+- Resilient JSONL reading: damaged or non-object records are skipped, later records remain
+  visible, and the session view reports bounded parse diagnostics
 
 ### Grok-focused (rich session view)
 
