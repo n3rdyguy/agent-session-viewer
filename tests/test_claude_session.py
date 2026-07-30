@@ -57,8 +57,9 @@ def test_subagent_usage_is_included_and_broken_out_per_model() -> None:
 def test_chat_counts_exclude_tool_result_only_records() -> None:
     counts = claude_scan_session(CLAUDE_SESSION)["summary"]["counts"]
 
-    # Records carrying only a tool_result or tool_use are transport, not chat:
-    # two such user records and one such assistant record are excluded.
+    # Records carrying only a tool_result or tool_use are transport, and isMeta
+    # records are injected reminders: two tool-result user records, one tool-use
+    # assistant record, and one isMeta reminder are all excluded.
     assert counts["user"] == 1
     assert counts["assistant"] == 2
     assert counts["tool_call"] == 2
