@@ -208,7 +208,21 @@ def test_memory_documents_cover_project_and_user_scope(
 
     assert [d["title"] for d in documents] == ["Project memory", "User memory"]
     # The transcript never captured this, so it must not claim to be session state.
-    assert all("read from disk" in d["subtitle"] for d in documents)
+    assert all(claude.MEMORY_DISK_NOTE in d["subtitle"] for d in documents)
+
+
+def test_memory_body_is_verbatim_so_copies_stay_clean(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The caveat belongs in the subtitle; copy actions read only the body."""
+    _home, project = _memory_home(tmp_path, monkeypatch)
+    body = "# Project rules\n\nAlways run the tests.\n"
+    (project / "CLAUDE.md").write_text(body, encoding="utf-8")
+
+    document = claude.claude_memory_documents(str(project))[0]
+
+    assert document["text"] == body
+    assert claude.MEMORY_DISK_NOTE not in document["text"]
 
 
 @pytest.mark.parametrize("body", ["", "   \n\n  "])
