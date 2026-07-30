@@ -25,11 +25,14 @@ from ..util import (
 SUBAGENT_DIR = "subagents"
 SUBAGENT_PREFIX = "agent-"
 EDIT_TOOLS = frozenset(("Edit", "Write", "MultiEdit", "NotebookEdit"))
+# Roles the chat stylesheet knows; anything else falls back to a neutral event bubble.
+_BUBBLE_ROLES = frozenset(("user", "assistant", "system", "system_reminder"))
 # Attachments that carry a document worth reading rather than a one-line event.
 _DOCUMENT_ATTACHMENTS = {
     "skill_listing": "Available skills",
     "agent_listing_delta": "Available agents",
 }
+_NOISE_ATTACHMENTS = frozenset(("deferred_tools_delta",))
 
 
 # ─────────────────────────────────────────────
@@ -178,6 +181,20 @@ def _tool_result_text(block: dict[str, Any]) -> str:
     if isinstance(content, str):
         return content
     return extract_text(content)
+
+
+def _attachment_text(attachment: dict[str, Any]) -> str:
+    """Readable body for an injected attachment, or empty when it carries no prose."""
+    content = attachment.get("content")
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list) and content:
+        return extract_text(content)
+    # Structured attachments (permissions, plan-mode pointers) have no prose body;
+    # show their fields rather than a bare type name. Empty and zero values are
+    # bookkeeping (e.g. an empty task reminder) and leave nothing worth showing.
+    fields = {key: value for key, value in attachment.items() if key != "type" and value}
+    return pretty_json(fields, 2000) if fields else ""
 
 
 def _accumulate_usage(tokens: dict[str, Any], message: dict[str, Any], path: Path) -> int | None:
@@ -391,8 +408,9 @@ def claude_scan_session(
         if role == "user" and not headline and isinstance(message.get("content"), str):
             headline = safe_claude_headline(message.get("content"))
 
-        # Records whose only content is a tool_result are transport, not conversation.
-        if has_text:
+        # Records whose only content is a tool_result are transport, and isMeta
+        # records are injected reminders — neither is conversation.
+        if has_text and not obj.get("isMeta"):
             if role == "assistant":
                 counts["assistant"] += 1
             elif role == "user":
@@ -599,6 +617,31 @@ def _turns_from_records(
                 )
                 continue
 
+            if record_type == "attachment":
+                attachment = (
+                    obj.get("attachment") if isinstance(obj.get("attachment"), dict) else {}
+                )
+                kind = str(attachment.get("type") or "attachment")
+                # Large listings are already artifacts, and tool-registry deltas are
+                # pure bookkeeping; repeating either would bury the conversation.
+                # Both still appear as one-liners in the events tab.
+                if kind in _DOCUMENT_ATTACHMENTS or kind in _NOISE_ATTACHMENTS:
+                    continue
+                body = _attachment_text(attachment)
+                if not body.strip():
+                    continue
+                add(
+                    make_turn(
+                        role="system",
+                        time=display_time(ts),
+                        id=str(obj.get("uuid") or seq),
+                        text=body,
+                        meta=kind,
+                    ),
+                    sort_ts,
+                )
+                continue
+
             if record_type not in ("user", "assistant"):
                 continue
 
@@ -608,13 +651,17 @@ def _turns_from_records(
             meta_bits = [b for b in (agent_label, str(obj.get("attributionSkill") or "")) if b]
             meta = " · ".join(meta_bits)
             blocks = _content_blocks(message)
+            # Claude injects reminders as ordinary user records flagged isMeta, which
+            # would otherwise be indistinguishable from something the user typed.
+            if role == "user" and obj.get("isMeta"):
+                role = "system_reminder"
 
             if not blocks:
                 text, images = content_pair(message.get("content"))
                 if text.strip() or images:
                     add(
                         make_turn(
-                            role=role if role in ("user", "assistant") else "event",
+                            role=role if role in _BUBBLE_ROLES else "event",
                             time=display_time(ts),
                             id=str(obj.get("uuid") or seq),
                             text=text,
@@ -635,7 +682,7 @@ def _turns_from_records(
                     return
                 add(
                     make_turn(
-                        role=role if role in ("user", "assistant") else "event",
+                        role=role if role in _BUBBLE_ROLES else "event",
                         time=display_time(ts),
                         id=str(obj.get("uuid") or seq),
                         text="\n".join(body_parts),

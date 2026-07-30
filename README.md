@@ -87,6 +87,7 @@ Claude Code `<session-uuid>.jsonl` transcripts under `~/.claude/projects/<encode
 | **Settings** | Model, CLI version, permission mode, mode, effort, entrypoint, slug, cwd, git branch |
 | **Todos** | `~/.claude/todos/<session-id>-agent-*.json` checklist |
 | **Chat history** | User + assistant messages, **thinking** (`<encrypted>` when only a signature is stored), tool calls/results matched by **`toolu_` call id** |
+| **System turns** | Slash commands and hook/informational `system` records, injected attachments (plan mode, permissions, task reminders), and `isMeta` `<system-reminder>` records shown as **system reminders** rather than as user messages |
 | **Subagents** | Sidechain transcripts from `<session>/subagents/agent-*.jsonl` merged inline in timestamp order and tagged with the agent type; each is also viewable on its own |
 | **File edits** | Hunk records from `Edit` / `Write` / `MultiEdit` / `NotebookEdit` `toolUseResult`, with added/removed counts and line ranges from `structuredPatch` |
 | **Artifacts** | Skill and agent listings, plus the session's prompt history from `~/.claude/history.jsonl` |
