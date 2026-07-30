@@ -98,9 +98,11 @@ Claude does not record a context-window size in the transcript, so the context b
 hidden; token totals are summed per message rather than read from a running total.
 
 Claude also has no equivalent of Codex's `session_meta.base_instructions`: injected
-instructions are not written to the transcript at all. The memory documents are therefore
-read from disk and labelled **read from disk**, because they show those files as they
-stand now rather than what the session actually saw. Only a real file still named
+instructions are never written to the transcript. The memory documents are therefore read
+from disk and carry the caveat **"current file on disk, not necessarily what this session
+used"** in their header — they show those files as they stand now, which may differ from
+what the session was actually given. The caveat sits in the subtitle rather than the body,
+so both copy actions still yield the file verbatim. Only a real file still named
 `CLAUDE.md` is read — a symlink pointing elsewhere resolves to a different name and is
 refused — and oversized files are truncated for display.
 

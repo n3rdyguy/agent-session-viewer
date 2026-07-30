@@ -35,6 +35,11 @@ _DOCUMENT_ATTACHMENTS = {
 _NOISE_ATTACHMENTS = frozenset(("deferred_tools_delta",))
 MEMORY_FILENAME = "CLAUDE.md"
 _MAX_MEMORY_CHARS = 64_000
+# Claude never writes injected memory into the transcript, so these documents are
+# whatever is on disk right now. Say so where it is always visible: the subtitle
+# renders in the artifact header and is not part of either copy action, so the
+# document body stays a byte-for-byte copy of the file.
+MEMORY_DISK_NOTE = "current file on disk, not necessarily what this session used"
 
 
 # ─────────────────────────────────────────────
@@ -135,9 +140,7 @@ def _read_memory_file(path: Path, title: str, subtitle: str) -> dict[str, Any] |
     return {
         "id": f"memory-{title.lower().replace(' ', '-')}",
         "title": title,
-        # Claude does not record injected memory in the transcript, so this is the
-        # file as it stands now rather than a snapshot of what the session saw.
-        "subtitle": f"{subtitle} · read from disk",
+        "subtitle": f"{subtitle} · {MEMORY_DISK_NOTE}",
         "kind": "markdown",
         "text": text,
     }
@@ -147,9 +150,8 @@ def claude_memory_documents(cwd: str) -> list[dict[str, Any]]:
     """CLAUDE.md memory that applies to a session, newest scope first."""
     documents: list[dict[str, Any]] = []
     if cwd:
-        project = _read_memory_file(
-            Path(cwd) / MEMORY_FILENAME, "Project memory", f"{cwd}/{MEMORY_FILENAME}"
-        )
+        project_path = Path(cwd) / MEMORY_FILENAME
+        project = _read_memory_file(project_path, "Project memory", str(project_path))
         if project:
             documents.append(project)
     user = _read_memory_file(
