@@ -37,10 +37,10 @@
 
 {% macro render_md_block(text, html='', extra_class='', assume_markdown=false) %}
   <div class="md-block{{ (' ' ~ extra_class) if extra_class else '' }}">
-    {# Separate sources keep raw copying unchanged while Markdown can safely fence code. #}
-    <textarea class="raw-src" hidden readonly>{{ text }}</textarea>
+    {# Both copy sources and both display modes decode source entities exactly once. #}
+    <textarea class="raw-src" hidden readonly>{{ text|decode_html_entities }}</textarea>
     <textarea class="md-src" hidden readonly>{{ text|markdown_content(assume_markdown) }}</textarea>
-    <div class="bubble-text md-plain">{% if html %}{{ html|safe }}{% else %}{{ text }}{% endif %}</div>
+    <div class="bubble-text md-plain">{% if html %}{{ html|safe }}{% else %}{{ text|decode_html_entities }}{% endif %}</div>
     <div class="bubble-text md-rich markdown-body" hidden></div>
   </div>
 {% endmacro %}

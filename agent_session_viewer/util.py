@@ -2,12 +2,53 @@
 
 from __future__ import annotations
 
+import html
 import json
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from .config import CLAUDE_HOME, CODEX_HOME, GROK_HOME
+
+
+def decode_html_entities(value: Any) -> str:
+    """Decode nested HTML entities in a value intended for display."""
+    if value is None:
+        return ""
+    decoded = str(value)
+    # Tool results can pass through multiple HTML-aware serializers and arrive
+    # as e.g. ``&amp;quot;``. Decode each layer before the template escapes the
+    # final text for its actual HTML context.
+    for _ in range(10):
+        unescaped = html.unescape(decoded)
+        if unescaped == decoded:
+            break
+        decoded = unescaped
+    return decoded
+
+
+def decode_view_data(value: Any) -> Any:
+    """Return view data with display strings decoded once.
+
+    Message/document bodies are decoded by the Markdown rendering boundary,
+    while paths, URLs, and pre-rendered HTML must retain their exact values.
+    """
+    if isinstance(value, dict):
+        return {
+            key: (
+                item
+                if key in {"html", "path", "text", "url"}
+                else decode_view_data(item)
+            )
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [decode_view_data(item) for item in value]
+    if isinstance(value, tuple):
+        return tuple(decode_view_data(item) for item in value)
+    if isinstance(value, str):
+        return decode_html_entities(value)
+    return value
 
 
 def human_time(ts: str | float | int | None) -> str:

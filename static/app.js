@@ -348,10 +348,56 @@
 
   function escapeAgentTags(src) {
     var re = new RegExp('</?([A-Za-z][\\w:-]*)\\b[^>]*>', 'g');
-    return src.replace(re, function(match, name) {
-      if (MD_HTML_TAGS[String(name).toLowerCase()]) return match;
-      return escapeHtml(match);
-    });
+    var fenceChar = '';
+    var fenceLength = 0;
+    function escapeTagsOutsideInlineCode(line) {
+      var result = '';
+      var cursor = 0;
+      var codeSpan = /(`+)([\s\S]*?)\1(?!`)/g;
+      var match;
+
+      function escapeTags(text) {
+        return text.replace(re, function(tag, name) {
+          if (MD_HTML_TAGS[String(name).toLowerCase()]) return tag;
+          return escapeHtml(tag);
+        });
+      }
+
+      while ((match = codeSpan.exec(line)) !== null) {
+        result += escapeTags(line.slice(cursor, match.index));
+        result += match[0];
+        cursor = match.index + match[0].length;
+      }
+      return result + escapeTags(line.slice(cursor));
+    }
+
+    // Never pre-escape content inside Markdown fences. marked will escape code
+    // exactly once; escaping it here too makes tags such as <form> visibly
+    // render as "&lt;form&gt;" in the resulting code block. Inline code spans
+    // need the same treatment.
+    return String(src).split('\n').map(function(line) {
+      if (fenceChar) {
+        var close = line.match(/^ {0,3}(`+|~+)\s*$/);
+        if (
+          close &&
+          close[1].charAt(0) === fenceChar &&
+          close[1].length >= fenceLength
+        ) {
+          fenceChar = '';
+          fenceLength = 0;
+        }
+        return line;
+      }
+
+      var open = line.match(/^ {0,3}(`{3,}|~{3,})/);
+      if (open) {
+        fenceChar = open[1].charAt(0);
+        fenceLength = open[1].length;
+        return line;
+      }
+
+      return escapeTagsOutsideInlineCode(line);
+    }).join('\n');
   }
 
   function renderMarkdown(src) {

@@ -11,7 +11,7 @@
   </h2>
   <div class="meta">
     <span class="badge {{ agent }}">{{ agent }}</span>
-    {{ path }}
+    {{ path|decode_html_entities }}
   </div>
   <div class="actions">
     <label class="md-toggle" title="Render message bodies as Markdown">

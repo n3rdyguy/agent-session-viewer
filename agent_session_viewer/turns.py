@@ -6,7 +6,7 @@ import json
 from typing import Any
 
 from .images import linkify_image_paths_html
-from .util import pretty_json
+from .util import decode_html_entities, pretty_json
 
 
 def make_turn(
@@ -29,7 +29,7 @@ def make_turn(
         "meta": meta,
         "images": imgs,
         # Pre-rendered HTML with clickable image paths (safe/escaped)
-        "html": linkify_image_paths_html(text, imgs),
+        "html": linkify_image_paths_html(decode_html_entities(text), imgs),
     }
 
 
