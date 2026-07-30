@@ -23,6 +23,8 @@ _CODEX_HEADLINE_PUNCTUATION = frozenset(" .,:;!?'-_()/&+")
 _TURN_ABORTED_RE = re.compile(r"\bturn_aborted\b", re.IGNORECASE)
 _DISCOVERY_HEAD_RECORDS = 128
 _CLAUDE_EDGE_RECORDS = 8
+_CLAUDE_HEADLINE_CHARS = 120
+_CLAUDE_TITLE_MARKERS = ('"ai-title"', '"custom-title"', '"last-prompt"')
 
 CacheKey = tuple[str, str, int, int]
 _DISCOVERY_CACHE: dict[CacheKey, dict[str, Any]] = {}
@@ -102,6 +104,18 @@ def safe_codex_headline(value: object) -> str:
     ):
         return ""
     return line
+
+
+def safe_claude_headline(value: object) -> str:
+    """Return a short single-line Claude headline, rejecting agent markup blocks."""
+    if not isinstance(value, str):
+        return ""
+    for part in value.splitlines():
+        line = " ".join(part.split())
+        if not line or line.startswith("<") or not any(char.isalnum() for char in line):
+            continue
+        return line[:_CLAUDE_HEADLINE_CHARS]
+    return ""
 
 
 def codex_headline_was_aborted(value: object) -> bool:
@@ -207,6 +221,11 @@ def discover_grok() -> list[SessionCard]:
 def _scan_claude_card(path: Path) -> dict[str, Any]:
     first: list[tuple[int, str]] = []
     last: deque[tuple[int, str]] = deque(maxlen=_CLAUDE_EDGE_RECORDS)
+    # Title records are small, untimestamped, and rewritten throughout a session, so
+    # the newest one usually sits outside both edge windows. Remember the last line
+    # matching each marker instead of widening the window: one slot per marker keeps
+    # memory bounded and adds at most one decode each.
+    title_lines: dict[str, tuple[int, str]] = {}
     nonblank_count = 0
     try:
         with path.open(encoding="utf-8", errors="replace") as fh:
@@ -219,13 +238,19 @@ def _scan_claude_card(path: Path) -> dict[str, Any]:
                     first.append(item)
                 else:
                     last.append(item)
+                for marker in _CLAUDE_TITLE_MARKERS:
+                    if marker in line:
+                        title_lines[marker] = item
     except OSError as exc:
         LOGGER.warning("Could not scan Claude session %s: %s", path, type(exc).__name__)
         return {}
 
     created = updated = model = None
+    cwd = None
+    ai_title = custom_title = last_prompt = ""
+    headline = ""
     seen_lines: set[int] = set()
-    for line_number, line in [*first, *last]:
+    for line_number, line in [*first, *last, *title_lines.values()]:
         if line_number in seen_lines:
             continue
         seen_lines.add(line_number)
@@ -236,13 +261,30 @@ def _scan_claude_card(path: Path) -> dict[str, Any]:
         if ts:
             created = created or ts
             updated = ts
-        if obj.get("type") == "assistant":
+        # Records carry the real working directory; the encoded folder name is lossy.
+        cwd = obj.get("cwd") or cwd
+        record_type = obj.get("type")
+        if record_type == "ai-title":
+            ai_title = str(obj.get("aiTitle") or "") or ai_title
+        elif record_type == "custom-title":
+            custom_title = str(obj.get("customTitle") or "") or custom_title
+        elif record_type == "last-prompt":
+            last_prompt = str(obj.get("lastPrompt") or "") or last_prompt
+        elif record_type in ("user", "assistant"):
             message = obj.get("message") if isinstance(obj.get("message"), dict) else {}
-            model = message.get("model") or model
+            if record_type == "assistant":
+                model = message.get("model") or model
+            elif not headline:
+                headline = safe_claude_headline(extract_text(message.get("content")))
     return {
         "created": created,
         "updated": updated,
         "model": model,
+        "cwd": cwd,
+        "title": ai_title or custom_title or safe_claude_headline(last_prompt),
+        "headline": headline,
+        # Exact chat counts need a full scan and are deferred to /view; the cheap
+        # full-file record count stays the card value.
         "messages": nonblank_count,
     }
 
@@ -258,8 +300,9 @@ def discover_claude() -> list[SessionCard]:
     for proj in sorted(root.iterdir()):
         if not proj.is_dir():
             continue
-        encoded = proj.name
-        cwd_hint = "/" + encoded.lstrip("-").replace("--", "/.").replace("-", "/")
+        # Fallback only: the encoded folder name loses drive letters, separators, and
+        # hyphens inside directory names. Records carry the real cwd.
+        cwd_hint = proj.name.replace("--", "/").replace("-", "/")
 
         for f in sorted(proj.glob("*.jsonl")):
             if f.name.startswith("."):
@@ -276,8 +319,9 @@ def discover_claude() -> list[SessionCard]:
                     "agent": "claude",
                     "id": sid,
                     "path": str(f),
-                    "cwd": cwd_hint,
-                    "title": sid[:18] + "…",
+                    "cwd": card.get("cwd") or cwd_hint,
+                    "title": card.get("title") or card.get("headline") or sid[:18] + "…",
+                    "headline": card.get("headline") or "",
                     "created": card.get("created"),
                     "updated": card.get("updated"),
                     "model": card.get("model"),

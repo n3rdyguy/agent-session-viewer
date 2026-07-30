@@ -179,6 +179,16 @@ def summary_to_markdown(
             f"**Sandbox:** {summary.get('sandbox_profile') or '—'}  ",
             f"**Session id:** `{summary.get('id')}`  ",
         ]
+    elif agent == "claude":
+        lines = [
+            f"**Model:** {summary.get('model') or '—'}  ",
+            f"**CWD:** `{summary.get('cwd') or '—'}`  ",
+            f"**Permission mode:** {summary.get('sandbox_profile') or '—'}  ",
+            f"**Reasoning effort:** {summary.get('reasoning_effort') or '—'}  ",
+            f"**Branch:** {summary.get('head_branch') or '—'}  ",
+            f"**CLI version:** {summary.get('cli_version') or '—'}  ",
+            f"**Session id:** `{summary.get('id')}`  ",
+        ]
     else:
         return ""
 
