@@ -45,9 +45,9 @@ def parse_agent(value: str | None) -> Agent:
 def _resolved_existing(path: Path) -> Path:
     try:
         return path.resolve(strict=True)
-    except FileNotFoundError, NotADirectoryError:
+    except (FileNotFoundError, NotADirectoryError):
         raise PathMissing("Path not found") from None
-    except OSError, RuntimeError, ValueError:
+    except (OSError, RuntimeError, ValueError):
         raise PathDenied("Path not allowed") from None
 
 
@@ -56,9 +56,9 @@ def _relative_to_resolved(path: Path, root: Path) -> tuple[Path, tuple[str, ...]
     try:
         resolved_root = root.resolve(strict=True)
         relative = resolved.relative_to(resolved_root)
-    except FileNotFoundError, NotADirectoryError:
+    except (FileNotFoundError, NotADirectoryError):
         raise PathMissing("Session root not found") from None
-    except OSError, RuntimeError, ValueError:
+    except (OSError, RuntimeError, ValueError):
         raise PathDenied("Path not allowed") from None
     return resolved, relative.parts
 
@@ -87,7 +87,7 @@ def resolve_session_path(agent: Agent, requested: str) -> AuthorizedSession:
             try:
                 root_resolved = root.resolve(strict=True)
                 parts = resolved.relative_to(root_resolved).parts
-            except FileNotFoundError, NotADirectoryError, OSError, RuntimeError, ValueError:
+            except (FileNotFoundError, NotADirectoryError, OSError, RuntimeError, ValueError):
                 continue
             if (
                 parts
@@ -146,7 +146,7 @@ def resolve_media_path(session: AuthorizedSession, requested: str) -> Path:
         try:
             path.relative_to(root.resolve(strict=True))
             return path
-        except FileNotFoundError, NotADirectoryError, OSError, RuntimeError, ValueError:
+        except (FileNotFoundError, NotADirectoryError, OSError, RuntimeError, ValueError):
             continue
 
     if session.agent == "codex" and path.name.lower().startswith("codex-clipboard-"):
@@ -154,7 +154,7 @@ def resolve_media_path(session: AuthorizedSession, requested: str) -> Path:
         try:
             path.relative_to(temp_root.resolve(strict=True))
             return path
-        except FileNotFoundError, NotADirectoryError, OSError, RuntimeError, ValueError:
+        except (FileNotFoundError, NotADirectoryError, OSError, RuntimeError, ValueError):
             pass
 
     raise PathDenied("Image is not associated with this session")

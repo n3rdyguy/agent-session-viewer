@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import json
+import re
+from html import unescape
 from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 
 
 def _write_claude_session(path: Path) -> None:
@@ -36,6 +39,21 @@ def test_index_uses_temporary_agent_homes(client, agent_homes: dict[str, Path]) 
 
     assert response.status_code == 200
     assert b"session.jsonl" in response.data
+
+
+def test_search_query_round_trips_through_agent_filters(client) -> None:
+    query = 'A&B #tag="✓"'
+    response = client.get("/", query_string={"q": query})
+
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    toolbar = re.search(r'<div class="filters">(.*?)</div>', html, re.DOTALL)
+    assert toolbar is not None
+    links = re.findall(r'href="([^"]+)"', toolbar.group(1))
+    assert len(links) == 4
+    for href in links:
+        parsed = parse_qs(urlparse(unescape(href)).query, keep_blank_values=True)
+        assert parsed["q"] == [query]
 
 
 def test_view_characterization(client, agent_homes: dict[str, Path]) -> None:

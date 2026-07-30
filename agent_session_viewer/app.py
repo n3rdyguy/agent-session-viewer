@@ -6,7 +6,6 @@ import logging
 import mimetypes
 import os
 from io import BytesIO
-from typing import NoReturn
 
 from flask import Flask, Response, abort, render_template, request, send_file
 
@@ -56,20 +55,21 @@ def index():
     agent = request.args.get("agent")
     if agent in ("all", ""):
         agent = None
-    q = (request.args.get("q") or "").strip().lower()
+    q = (request.args.get("q") or "").strip()
+    search_term = q.lower()
 
     sessions = decode_view_data(all_sessions(agent))
 
-    if q:
+    if search_term:
         sessions = [
             s
             for s in sessions
-            if q in (s.get("title") or "").lower()
-            or q in (s.get("id") or "").lower()
-            or q in (s.get("cwd") or "").lower()
-            or q in (s.get("path") or "").lower()
-            or q in (s.get("model") or "").lower()
-            or q in (s.get("headline") or "").lower()
+            if search_term in str(s.get("title") or "").lower()
+            or search_term in str(s.get("id") or "").lower()
+            or search_term in str(s.get("cwd") or "").lower()
+            or search_term in str(s.get("path") or "").lower()
+            or search_term in str(s.get("model") or "").lower()
+            or search_term in str(s.get("headline") or "").lower()
         ]
 
     return render_template(
@@ -165,7 +165,7 @@ def raw():
     )
 
 
-def _abort_authorization(exc: AuthorizationError) -> NoReturn:
+def _abort_authorization(exc: AuthorizationError) -> None:
     if isinstance(exc, InvalidAgent):
         abort(400, str(exc))
     if isinstance(exc, PathMissing):
@@ -179,6 +179,7 @@ def _authorized_session(agent_value: str | None, path: str) -> AuthorizedSession
         return resolve_session_path(agent, path)
     except AuthorizationError as exc:
         _abort_authorization(exc)
+    raise AssertionError("unreachable")
 
 
 @app.route("/media")
