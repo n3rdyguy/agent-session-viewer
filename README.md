@@ -49,6 +49,9 @@ Claude Code discovery and basic viewing exist, but the experience is **not** at 
   media are served
 - Resilient JSONL reading: damaged or non-object records are skipped, later records remain
   visible, and the session view reports bounded parse diagnostics
+- Process-local discovery caching: unchanged session cards are reused by list, filter, and
+  search requests; Claude card scans use bounded memory and Codex card scans read only a
+  small metadata/headline window
 
 ### Grok-focused (rich session view)
 
@@ -152,6 +155,7 @@ platforms.
 | Variable | Purpose | Default |
 |----------|---------|---------|
 | `ASV_DEBUG` | Flask debug / reloader (`1` / `true` / `yes` / `on`) | off |
+| `ASV_TIMING_DEBUG` | Log discovery and session-load timings | off |
 | `GROK_HOME` | Grok product root (sessions under `…/sessions`) | `~/.grok` |
 | `CLAUDE_HOME` | Claude Code root (projects under `…/projects`) | `~/.claude` |
 | `CODEX_HOME` | Codex root (sessions under `…/sessions`) | `~/.codex` |
