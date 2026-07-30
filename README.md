@@ -85,7 +85,7 @@ Claude Code `<session-uuid>.jsonl` transcripts under `~/.claude/projects/<encode
 | **Summary** | Session id, model, cwd, git branch, CLI version, permission mode, reasoning effort, message counts |
 | **Token usage** | Summed `message.usage` — input, output, cache **reads** and **writes**, with per-model rows when a session mixes models (e.g. Opus and Sonnet) |
 | **Settings** | Model, CLI version, permission mode, mode, effort, entrypoint, slug, cwd, git branch |
-| **Todos** | `~/.claude/todos/<session-id>-agent-*.json` checklist |
+| **Todos** | Task checklist from the transcript's `task_reminder` attachments (id, subject, status, blockers), falling back to `~/.claude/todos/<session-id>-agent-*.json` for older Claude Code versions |
 | **Chat history** | User + assistant messages, **thinking** (`<encrypted>` when only a signature is stored), tool calls/results matched by **`toolu_` call id** |
 | **System turns** | Slash commands and hook/informational `system` records, injected attachments (plan mode, permissions, task reminders), and `isMeta` `<system-reminder>` records shown as **system reminders** rather than as user messages |
 | **Subagents** | Sidechain transcripts from `<session>/subagents/agent-*.jsonl` merged inline in timestamp order and tagged with the agent type; each is also viewable on its own |
@@ -250,8 +250,9 @@ uv run python app.py
 
 On Windows, Grok session group folders are URL-encoded paths under `sessions\` (e.g. `C%3A%5CUsers%5C…`).
 
-Claude also reads two sibling files under `CLAUDE_HOME` when they exist: `todos/<session-id>-agent-*.json`
-for the todo checklist and `history.jsonl` for that session's prompt history. It reads
+Claude also reads two sibling files under `CLAUDE_HOME` when they exist: `todos/<session-id>-agent-*.json`,
+a fallback for Claude Code versions that wrote the checklist to disk rather than into the
+transcript, and `history.jsonl` for that session's prompt history. It reads
 `CLAUDE.md` from `CLAUDE_HOME` and from the session's recorded working directory — the one
 place the viewer reads outside an agent home, guarded by a fixed filename, a post-resolution
 name check, and a size cap. None of these are served by a route; all are read locally and
