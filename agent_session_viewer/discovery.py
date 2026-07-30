@@ -10,11 +10,12 @@ import time
 from collections import deque
 from datetime import datetime
 from pathlib import Path
-from typing import Callable
+from typing import Any, Callable
 from urllib.parse import unquote
 
 from .config import CLAUDE_HOME, CODEX_HOME, GROK_HOME
 from .images import extract_text
+from .types import SessionCard
 from .util import decode_jsonl_record, iter_jsonl, load_json
 
 LOGGER = logging.getLogger(__name__)
@@ -24,7 +25,7 @@ _DISCOVERY_HEAD_RECORDS = 128
 _CLAUDE_EDGE_RECORDS = 8
 
 CacheKey = tuple[str, str, int, int]
-_DISCOVERY_CACHE: dict[CacheKey, dict] = {}
+_DISCOVERY_CACHE: dict[CacheKey, dict[str, Any]] = {}
 _CACHE_LOCK = threading.RLock()
 
 
@@ -57,7 +58,9 @@ def _file_key(agent: str, path: Path) -> CacheKey | None:
     return (agent, str(resolved), stat.st_size, stat.st_mtime_ns)
 
 
-def _cached_card(agent: str, path: Path, loader: Callable[[Path], dict]) -> dict | None:
+def _cached_card(
+    agent: str, path: Path, loader: Callable[[Path], dict[str, Any]]
+) -> dict[str, Any] | None:
     key = _file_key(agent, path)
     if key is None:
         return None
@@ -106,7 +109,7 @@ def codex_headline_was_aborted(value: object) -> bool:
     return isinstance(value, str) and bool(_TURN_ABORTED_RE.search(value))
 
 
-def discover_grok() -> list[dict]:
+def discover_grok() -> list[SessionCard]:
     sessions = []
     root = GROK_HOME / "sessions"
     if not root.exists():
@@ -123,8 +126,8 @@ def discover_grok() -> list[dict]:
         if cwd_file.exists():
             try:
                 cwd_hint = cwd_file.read_text(encoding="utf-8").strip() or cwd_hint
-            except OSError:
-                pass
+            except OSError as exc:
+                LOGGER.warning("Could not read Grok cwd hint %s: %s", cwd_file, type(exc).__name__)
 
         for sid_dir in sorted(group.iterdir()):
             if not sid_dir.is_dir():
@@ -134,7 +137,7 @@ def discover_grok() -> list[dict]:
             if key is not None:
                 live_paths.add(key[1])
 
-            def load_grok_card(_path: Path) -> dict:
+            def load_grok_card(_path: Path) -> dict[str, Any]:
                 meta = load_json(summary_path) or {}
                 info = meta.get("info") if isinstance(meta.get("info"), dict) else {}
                 title = (
@@ -201,7 +204,7 @@ def discover_grok() -> list[dict]:
     return sessions
 
 
-def _scan_claude_card(path: Path) -> dict:
+def _scan_claude_card(path: Path) -> dict[str, Any]:
     first: list[tuple[int, str]] = []
     last: deque[tuple[int, str]] = deque(maxlen=_CLAUDE_EDGE_RECORDS)
     nonblank_count = 0
@@ -216,7 +219,8 @@ def _scan_claude_card(path: Path) -> dict:
                     first.append(item)
                 else:
                     last.append(item)
-    except OSError:
+    except OSError as exc:
+        LOGGER.warning("Could not scan Claude session %s: %s", path, type(exc).__name__)
         return {}
 
     created = updated = model = None
@@ -243,7 +247,7 @@ def _scan_claude_card(path: Path) -> dict:
     }
 
 
-def discover_claude() -> list[dict]:
+def discover_claude() -> list[SessionCard]:
     sessions = []
     root = CLAUDE_HOME / "projects"
     if not root.exists():
@@ -284,7 +288,7 @@ def discover_claude() -> list[dict]:
     return sessions
 
 
-def load_codex_session_index() -> dict[str, dict]:
+def load_codex_session_index() -> dict[str, dict[str, Any]]:
     """Map session id → {thread_name, updated_at} from ~/.codex/session_index.jsonl."""
     index: dict[str, dict] = {}
     path = CODEX_HOME / "session_index.jsonl"
@@ -292,7 +296,7 @@ def load_codex_session_index() -> dict[str, dict]:
         _prune_agent_cache("codex-index", set())
         return index
 
-    def load_index(index_path: Path) -> dict:
+    def load_index(index_path: Path) -> dict[str, Any]:
         result: dict[str, dict] = {}
         for obj in iter_jsonl(index_path):
             sid = obj.get("id")
@@ -312,7 +316,7 @@ def load_codex_session_index() -> dict[str, dict]:
     return cached or index
 
 
-def _scan_codex_card(path: Path) -> dict:
+def _scan_codex_card(path: Path) -> dict[str, Any]:
     sid = path.stem
     match = re.search(
         r"([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$",
@@ -335,9 +339,7 @@ def _scan_codex_card(path: Path) -> dict:
                 obj = decode_jsonl_record(path, line_number, line)
                 if obj is None:
                     continue
-                ts = obj.get("timestamp")
-                if ts:
-                    created = created or ts
+                created = created or obj.get("timestamp")
                 record_type = obj.get("type")
                 payload = obj.get("payload") if isinstance(obj.get("payload"), dict) else {}
                 if record_type == "session_meta":
@@ -347,8 +349,7 @@ def _scan_codex_card(path: Path) -> dict:
                         if isinstance(meta.get(key), str) and meta[key]:
                             sid = meta[key]
                             break
-                    if meta.get("timestamp"):
-                        created = created or meta.get("timestamp")
+                    created = created or meta.get("timestamp")
                 elif record_type == "turn_context":
                     model = payload.get("model") or model
                     cwd = payload.get("cwd") or cwd
@@ -383,7 +384,8 @@ def _scan_codex_card(path: Path) -> dict:
                     )
                     model = settings.get("model") or model
                     cwd = settings.get("cwd") or cwd
-    except OSError:
+    except OSError as exc:
+        LOGGER.warning("Could not scan Codex session %s: %s", path, type(exc).__name__)
         return {}
     return {
         "id": sid,
@@ -395,7 +397,7 @@ def _scan_codex_card(path: Path) -> dict:
     }
 
 
-def discover_codex() -> list[dict]:
+def discover_codex() -> list[SessionCard]:
     sessions = []
     titles = load_codex_session_index()
     live_paths: set[str] = set()
@@ -439,7 +441,7 @@ def discover_codex() -> list[dict]:
     return sessions
 
 
-def all_sessions(agent: str | None = None) -> list[dict]:
+def all_sessions(agent: str | None = None) -> list[SessionCard]:
     started = time.perf_counter()
     items = []
     if agent in (None, "grok", "all"):
@@ -449,7 +451,7 @@ def all_sessions(agent: str | None = None) -> list[dict]:
     if agent in (None, "codex", "all"):
         items.extend(discover_codex())
 
-    def key(s):
+    def key(s: SessionCard) -> object:
         return s.get("updated") or s.get("created") or ""
 
     items.sort(key=key, reverse=True)

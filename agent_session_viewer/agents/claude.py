@@ -6,10 +6,11 @@ from pathlib import Path
 
 from ..images import extract_text
 from ..turns import make_turn
+from ..types import SessionData, Turn
 from ..util import display_time, iter_jsonl
 
 
-def get_conversation(path: Path) -> list[dict]:
+def get_conversation(path: Path) -> list[Turn]:
     turns = []
     for obj in iter_jsonl(path):
         if obj.get("type") not in ("user", "assistant"):
@@ -30,7 +31,7 @@ def get_conversation(path: Path) -> list[dict]:
     return turns
 
 
-def load_session(path: Path) -> dict:
+def load_session(path: Path) -> SessionData:
     """Return the common session shape; Claude's richer extras remain WIP."""
     return {
         "agent": "claude",
