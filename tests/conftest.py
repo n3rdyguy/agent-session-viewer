@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from agent_session_viewer import discovery, util
+from agent_session_viewer import authorization, discovery, util
 
 app_module = importlib.import_module("agent_session_viewer.app")
 
@@ -33,6 +33,9 @@ def agent_homes(
         monkeypatch.setattr(module, "GROK_HOME", homes["grok"])
         monkeypatch.setattr(module, "CLAUDE_HOME", homes["claude"])
         monkeypatch.setattr(module, "CODEX_HOME", homes["codex"])
+    monkeypatch.setattr(authorization.config, "GROK_HOME", homes["grok"])
+    monkeypatch.setattr(authorization.config, "CLAUDE_HOME", homes["claude"])
+    monkeypatch.setattr(authorization.config, "CODEX_HOME", homes["codex"])
     return homes
 
 

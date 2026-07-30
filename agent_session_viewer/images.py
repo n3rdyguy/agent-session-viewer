@@ -10,7 +10,7 @@ from urllib.parse import quote
 
 from .util import truncate
 
-IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".svg", ".ico", ".avif"}
+IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".ico", ".avif"}
 IMAGE_PATH_RE = re.compile(
     r"(?P<path>"
     r"(?:[A-Za-z]:[\\/]|\\\\|/|\./|\.\./|assets[\\/])[^\s<>\"']+\."

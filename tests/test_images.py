@@ -13,7 +13,7 @@ from agent_session_viewer.images import (
     ("path", "expected"),
     [
         ("photo.PNG", True),
-        ("diagram.svg", True),
+        ("diagram.svg", False),
         ("archive.png.txt", False),
         ("no-extension", False),
     ],
