@@ -213,7 +213,7 @@ def run(host: str = "127.0.0.1", port: int = 5050) -> None:
         format="%(levelname)s %(name)s: %(message)s",
     )
     print("Agent Session Viewer")
-    print(f"→ http://{host}:{port}")
+    print(f"-> http://{host}:{port}")
     print(f"Grok   : {GROK_HOME / 'sessions'}")
     print(f"Claude : {CLAUDE_HOME / 'projects'}")
     print(f"Codex  : {CODEX_HOME / 'sessions'}")
