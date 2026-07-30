@@ -17,7 +17,7 @@ from .agents.grok import (
     grok_updates_timeline,
 )
 from .markdown_output import format_markdown_content
-from .util import iter_jsonl
+from .util import collect_parse_diagnostics, iter_jsonl
 
 
 def turns_to_markdown(turns: list[dict], title: str, agent: str, path: str, extra: str = "") -> str:
@@ -70,6 +70,14 @@ def load_session(agent: str, path: Path) -> dict:
     Returns turns, title, summary, resources, artifacts, hunks,
     terminal_logs, recaps, and updates (timeline / events tab).
     """
+    with collect_parse_diagnostics() as diagnostics:
+        session = _load_session(agent, path)
+    session["diagnostics"] = diagnostics
+    return session
+
+
+def _load_session(agent: str, path: Path) -> dict:
+    """Load a session while the caller owns diagnostic collection."""
     title = path.name
     turns = []
     summary = None

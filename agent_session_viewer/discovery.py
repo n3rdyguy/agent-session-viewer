@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-import json
 import re
 from datetime import datetime
 from urllib.parse import unquote
 
 from .config import CLAUDE_HOME, CODEX_HOME, GROK_HOME
 from .images import extract_text
-from .util import iter_jsonl, load_json
+from .util import decode_jsonl_record, iter_jsonl, load_json
 
 _CODEX_HEADLINE_PUNCTUATION = frozenset(" .,:;!?'-_()/&+")
 _TURN_ABORTED_RE = re.compile(r"\bturn_aborted\b", re.IGNORECASE)
@@ -51,7 +50,7 @@ def discover_grok() -> list[dict]:
         if cwd_file.exists():
             try:
                 cwd_hint = cwd_file.read_text(encoding="utf-8").strip() or cwd_hint
-            except Exception:
+            except OSError:
                 pass
 
         for sid_dir in group.iterdir():
@@ -114,18 +113,18 @@ def discover_claude() -> list[dict]:
                     lines = fh.readlines()
                 msg_count = len(lines)
                 sample = lines[:8] + lines[-8:]
-                for line in sample:
-                    try:
-                        obj = json.loads(line)
-                        ts = obj.get("timestamp")
-                        if ts:
-                            created = created or ts
-                            updated = ts
-                        if obj.get("type") == "assistant":
-                            model = (obj.get("message") or {}).get("model") or model
-                    except Exception:
-                        pass
-            except Exception:
+                for line_number, line in enumerate(sample, 1):
+                    obj = decode_jsonl_record(f, line_number, line)
+                    if obj is None:
+                        continue
+                    ts = obj.get("timestamp")
+                    if ts:
+                        created = created or ts
+                        updated = ts
+                    if obj.get("type") == "assistant":
+                        message = obj.get("message") if isinstance(obj.get("message"), dict) else {}
+                        model = message.get("model") or model
+            except OSError:
                 pass
 
             sessions.append(
@@ -150,18 +149,15 @@ def load_codex_session_index() -> dict[str, dict]:
     path = CODEX_HOME / "session_index.jsonl"
     if not path.exists():
         return index
-    try:
-        for obj in iter_jsonl(path):
-            sid = obj.get("id")
-            if not sid:
-                continue
-            # Later lines win (index may list the same id more than once)
-            index[str(sid)] = {
-                "thread_name": obj.get("thread_name") or "",
-                "updated_at": obj.get("updated_at") or "",
-            }
-    except Exception:
-        pass
+    for obj in iter_jsonl(path):
+        sid = obj.get("id")
+        if not sid:
+            continue
+        # Later lines win (index may list the same id more than once)
+        index[str(sid)] = {
+            "thread_name": obj.get("thread_name") or "",
+            "updated_at": obj.get("updated_at") or "",
+        }
     return index
 
 
@@ -205,9 +201,8 @@ def discover_codex() -> list[dict]:
                                 if rest.strip():
                                     msg_count += 1
                             break
-                        try:
-                            obj = json.loads(line)
-                        except Exception:
+                        obj = decode_jsonl_record(f, i + 1, line)
+                        if obj is None:
                             continue
                         ts = obj.get("timestamp")
                         if ts:
@@ -255,16 +250,20 @@ def discover_codex() -> list[dict]:
                         elif t == "event_msg" and (
                             payload.get("type") == "thread_settings_applied"
                         ):
-                            settings = payload.get("thread_settings") or {}
+                            settings = (
+                                payload.get("thread_settings")
+                                if isinstance(payload.get("thread_settings"), dict)
+                                else {}
+                            )
                             model = settings.get("model") or model
                             cwd = settings.get("cwd") or cwd
-            except Exception:
+            except OSError:
                 pass
 
             # Prefer index timestamp / file mtime for "updated" (early scan may miss the end)
             try:
                 mtime_iso = datetime.fromtimestamp(f.stat().st_mtime).isoformat()
-            except Exception:
+            except OSError:
                 mtime_iso = None
             idx = titles.get(sid) or {}
             title = safe_codex_headline(idx.get("thread_name")) or headline or f.name

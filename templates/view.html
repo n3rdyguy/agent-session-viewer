@@ -26,6 +26,24 @@
   </div>
 </div>
 
+{% if diagnostics %}
+<div class="parse-warning" role="status">
+  <strong>{{ diagnostics|length }} record{{ 's' if diagnostics|length != 1 else '' }} skipped</strong>
+  while reading this session.
+  <details>
+    <summary>Show details</summary>
+    <ul>
+      {% for diagnostic in diagnostics %}
+      <li>
+        {{ diagnostic.path|decode_html_entities }}{% if diagnostic.line %}:{{ diagnostic.line }}{% endif %}
+        — {{ diagnostic.category }}: {{ diagnostic.message }}
+      </li>
+      {% endfor %}
+    </ul>
+  </details>
+</div>
+{% endif %}
+
 {% if summary %}
 <div class="panel">
   <h3>Session summary</h3>

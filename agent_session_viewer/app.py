@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import mimetypes
 import os
 from io import BytesIO
@@ -112,6 +113,7 @@ def view():
         terminal_logs=session["terminal_logs"],
         recaps=session["recaps"],
         updates=session["updates"],
+        diagnostics=session["diagnostics"],
     )
 
 
@@ -205,6 +207,10 @@ def media():
 def run(host: str = "127.0.0.1", port: int = 5050) -> None:
     """Start the local viewer (loopback only). Set ASV_DEBUG=1 for Flask debug mode."""
     debug = os.environ.get("ASV_DEBUG", "").strip().lower() in ("1", "true", "yes", "on")
+    logging.basicConfig(
+        level=logging.DEBUG if debug else logging.WARNING,
+        format="%(levelname)s %(name)s: %(message)s",
+    )
     print("Agent Session Viewer")
     print(f"→ http://{host}:{port}")
     print(f"Grok   : {GROK_HOME / 'sessions'}")

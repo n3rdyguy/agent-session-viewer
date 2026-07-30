@@ -15,6 +15,8 @@ from ..util import (
     iter_jsonl,
     load_json,
     pretty_json,
+    report_record_failure,
+    safe_int,
 )
 
 
@@ -27,45 +29,49 @@ def grok_token_usage(path: Path) -> dict:
 
     updates = path / "updates.jsonl"
     if updates.exists():
-        try:
-            for obj in iter_jsonl(updates):
-                update = (obj.get("params") or {}).get("update") or {}
-                if update.get("sessionUpdate") != "turn_completed":
-                    continue
-                u = update.get("usage") or {}
-                if not isinstance(u, dict):
-                    continue
-                usage["turns"] += 1
-                usage["input"] += int(u.get("inputTokens") or 0)
-                usage["output"] += int(u.get("outputTokens") or 0)
-                usage["total"] += int(u.get("totalTokens") or 0)
-                usage["cached"] += int(u.get("cachedReadTokens") or 0)
-                usage["reasoning"] += int(u.get("reasoningTokens") or 0)
-                usage["model_calls"] += int(u.get("modelCalls") or 0)
-                usage["api_duration_ms"] += int(u.get("apiDurationMs") or 0)
+        for obj in iter_jsonl(updates):
+            params = obj.get("params") if isinstance(obj.get("params"), dict) else {}
+            update = params.get("update") if isinstance(params.get("update"), dict) else {}
+            if update.get("sessionUpdate") != "turn_completed":
+                continue
+            u = update.get("usage") or {}
+            if not isinstance(u, dict):
+                continue
+            usage["turns"] += 1
+            for target, field in (
+                ("input", "inputTokens"),
+                ("output", "outputTokens"),
+                ("total", "totalTokens"),
+                ("cached", "cachedReadTokens"),
+                ("reasoning", "reasoningTokens"),
+                ("model_calls", "modelCalls"),
+                ("api_duration_ms", "apiDurationMs"),
+            ):
+                usage[target] += safe_int(u.get(field), path=updates, field=field)
 
-                mu = u.get("modelUsage") or {}
-                if isinstance(mu, dict):
-                    for model, stats in mu.items():
-                        if not isinstance(stats, dict):
-                            continue
-                        bucket = usage["by_model"].setdefault(
-                            model,
-                            {
-                                "input": 0,
-                                "output": 0,
-                                "cached": 0,
-                                "reasoning": 0,
-                                "model_calls": 0,
-                            },
-                        )
-                        bucket["input"] += int(stats.get("inputTokens") or 0)
-                        bucket["output"] += int(stats.get("outputTokens") or 0)
-                        bucket["cached"] += int(stats.get("cachedReadTokens") or 0)
-                        bucket["reasoning"] += int(stats.get("reasoningTokens") or 0)
-                        bucket["model_calls"] += int(stats.get("modelCalls") or 0)
-        except Exception:
-            pass
+            mu = u.get("modelUsage") or {}
+            if isinstance(mu, dict):
+                for model, stats in mu.items():
+                    if not isinstance(stats, dict):
+                        continue
+                    bucket = usage["by_model"].setdefault(
+                        model,
+                        {
+                            "input": 0,
+                            "output": 0,
+                            "cached": 0,
+                            "reasoning": 0,
+                            "model_calls": 0,
+                        },
+                    )
+                    for target, field in (
+                        ("input", "inputTokens"),
+                        ("output", "outputTokens"),
+                        ("cached", "cachedReadTokens"),
+                        ("reasoning", "reasoningTokens"),
+                        ("model_calls", "modelCalls"),
+                    ):
+                        bucket[target] += safe_int(stats.get(field), path=updates, field=field)
 
     if usage["turns"] > 0 or usage["input"] or usage["output"]:
         usage["source"] = "updates.jsonl · sum of turn_completed"
@@ -75,9 +81,13 @@ def grok_token_usage(path: Path) -> dict:
         ctx_used = signals.get("contextTokensUsed")
         ctx_win = signals.get("contextWindowTokens")
         if ctx_used is not None:
-            usage["context_used"] = int(ctx_used)
+            usage["context_used"] = safe_int(
+                ctx_used, path=path / "signals.json", field="contextTokensUsed"
+            )
         if ctx_win is not None:
-            usage["context_window"] = int(ctx_win)
+            usage["context_window"] = safe_int(
+                ctx_win, path=path / "signals.json", field="contextWindowTokens"
+            )
 
         # Fallback estimate when no turn_completed records exist
         if not (usage["turns"] > 0 or usage["input"] or usage["output"]) and usage["context_used"]:
@@ -218,25 +228,22 @@ def grok_hunk_records(path: Path) -> list[dict]:
     if not f.exists():
         return []
     rows = []
-    try:
-        for o in iter_jsonl(f):
-            rows.append(
-                {
-                    "hunk_id": o.get("hunkId") or o.get("hunk_id") or "",
-                    "file_path": o.get("filePath") or o.get("file_path") or "",
-                    "event": o.get("eventType") or o.get("event") or "",
-                    "source": o.get("sourceType") or "",
-                    "added": o.get("linesAdded"),
-                    "removed": o.get("linesRemoved"),
-                    "start": o.get("hunkStart"),
-                    "end": o.get("hunkEnd"),
-                    "prompt_index": o.get("promptIndex"),
-                    "time": human_time(o.get("timestamp")),
-                    "author_id": o.get("authorId") or o.get("agentId") or "",
-                }
-            )
-    except Exception:
-        pass
+    for o in iter_jsonl(f):
+        rows.append(
+            {
+                "hunk_id": o.get("hunkId") or o.get("hunk_id") or "",
+                "file_path": o.get("filePath") or o.get("file_path") or "",
+                "event": o.get("eventType") or o.get("event") or "",
+                "source": o.get("sourceType") or "",
+                "added": o.get("linesAdded"),
+                "removed": o.get("linesRemoved"),
+                "start": o.get("hunkStart"),
+                "end": o.get("hunkEnd"),
+                "prompt_index": o.get("promptIndex"),
+                "time": human_time(o.get("timestamp")),
+                "author_id": o.get("authorId") or o.get("agentId") or "",
+            }
+        )
     return rows
 
 
@@ -253,7 +260,7 @@ def grok_terminal_logs(path: Path) -> list[dict]:
             preview = f.read_text(encoding="utf-8", errors="replace")
             if len(preview) > 400:
                 preview = preview[:400] + "…"
-        except Exception:
+        except OSError:
             preview = ""
         logs.append(
             {
@@ -318,12 +325,17 @@ def grok_updates_timeline(path: Path, max_events: int = 400) -> list[dict]:
             )
         )
 
-    try:
-        for obj in iter_jsonl(f):
+    record_iter = iter_jsonl(f)
+    while True:
+        try:
+            obj = next(record_iter)
+        except StopIteration:
+            break
+        try:
             ts = obj.get("timestamp")
             last_ts = ts if ts is not None else last_ts
-            params = obj.get("params") or {}
-            update = params.get("update") or {}
+            params = obj.get("params") if isinstance(obj.get("params"), dict) else {}
+            update = params.get("update") if isinstance(params.get("update"), dict) else {}
             kind = update.get("sessionUpdate") or ""
 
             if kind == "user_message_chunk":
@@ -414,7 +426,11 @@ def grok_updates_timeline(path: Path, max_events: int = 400) -> list[dict]:
                     )
                 )
             elif kind == "task_completed":
-                snap = update.get("task_snapshot") or update
+                snap = (
+                    update.get("task_snapshot")
+                    if isinstance(update.get("task_snapshot"), dict)
+                    else update
+                )
                 tid = snap.get("task_id") or update.get("task_id") or ""
                 out = snap.get("output") or ""
                 if len(str(out)) > 3000:
@@ -445,14 +461,16 @@ def grok_updates_timeline(path: Path, max_events: int = 400) -> list[dict]:
                     )
                 )
 
-        if user_buf:
-            flush_buf("user", user_buf, last_ts)
-        if thought_buf:
-            flush_buf("reasoning", thought_buf, last_ts)
-        if message_buf:
-            flush_buf("assistant", message_buf, last_ts)
-    except Exception:
-        pass
+        except Exception as exc:
+            report_record_failure(f, exc)
+            continue
+
+    if user_buf:
+        flush_buf("user", user_buf, last_ts)
+    if thought_buf:
+        flush_buf("reasoning", thought_buf, last_ts)
+    if message_buf:
+        flush_buf("assistant", message_buf, last_ts)
 
     if len(events) > max_events:
         head = events[: max_events // 2]
@@ -479,7 +497,7 @@ def grok_terminal_map(path: Path) -> dict[str, str]:
             if len(text) > 20000:
                 text = text[:20000] + "\n… [truncated]"
             out[f.stem] = text
-        except Exception:
+        except OSError:
             continue
     return out
 
@@ -502,12 +520,10 @@ def get_grok_conversation(path: Path) -> list[dict]:
     session_dir = path if path.is_dir() else path.parent
     term_map = grok_terminal_map(session_dir)
     session_cwd = None
-    try:
-        meta = load_json(session_dir / "summary.json") or {}
-        info = meta.get("info") if isinstance(meta.get("info"), dict) else {}
-        session_cwd = info.get("cwd") or meta.get("cwd")
-    except Exception:
-        pass
+    meta_value = load_json(session_dir / "summary.json")
+    meta = meta_value if isinstance(meta_value, dict) else {}
+    info = meta.get("info") if isinstance(meta.get("info"), dict) else {}
+    session_cwd = info.get("cwd") or meta.get("cwd")
 
     turns: list[dict] = []
     idx = 0
@@ -520,9 +536,14 @@ def get_grok_conversation(path: Path) -> list[dict]:
             cwd=session_cwd,
         )
 
-    try:
-        for obj in iter_jsonl(history):
-            msg_type = (obj.get("type") or obj.get("role") or "event").lower()
+    record_iter = iter_jsonl(history)
+    while True:
+        try:
+            obj = next(record_iter)
+        except StopIteration:
+            break
+        try:
+            msg_type = str(obj.get("type") or obj.get("role") or "event").lower()
             model = obj.get("model_id") or obj.get("model") or ""
             idx += 1
             seq = f"#{idx}"
@@ -530,7 +551,8 @@ def get_grok_conversation(path: Path) -> list[dict]:
             if msg_type == "reasoning":
                 rid = obj.get("id") or seq
                 summary_parts = []
-                for block in obj.get("summary") or []:
+                summary_blocks = obj.get("summary") if isinstance(obj.get("summary"), list) else []
+                for block in summary_blocks:
                     if isinstance(block, dict):
                         summary_parts.append(block.get("text") or extract_text(block))
                     else:
@@ -564,10 +586,12 @@ def get_grok_conversation(path: Path) -> list[dict]:
 
             if msg_type == "assistant":
                 text, images = content_pair(obj.get("content"), obj.get("images"))
-                tool_calls = obj.get("tool_calls") or []
+                tool_calls = (
+                    obj.get("tool_calls") if isinstance(obj.get("tool_calls"), list) else []
+                )
                 first_tc_id = None
-                if tool_calls and isinstance(tool_calls, list):
-                    first_tc_id = (tool_calls[0] or {}).get("id")
+                if tool_calls and isinstance(tool_calls[0], dict):
+                    first_tc_id = tool_calls[0].get("id")
                 aid = obj.get("id") or first_tc_id or seq
                 if text.strip() or images:
                     turns.append(
@@ -674,7 +698,7 @@ def get_grok_conversation(path: Path) -> list[dict]:
                 action = kind.get("action") if isinstance(kind.get("action"), dict) else {}
                 action_type = action.get("type") or ""
                 query = action.get("query") or ""
-                sources = action.get("sources") or []
+                sources = action.get("sources") if isinstance(action.get("sources"), list) else []
                 lines = [f"{tool_type}" + (f" · {action_type}" if action_type else "")]
                 if query:
                     lines.append(f"query: {query}")
@@ -721,7 +745,8 @@ def get_grok_conversation(path: Path) -> list[dict]:
                     images=images,
                 )
             )
-    except Exception:
-        pass
+        except Exception as exc:
+            report_record_failure(history, exc)
+            continue
 
     return turns

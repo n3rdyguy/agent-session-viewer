@@ -566,4 +566,15 @@
     }
 
     .empty { text-align: center; color: var(--muted); padding: 3.5rem 1rem; }
+    .parse-warning {
+      margin: 1rem 0;
+      padding: .75rem 1rem;
+      border: 1px solid #a36b16;
+      border-radius: 8px;
+      background: rgba(163, 107, 22, .12);
+      color: var(--text);
+      font-size: .9rem;
+    }
+    .parse-warning details { margin-top: .4rem; }
+    .parse-warning ul { margin: .4rem 0 0; padding-left: 1.25rem; }
     footer { text-align: center; padding: 1.5rem; color: var(--muted); font-size: 0.8rem; }

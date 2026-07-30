@@ -4,11 +4,68 @@ from __future__ import annotations
 
 import html
 import json
+import logging
+from contextlib import contextmanager
+from contextvars import ContextVar
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 from .config import CLAUDE_HOME, CODEX_HOME, GROK_HOME
+
+LOGGER = logging.getLogger(__name__)
+MAX_DIAGNOSTIC_MESSAGE = 160
+MAX_PARSE_DIAGNOSTICS = 100
+_DIAGNOSTICS: ContextVar[list[dict] | None] = ContextVar("asv_parse_diagnostics", default=None)
+
+
+def _record_parse_diagnostic(path: Path, line: int | None, category: str, message: str) -> None:
+    diagnostics = _DIAGNOSTICS.get()
+    if diagnostics is None or len(diagnostics) >= MAX_PARSE_DIAGNOSTICS:
+        return
+    bounded = " ".join(message.split())[:MAX_DIAGNOSTIC_MESSAGE]
+    diagnostics.append({"path": str(path), "line": line, "category": category, "message": bounded})
+
+
+@contextmanager
+def collect_parse_diagnostics() -> Iterator[list[dict]]:
+    """Collect diagnostics emitted by JSONL readers in this execution context."""
+    diagnostics: list[dict] = []
+    token = _DIAGNOSTICS.set(diagnostics)
+    try:
+        yield diagnostics
+    finally:
+        _DIAGNOSTICS.reset(token)
+
+
+def safe_int(
+    value: Any,
+    *,
+    path: Path,
+    field: str,
+    line: int | None = None,
+    default: int = 0,
+) -> int:
+    """Convert an integer-like value or report a bounded field diagnostic."""
+    if value is None or value == "":
+        return default
+    if isinstance(value, bool) or isinstance(value, (dict, list, tuple, set)):
+        _record_parse_diagnostic(path, line, "invalid_number", f"{field} must be an integer")
+        return default
+    try:
+        return int(value)
+    except TypeError, ValueError, OverflowError:
+        _record_parse_diagnostic(path, line, "invalid_number", f"{field} must be an integer")
+        return default
+
+
+def report_record_failure(path: Path, exc: Exception) -> None:
+    """Report an unexpected per-record parser failure without exposing its value."""
+    _record_parse_diagnostic(
+        path, None, "invalid_record", f"Record skipped after {type(exc).__name__}"
+    )
+    LOGGER.warning("Skipped invalid record in %s: %s", path, type(exc).__name__)
+    LOGGER.debug("Record parser traceback", exc_info=exc)
 
 
 def decode_html_entities(value: Any) -> str:
@@ -173,21 +230,47 @@ def pretty_json(obj: Any, max_len: int = 12000) -> str:
 def load_json(path: Path) -> Any:
     try:
         return json.loads(path.read_text(encoding="utf-8", errors="replace"))
-    except Exception:
+    except OSError, json.JSONDecodeError:
         return None
 
 
-def iter_jsonl(path: Path):
-    """Yield decoded objects from a JSONL file, skipping blank or invalid lines."""
-    with path.open(encoding="utf-8", errors="replace") as fh:
-        for line in fh:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                yield json.loads(line)
-            except Exception:
-                continue
+def decode_jsonl_record(path: Path, line_number: int, line: str) -> dict[str, Any] | None:
+    """Decode one JSONL line using the shared object-only diagnostic policy."""
+    try:
+        record = json.loads(line)
+    except json.JSONDecodeError as exc:
+        _record_parse_diagnostic(
+            path,
+            line_number,
+            "invalid_json",
+            f"Invalid JSON at column {exc.colno}",
+        )
+        return None
+    if not isinstance(record, dict):
+        _record_parse_diagnostic(
+            path,
+            line_number,
+            "non_object",
+            f"Expected an object, got {type(record).__name__}",
+        )
+        return None
+    return record
+
+
+def iter_jsonl(path: Path) -> Iterator[dict[str, Any]]:
+    """Yield mapping records, reporting and skipping damaged JSONL lines."""
+    try:
+        with path.open(encoding="utf-8", errors="replace") as fh:
+            for line_number, line in enumerate(fh, 1):
+                line = line.strip()
+                if not line:
+                    continue
+                record = decode_jsonl_record(path, line_number, line)
+                if record is not None:
+                    yield record
+    except OSError as exc:
+        _record_parse_diagnostic(path, None, "io_error", type(exc).__name__)
+        LOGGER.warning("Could not read JSONL file %s: %s", path, type(exc).__name__)
 
 
 def path_allowed(path: Path) -> bool:

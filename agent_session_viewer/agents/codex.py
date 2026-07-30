@@ -25,6 +25,8 @@ from ..util import (
     human_time,
     iter_jsonl,
     pretty_json,
+    report_record_failure,
+    safe_int,
 )
 
 
@@ -128,7 +130,7 @@ def codex_scan_session(path: Path, records: list[dict] | None = None) -> dict:
                 counts["tool_call"] += 1
             elif ptype in ("function_call_output", "custom_tool_call_output"):
                 counts["tool_result"] += 1
-            elif ptype == "message" and (payload.get("role") or "").lower() == "user":
+            elif ptype == "message" and str(payload.get("role") or "").lower() == "user":
                 text = extract_text(payload.get("content"))
                 candidate = safe_codex_headline(text)
                 if candidate and not first_user:
@@ -136,10 +138,10 @@ def codex_scan_session(path: Path, records: list[dict] | None = None) -> dict:
                     aborted = codex_headline_was_aborted(text)
 
         elif t == "event_msg":
-            et = (payload.get("type") or "").lower()
+            et = str(payload.get("type") or "").lower()
             if et == "user_message":
                 counts["user"] += 1
-                msg = (payload.get("message") or "").strip()
+                msg = str(payload.get("message") or "").strip()
                 candidate = safe_codex_headline(msg)
                 if candidate and not first_user:
                     first_user = candidate
@@ -167,7 +169,7 @@ def codex_scan_session(path: Path, records: list[dict] | None = None) -> dict:
                             f"task_complete\nid: {payload.get('turn_id') or ''}\n"
                             f"duration_ms: {payload.get('duration_ms')}\n"
                             f"ttft_ms: {payload.get('time_to_first_token_ms')}\n"
-                            f"{(payload.get('last_agent_message') or '')[:500]}"
+                            f"{str(payload.get('last_agent_message') or '')[:500]}"
                         ),
                         meta="task",
                     )
@@ -188,16 +190,34 @@ def codex_scan_session(path: Path, records: list[dict] | None = None) -> dict:
                 if total:
                     last_total = total
                 if last:
-                    sum_last["input"] += int(last.get("input_tokens") or 0)
-                    sum_last["output"] += int(last.get("output_tokens") or 0)
-                    sum_last["cached"] += int(last.get("cached_input_tokens") or 0)
-                    sum_last["reasoning"] += int(last.get("reasoning_output_tokens") or 0)
-                    sum_last["total"] += int(last.get("total_tokens") or 0)
+                    sum_last["input"] += safe_int(
+                        last.get("input_tokens"), path=path, field="input_tokens"
+                    )
+                    sum_last["output"] += safe_int(
+                        last.get("output_tokens"), path=path, field="output_tokens"
+                    )
+                    sum_last["cached"] += safe_int(
+                        last.get("cached_input_tokens"),
+                        path=path,
+                        field="cached_input_tokens",
+                    )
+                    sum_last["reasoning"] += safe_int(
+                        last.get("reasoning_output_tokens"),
+                        path=path,
+                        field="reasoning_output_tokens",
+                    )
+                    sum_last["total"] += safe_int(
+                        last.get("total_tokens"), path=path, field="total_tokens"
+                    )
                 if info.get("model_context_window"):
-                    context_window = int(info["model_context_window"])
+                    context_window = safe_int(
+                        info["model_context_window"],
+                        path=path,
+                        field="model_context_window",
+                    )
                 # Approximate context used from last step total
                 if last.get("total_tokens"):
-                    context_used = int(last["total_tokens"])
+                    context_used = safe_int(last["total_tokens"], path=path, field="total_tokens")
                 rl = (
                     payload.get("rate_limits")
                     if isinstance(payload.get("rate_limits"), dict)
@@ -260,7 +280,7 @@ def codex_scan_session(path: Path, records: list[dict] | None = None) -> dict:
                         text=(
                             f"image_generation_end · {payload.get('status')}\n"
                             f"saved: {payload.get('saved_path') or '—'}\n"
-                            f"{(payload.get('revised_prompt') or '')[:400]}"
+                            f"{str(payload.get('revised_prompt') or '')[:400]}"
                         ),
                         meta="image",
                     )
@@ -269,11 +289,21 @@ def codex_scan_session(path: Path, records: list[dict] | None = None) -> dict:
     # Token usage: cumulative total from last token_count (Codex running total)
     tokens = empty_token_usage()
     if last_total:
-        tokens["input"] = int(last_total.get("input_tokens") or 0)
-        tokens["output"] = int(last_total.get("output_tokens") or 0)
-        tokens["cached"] = int(last_total.get("cached_input_tokens") or 0)
-        tokens["reasoning"] = int(last_total.get("reasoning_output_tokens") or 0)
-        tokens["total"] = int(last_total.get("total_tokens") or 0)
+        tokens["input"] = safe_int(last_total.get("input_tokens"), path=path, field="input_tokens")
+        tokens["output"] = safe_int(
+            last_total.get("output_tokens"), path=path, field="output_tokens"
+        )
+        tokens["cached"] = safe_int(
+            last_total.get("cached_input_tokens"),
+            path=path,
+            field="cached_input_tokens",
+        )
+        tokens["reasoning"] = safe_int(
+            last_total.get("reasoning_output_tokens"),
+            path=path,
+            field="reasoning_output_tokens",
+        )
+        tokens["total"] = safe_int(last_total.get("total_tokens"), path=path, field="total_tokens")
         tokens["turns"] = token_events
         tokens["model_calls"] = token_events
         tokens["source"] = "rollout · last token_count.total_token_usage (cumulative)"
@@ -443,8 +473,13 @@ def get_codex_conversation(
             return extract_text(output.get("content") or output.get("text") or output)
         return str(output)
 
-    try:
-        for obj in records if records is not None else iter_jsonl(path):
+    record_iter = iter(records if records is not None else iter_jsonl(path))
+    while True:
+        try:
+            obj = next(record_iter)
+        except StopIteration:
+            break
+        try:
             idx += 1
             seq = f"#{idx}"
             ts_raw = obj.get("timestamp")
@@ -490,7 +525,7 @@ def get_codex_conversation(
                     continue
 
                 if ptype == "message":
-                    role = (payload.get("role") or "event").lower()
+                    role = str(payload.get("role") or "event").lower()
                     text, images = content_pair(payload.get("content"))
                     if not text.strip() and not images:
                         continue
@@ -572,7 +607,7 @@ def get_codex_conversation(
                     continue
 
             elif t == "event_msg":
-                et = (payload.get("type") or "").lower()
+                et = str(payload.get("type") or "").lower()
 
                 if et == "user_message":
                     msg = payload.get("message") or payload.get("text") or ""
@@ -657,7 +692,7 @@ def get_codex_conversation(
                         f"image_generation · {payload.get('status')}\n"
                         f"id: {call_id}\n"
                         f"saved: {saved}\n"
-                        f"{(payload.get('revised_prompt') or '')[:500]}"
+                        f"{str(payload.get('revised_prompt') or '')[:500]}"
                     )
                     images = []
                     if saved:
@@ -683,7 +718,7 @@ def get_codex_conversation(
                             f"\nttft_ms: {payload.get('time_to_first_token_ms')}"
                         )
                         if payload.get("last_agent_message"):
-                            extra += f"\n{(payload.get('last_agent_message') or '')[:400]}"
+                            extra += f"\n{str(payload.get('last_agent_message') or '')[:400]}"
                     turns.append(
                         make_turn(
                             role="event",
@@ -710,7 +745,8 @@ def get_codex_conversation(
                     )
                 continue
 
-    except Exception:
-        pass
+        except Exception as exc:
+            report_record_failure(path, exc)
+            continue
 
     return turns
