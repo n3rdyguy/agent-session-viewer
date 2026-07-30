@@ -10,6 +10,7 @@ dependencies = [
 
 [dependency-groups]
 dev = [
+    "playwright>=1.54.0",
     "pyright>=1.1.403",
     "pytest",
     "ruff>=0.12.7",
@@ -31,6 +32,9 @@ package = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "browser: Chromium browser security regression tests",
+]
 
 [tool.ruff]
 line-length = 100

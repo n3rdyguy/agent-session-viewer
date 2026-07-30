@@ -25,6 +25,26 @@ app.jinja_env.filters["markdown_content"] = format_markdown_content
 app.jinja_env.filters["decode_html_entities"] = decode_html_entities
 
 
+@app.after_request
+def add_security_headers(response: Response) -> Response:
+    """Apply browser security boundaries to every response."""
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; "
+        "base-uri 'none'; "
+        "connect-src 'none'; "
+        "font-src 'self'; "
+        "form-action 'none'; "
+        "frame-ancestors 'none'; "
+        "img-src 'self' data:; "
+        "object-src 'none'; "
+        "script-src 'self'; "
+        "style-src 'self' 'unsafe-inline'"
+    )
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    return response
+
+
 @app.route("/")
 def index():
     agent = request.args.get("agent")
