@@ -1,0 +1,5 @@
+<img src=x onerror=alert(1)>
+<svg><script>alert(2)</script></svg>
+<math><mtext><img src=x onerror=alert(3)></mtext></math>
+[unsafe](javascript:alert(4))
+[encoded](java&#x73;cript:alert(5))

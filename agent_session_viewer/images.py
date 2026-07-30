@@ -10,7 +10,6 @@ from urllib.parse import quote
 
 from .util import truncate
 
-
 IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".svg", ".ico", ".avif"}
 IMAGE_PATH_RE = re.compile(
     r"(?P<path>"
@@ -126,34 +125,42 @@ def collect_image_blocks(block: dict) -> list[dict]:
             else:
                 url = source.get("url") or ""
         if isinstance(url, str) and url.startswith("data:image"):
-            images.append(image_ref_data(
-                url,
-                block.get("alt") or "image",
-                snippet=image_json_snippet(url=url),
-            ))
+            images.append(
+                image_ref_data(
+                    url,
+                    block.get("alt") or "image",
+                    snippet=image_json_snippet(url=url),
+                )
+            )
         elif isinstance(url, str) and url.strip():
             # http(s) or path-like
             if url.startswith(("http://", "https://")):
-                images.append({
-                    "kind": "url",
-                    "url": url,
-                    "label": block.get("alt") or url,
-                    "copyable": False,
-                    "snippet": image_json_snippet(url=url),
-                })
+                images.append(
+                    {
+                        "kind": "url",
+                        "url": url,
+                        "label": block.get("alt") or url,
+                        "copyable": False,
+                        "snippet": image_json_snippet(url=url),
+                    }
+                )
             else:
-                images.append(image_ref_file(
-                    url,
-                    block.get("alt") or url,
-                    snippet=image_json_snippet(url=url, path=url),
-                ))
+                images.append(
+                    image_ref_file(
+                        url,
+                        block.get("alt") or url,
+                        snippet=image_json_snippet(url=url, path=url),
+                    )
+                )
         path = block.get("path") or block.get("file_path") or block.get("filename")
         if path:
-            images.append(image_ref_file(
-                str(path),
-                str(path),
-                snippet=image_json_snippet(path=str(path)),
-            ))
+            images.append(
+                image_ref_file(
+                    str(path),
+                    str(path),
+                    snippet=image_json_snippet(path=str(path)),
+                )
+            )
     return images
 
 
@@ -224,7 +231,11 @@ def extract_image_paths_from_text(text: str) -> list[str]:
     for m in IMAGE_PATH_RE.finditer(text):
         path = m.group("path")
         # Prefer session asset / explicit image paths to reduce false positives
-        if "assets" in path.replace("\\", "/").lower() or "image-" in path.lower() or path.lower().startswith(("c:", "d:", "/", "~")):
+        if (
+            "assets" in path.replace("\\", "/").lower()
+            or "image-" in path.lower()
+            or path.lower().startswith(("c:", "d:", "/", "~"))
+        ):
             add(path)
 
     return found
@@ -336,11 +347,15 @@ def extract_text_and_images(
                 elif t == "tool_use":
                     name = block.get("name", "?")
                     inp = block.get("input")
-                    parts.append(f"[tool_use] {name}({truncate(json.dumps(inp, default=str), 120)})")
+                    parts.append(
+                        f"[tool_use] {name}({truncate(json.dumps(inp, default=str), 120)})"
+                    )
                 elif t == "tool_result":
                     c = block.get("content")
                     if isinstance(c, list):
-                        sub_text, sub_imgs = extract_text_and_images(c, session_dir=session_dir, cwd=cwd)
+                        sub_text, sub_imgs = extract_text_and_images(
+                            c, session_dir=session_dir, cwd=cwd
+                        )
                         images.extend(sub_imgs)
                         c = sub_text
                     parts.append(f"[tool_result]\n{str(c)}")

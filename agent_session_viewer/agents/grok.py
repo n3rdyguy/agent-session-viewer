@@ -29,7 +29,7 @@ def grok_token_usage(path: Path) -> dict:
     if updates.exists():
         try:
             for obj in iter_jsonl(updates):
-                update = ((obj.get("params") or {}).get("update") or {})
+                update = (obj.get("params") or {}).get("update") or {}
                 if update.get("sessionUpdate") != "turn_completed":
                     continue
                 u = update.get("usage") or {}
@@ -51,7 +51,13 @@ def grok_token_usage(path: Path) -> dict:
                             continue
                         bucket = usage["by_model"].setdefault(
                             model,
-                            {"input": 0, "output": 0, "cached": 0, "reasoning": 0, "model_calls": 0},
+                            {
+                                "input": 0,
+                                "output": 0,
+                                "cached": 0,
+                                "reasoning": 0,
+                                "model_calls": 0,
+                            },
                         )
                         bucket["input"] += int(stats.get("inputTokens") or 0)
                         bucket["output"] += int(stats.get("outputTokens") or 0)
@@ -119,12 +125,14 @@ def grok_resources(path: Path) -> dict:
             for tid, item in items.items():
                 if not isinstance(item, dict):
                     continue
-                todos.append({
-                    "id": str(tid),
-                    "content": item.get("content") or "",
-                    "status": item.get("status") or "unknown",
-                    "priority": item.get("priority") or "",
-                })
+                todos.append(
+                    {
+                        "id": str(tid),
+                        "content": item.get("content") or "",
+                        "status": item.get("status") or "unknown",
+                        "priority": item.get("priority") or "",
+                    }
+                )
             # Keep insertion order from file; status sort secondary
             status_rank = {"in_progress": 0, "pending": 1, "completed": 2, "cancelled": 3}
             todos.sort(key=lambda t: (status_rank.get(t["status"], 9), t["id"]))
@@ -154,11 +162,15 @@ def grok_resources(path: Path) -> dict:
         for key, val in conf.items():
             if val is None:
                 continue
-            settings.append({
-                "tool": tool_name.replace("grok_build.", ""),
-                "key": key,
-                "value": pretty_json(val, 200) if not isinstance(val, (str, int, float, bool)) else str(val),
-            })
+            settings.append(
+                {
+                    "tool": tool_name.replace("grok_build.", ""),
+                    "key": key,
+                    "value": pretty_json(val, 200)
+                    if not isinstance(val, (str, int, float, bool))
+                    else str(val),
+                }
+            )
 
     other_state = []
     artifacts = []
@@ -169,21 +181,25 @@ def grok_resources(path: Path) -> dict:
         label = k.replace("grok_build.", "")
         # Prefer collapsible artifacts for larger / document-like blobs
         if isinstance(v, str) and len(v) > 200:
-            artifacts.append({
-                "id": f"state-{label}",
-                "title": label,
-                "subtitle": "resources_state",
-                "kind": "markdown",
-                "text": v,
-            })
+            artifacts.append(
+                {
+                    "id": f"state-{label}",
+                    "title": label,
+                    "subtitle": "resources_state",
+                    "kind": "markdown",
+                    "text": v,
+                }
+            )
         elif isinstance(v, (dict, list)) and len(pretty_json(v, 50000)) > 400:
-            artifacts.append({
-                "id": f"state-{label}",
-                "title": label,
-                "subtitle": "resources_state · json",
-                "kind": "json",
-                "text": pretty_json(v, 200000),
-            })
+            artifacts.append(
+                {
+                    "id": f"state-{label}",
+                    "title": label,
+                    "subtitle": "resources_state · json",
+                    "kind": "json",
+                    "text": pretty_json(v, 200000),
+                }
+            )
         else:
             other_state.append({"key": label, "value": pretty_json(v, 400)})
 
@@ -204,19 +220,21 @@ def grok_hunk_records(path: Path) -> list[dict]:
     rows = []
     try:
         for o in iter_jsonl(f):
-            rows.append({
-                "hunk_id": o.get("hunkId") or o.get("hunk_id") or "",
-                "file_path": o.get("filePath") or o.get("file_path") or "",
-                "event": o.get("eventType") or o.get("event") or "",
-                "source": o.get("sourceType") or "",
-                "added": o.get("linesAdded"),
-                "removed": o.get("linesRemoved"),
-                "start": o.get("hunkStart"),
-                "end": o.get("hunkEnd"),
-                "prompt_index": o.get("promptIndex"),
-                "time": human_time(o.get("timestamp")),
-                "author_id": o.get("authorId") or o.get("agentId") or "",
-            })
+            rows.append(
+                {
+                    "hunk_id": o.get("hunkId") or o.get("hunk_id") or "",
+                    "file_path": o.get("filePath") or o.get("file_path") or "",
+                    "event": o.get("eventType") or o.get("event") or "",
+                    "source": o.get("sourceType") or "",
+                    "added": o.get("linesAdded"),
+                    "removed": o.get("linesRemoved"),
+                    "start": o.get("hunkStart"),
+                    "end": o.get("hunkEnd"),
+                    "prompt_index": o.get("promptIndex"),
+                    "time": human_time(o.get("timestamp")),
+                    "author_id": o.get("authorId") or o.get("agentId") or "",
+                }
+            )
     except Exception:
         pass
     return rows
@@ -237,12 +255,14 @@ def grok_terminal_logs(path: Path) -> list[dict]:
                 preview = preview[:400] + "…"
         except Exception:
             preview = ""
-        logs.append({
-            "id": call_id,
-            "path": str(f),
-            "size": size,
-            "preview": preview,
-        })
+        logs.append(
+            {
+                "id": call_id,
+                "path": str(f),
+                "size": size,
+                "preview": preview,
+            }
+        )
     return logs
 
 
@@ -253,17 +273,21 @@ def grok_recap_requests(path: Path) -> list[dict]:
     items = []
     for f in sorted(rd.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True):
         meta = load_json(f) or {}
-        items.append({
-            "id": meta.get("request_id") or f.stem,
-            "path": str(f),
-            "created": human_time(meta.get("created_at")),
-            "trigger": meta.get("trigger") or "",
-            "model": meta.get("model") or "",
-            "size": f.stat().st_size,
-            "strip_reasoning": meta.get("strip_reasoning"),
-            "x_grok_req_id": meta.get("x_grok_req_id") or "",
-            "chat_len": len(meta.get("chat_history") or []) if isinstance(meta.get("chat_history"), list) else None,
-        })
+        items.append(
+            {
+                "id": meta.get("request_id") or f.stem,
+                "path": str(f),
+                "created": human_time(meta.get("created_at")),
+                "trigger": meta.get("trigger") or "",
+                "model": meta.get("model") or "",
+                "size": f.stat().st_size,
+                "strip_reasoning": meta.get("strip_reasoning"),
+                "x_grok_req_id": meta.get("x_grok_req_id") or "",
+                "chat_len": len(meta.get("chat_history") or [])
+                if isinstance(meta.get("chat_history"), list)
+                else None,
+            }
+        )
     return items
 
 
@@ -286,11 +310,13 @@ def grok_updates_timeline(path: Path, max_events: int = 400) -> list[dict]:
         parts.clear()
         if not text:
             return
-        events.append(make_turn(
-            role=role,
-            time=display_time(ts),
-            text=text,
-        ))
+        events.append(
+            make_turn(
+                role=role,
+                time=display_time(ts),
+                text=text,
+            )
+        )
 
     try:
         for obj in iter_jsonl(f):
@@ -328,20 +354,28 @@ def grok_updates_timeline(path: Path, max_events: int = 400) -> list[dict]:
                 tcid = update.get("toolCallId") or update.get("tool_call_id") or ""
                 title = update.get("title") or update.get("kind") or "tool"
                 raw_in = update.get("rawInput") or update.get("raw_input") or update.get("input")
-                text = f"{title}\nid: {tcid}\n{format_tool_args(raw_in)}" if tcid else f"{title}\n{format_tool_args(raw_in)}"
-                events.append(make_turn(
-                    role="tool_call",
-                    time=display_time(ts),
-                    id=tcid,
-                    text=text,
-                ))
+                text = (
+                    f"{title}\nid: {tcid}\n{format_tool_args(raw_in)}"
+                    if tcid
+                    else f"{title}\n{format_tool_args(raw_in)}"
+                )
+                events.append(
+                    make_turn(
+                        role="tool_call",
+                        time=display_time(ts),
+                        id=tcid,
+                        text=text,
+                    )
+                )
                 tool_final[tcid] = {"status": "started", "title": title}
             elif kind == "tool_call_update":
                 tcid = update.get("toolCallId") or update.get("tool_call_id") or ""
                 status = update.get("status") or update.get("kind") or ""
                 # Keep latest status / content snapshot; emit only terminal-ish states later
                 prev = tool_final.get(tcid) or {}
-                content = extract_text(update.get("content") or update.get("rawOutput") or update.get("raw_output"))
+                content = extract_text(
+                    update.get("content") or update.get("rawOutput") or update.get("raw_output")
+                )
                 if content:
                     prev["content"] = content
                 if status:
@@ -353,12 +387,14 @@ def grok_updates_timeline(path: Path, max_events: int = 400) -> list[dict]:
                 # Emit completed/failed updates inline
                 if str(status).lower() in ("completed", "failed", "error", "cancelled"):
                     body = prev.get("content") or ""
-                    events.append(make_turn(
-                        role="tool_result",
-                        time=display_time(ts),
-                        id=tcid,
-                        text=f"status: {status}\nid: {tcid}\n{body}".strip(),
-                    ))
+                    events.append(
+                        make_turn(
+                            role="tool_result",
+                            time=display_time(ts),
+                            id=tcid,
+                            text=f"status: {status}\nid: {tcid}\n{body}".strip(),
+                        )
+                    )
             elif kind == "task_backgrounded":
                 if user_buf:
                     flush_buf("user", user_buf, last_ts)
@@ -369,24 +405,28 @@ def grok_updates_timeline(path: Path, max_events: int = 400) -> list[dict]:
                 tid = update.get("task_id") or update.get("tool_call_id") or ""
                 cmd = update.get("command") or ""
                 out = update.get("output_file") or ""
-                events.append(make_turn(
-                    role="event",
-                    time=display_time(ts),
-                    id=tid,
-                    text=f"task_backgrounded\nid: {tid}\ncommand: {cmd}\noutput_file: {out}",
-                ))
+                events.append(
+                    make_turn(
+                        role="event",
+                        time=display_time(ts),
+                        id=tid,
+                        text=f"task_backgrounded\nid: {tid}\ncommand: {cmd}\noutput_file: {out}",
+                    )
+                )
             elif kind == "task_completed":
                 snap = update.get("task_snapshot") or update
                 tid = snap.get("task_id") or update.get("task_id") or ""
                 out = snap.get("output") or ""
                 if len(str(out)) > 3000:
                     out = str(out)[:3000] + "…"
-                events.append(make_turn(
-                    role="event",
-                    time=display_time(ts),
-                    id=tid,
-                    text=f"task_completed\nid: {tid}\ncommand: {snap.get('command') or ''}\n{out}",
-                ))
+                events.append(
+                    make_turn(
+                        role="event",
+                        time=display_time(ts),
+                        id=tid,
+                        text=f"task_completed\nid: {tid}\ncommand: {snap.get('command') or ''}\n{out}",
+                    )
+                )
             elif kind == "turn_completed":
                 if user_buf:
                     flush_buf("user", user_buf, last_ts)
@@ -396,12 +436,14 @@ def grok_updates_timeline(path: Path, max_events: int = 400) -> list[dict]:
                     flush_buf("assistant", message_buf, last_ts)
                 usage = update.get("usage") or {}
                 usage_txt = pretty_json(usage, 800) if usage else ""
-                events.append(make_turn(
-                    role="event",
-                    time=display_time(ts),
-                    id=update.get("prompt_id") or "",
-                    text=f"turn_completed · stop={update.get('stop_reason') or '?'}\n{usage_txt}",
-                ))
+                events.append(
+                    make_turn(
+                        role="event",
+                        time=display_time(ts),
+                        id=update.get("prompt_id") or "",
+                        text=f"turn_completed · stop={update.get('stop_reason') or '?'}\n{usage_txt}",
+                    )
+                )
 
         if user_buf:
             flush_buf("user", user_buf, last_ts)
@@ -415,10 +457,12 @@ def grok_updates_timeline(path: Path, max_events: int = 400) -> list[dict]:
     if len(events) > max_events:
         head = events[: max_events // 2]
         tail = events[-(max_events // 2) :]
-        marker = [make_turn(
-            role="event",
-            text=f"… {len(events) - max_events} updates omitted for display …",
-        )]
+        marker = [
+            make_turn(
+                role="event",
+                text=f"… {len(events) - max_events} updates omitted for display …",
+            )
+        ]
         return head + marker + tail
     return events
 
@@ -443,6 +487,7 @@ def grok_terminal_map(path: Path) -> dict[str, str]:
 # ─────────────────────────────────────────────
 # Conversation extractors
 # ─────────────────────────────────────────────
+
 
 def get_grok_conversation(path: Path) -> list[dict]:
     """Parse chat_history.jsonl with reasoning, tool calls, and terminal enrichment."""
@@ -497,18 +542,24 @@ def get_grok_conversation(path: Path) -> list[dict]:
                 if obj.get("encrypted_content"):
                     body_parts.append("<encrypted>")
                 if not body_parts:
-                    body_parts.append("<encrypted>" if obj.get("encrypted_content") is not None else "(empty reasoning)")
+                    body_parts.append(
+                        "<encrypted>"
+                        if obj.get("encrypted_content") is not None
+                        else "(empty reasoning)"
+                    )
                 status = obj.get("status") or ""
                 effort = obj.get("reasoning_effort") or ""
                 meta_bits = [b for b in (status, effort) if b]
-                turns.append(make_turn(
-                    role="reasoning",
-                    time=display_time(obj.get("timestamp")),
-                    id=rid,
-                    text="\n".join(body_parts),
-                    model=model,
-                    meta=" · ".join(meta_bits),
-                ))
+                turns.append(
+                    make_turn(
+                        role="reasoning",
+                        time=display_time(obj.get("timestamp")),
+                        id=rid,
+                        text="\n".join(body_parts),
+                        model=model,
+                        meta=" · ".join(meta_bits),
+                    )
+                )
                 continue
 
             if msg_type == "assistant":
@@ -519,15 +570,17 @@ def get_grok_conversation(path: Path) -> list[dict]:
                     first_tc_id = (tool_calls[0] or {}).get("id")
                 aid = obj.get("id") or first_tc_id or seq
                 if text.strip() or images:
-                    turns.append(make_turn(
-                        role="assistant",
-                        time=display_time(obj.get("timestamp")),
-                        id=aid,
-                        text=text,
-                        model=model,
-                        meta=obj.get("reasoning_effort") or "",
-                        images=images,
-                    ))
+                    turns.append(
+                        make_turn(
+                            role="assistant",
+                            time=display_time(obj.get("timestamp")),
+                            id=aid,
+                            text=text,
+                            model=model,
+                            meta=obj.get("reasoning_effort") or "",
+                            images=images,
+                        )
+                    )
                 for tc in tool_calls:
                     if not isinstance(tc, dict):
                         continue
@@ -537,23 +590,27 @@ def get_grok_conversation(path: Path) -> list[dict]:
                     body = f"{name}\nid: {tcid}\n{args}".strip()
                     # Tool args may embed image paths
                     _, tc_images = content_pair(body)
-                    turns.append(make_turn(
-                        role="tool_call",
-                        time=display_time(obj.get("timestamp")),
-                        id=tcid or seq,
-                        text=body,
-                        model=model,
-                        meta=name,
-                        images=tc_images,
-                    ))
+                    turns.append(
+                        make_turn(
+                            role="tool_call",
+                            time=display_time(obj.get("timestamp")),
+                            id=tcid or seq,
+                            text=body,
+                            model=model,
+                            meta=name,
+                            images=tc_images,
+                        )
+                    )
                 if not text.strip() and not tool_calls and not images:
-                    turns.append(make_turn(
-                        role="assistant",
-                        time=display_time(obj.get("timestamp")),
-                        id=seq,
-                        text="(empty assistant message)",
-                        model=model,
-                    ))
+                    turns.append(
+                        make_turn(
+                            role="assistant",
+                            time=display_time(obj.get("timestamp")),
+                            id=seq,
+                            text="(empty assistant message)",
+                            model=model,
+                        )
+                    )
                 continue
 
             if msg_type == "tool_result":
@@ -562,21 +619,29 @@ def get_grok_conversation(path: Path) -> list[dict]:
                 # Enrich from terminal log when result only points at a log / is thin
                 log_text = term_map.get(tcid) if tcid else None
                 if log_text:
-                    if (not content.strip()
-                            or "output-file" in content
-                            or "<output-file>" in content
-                            or len(content) < 80):
-                        content = (content + "\n\n--- terminal log ---\n" + log_text).strip() if content.strip() else log_text
+                    if (
+                        not content.strip()
+                        or "output-file" in content
+                        or "<output-file>" in content
+                        or len(content) < 80
+                    ):
+                        content = (
+                            (content + "\n\n--- terminal log ---\n" + log_text).strip()
+                            if content.strip()
+                            else log_text
+                        )
                         # re-scan log for image paths
                         _, more = content_pair(content)
                         images = images + more
-                turns.append(make_turn(
-                    role="tool_result",
-                    time=display_time(obj.get("timestamp")),
-                    id=tcid or seq,
-                    text=content or "(empty tool result)",
-                    images=images,
-                ))
+                turns.append(
+                    make_turn(
+                        role="tool_result",
+                        time=display_time(obj.get("timestamp")),
+                        id=tcid or seq,
+                        text=content or "(empty tool result)",
+                        images=images,
+                    )
+                )
                 continue
 
             if msg_type in ("user", "system"):
@@ -590,15 +655,17 @@ def get_grok_conversation(path: Path) -> list[dict]:
                 uid = ""
                 if obj.get("prompt_index") is not None:
                     uid = f"prompt:{obj.get('prompt_index')}"
-                turns.append(make_turn(
-                    role=role,
-                    time=display_time(obj.get("timestamp")),
-                    id=uid or seq,
-                    text=text or "(empty)",
-                    model=model,
-                    meta=synthetic,
-                    images=images,
-                ))
+                turns.append(
+                    make_turn(
+                        role=role,
+                        time=display_time(obj.get("timestamp")),
+                        id=uid or seq,
+                        text=text or "(empty)",
+                        model=model,
+                        meta=synthetic,
+                        images=images,
+                    )
+                )
                 continue
 
             if msg_type == "backend_tool_call":
@@ -615,20 +682,24 @@ def get_grok_conversation(path: Path) -> list[dict]:
                     lines.append("sources:")
                     for src in sources[:20]:
                         if isinstance(src, dict):
-                            lines.append(f"  - {src.get('url') or src.get('type') or pretty_json(src, 120)}")
+                            lines.append(
+                                f"  - {src.get('url') or src.get('type') or pretty_json(src, 120)}"
+                            )
                         else:
                             lines.append(f"  - {src}")
                     if len(sources) > 20:
                         lines.append(f"  … +{len(sources) - 20} more")
                 rid = obj.get("id") or seq
-                turns.append(make_turn(
-                    role="tool_call",
-                    time=display_time(obj.get("timestamp")),
-                    id=rid,
-                    text="\n".join(lines),
-                    model=model,
-                    meta=tool_type,
-                ))
+                turns.append(
+                    make_turn(
+                        role="tool_call",
+                        time=display_time(obj.get("timestamp")),
+                        id=rid,
+                        text="\n".join(lines),
+                        model=model,
+                        meta=tool_type,
+                    )
+                )
                 continue
 
             # Unknown types — still show something useful
@@ -640,14 +711,16 @@ def get_grok_conversation(path: Path) -> list[dict]:
             if not text.strip() and not images:
                 dump = {k: v for k, v in obj.items() if k not in ("encrypted_content",)}
                 text = pretty_json(dump, 1200)
-            turns.append(make_turn(
-                role=msg_type or "event",
-                time=display_time(obj.get("timestamp")),
-                id=rid,
-                text=text,
-                model=model,
-                images=images,
-            ))
+            turns.append(
+                make_turn(
+                    role=msg_type or "event",
+                    time=display_time(obj.get("timestamp")),
+                    id=rid,
+                    text=text,
+                    model=model,
+                    images=images,
+                )
+            )
     except Exception:
         pass
 

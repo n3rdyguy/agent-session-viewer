@@ -71,11 +71,7 @@ def test_discover_codex_shows_index_title_and_safe_headline(
 ) -> None:
     session_id = "019f9edd-ea9c-7741-ad03-59daedd955a2"
     codex_home = tmp_path / "codex"
-    rollout = (
-        codex_home
-        / "sessions"
-        / f"rollout-2026-07-30T08-00-00-{session_id}.jsonl"
-    )
+    rollout = codex_home / "sessions" / f"rollout-2026-07-30T08-00-00-{session_id}.jsonl"
     _write_rollout(
         rollout,
         session_id,
@@ -109,11 +105,7 @@ def test_discover_codex_rejects_unsafe_title_and_headline(
 ) -> None:
     session_id = "019f9edd-ea9c-7741-ad03-59daedd955a2"
     codex_home = tmp_path / "codex"
-    rollout = (
-        codex_home
-        / "sessions"
-        / f"rollout-2026-07-30T08-00-00-{session_id}.jsonl"
-    )
+    rollout = codex_home / "sessions" / f"rollout-2026-07-30T08-00-00-{session_id}.jsonl"
     _write_rollout(rollout, session_id, "<user_action>hidden</user_action>")
     (codex_home / "session_index.jsonl").write_text(
         json.dumps(
@@ -169,11 +161,7 @@ def test_aborted_badge_uses_only_the_message_selected_for_headline(
 ) -> None:
     session_id = "019f9edd-ea9c-7741-ad03-59daedd955a2"
     codex_home = tmp_path / "codex"
-    rollout = (
-        codex_home
-        / "sessions"
-        / f"rollout-2026-07-30T08-00-00-{session_id}.jsonl"
-    )
+    rollout = codex_home / "sessions" / f"rollout-2026-07-30T08-00-00-{session_id}.jsonl"
     _write_rollout(
         rollout,
         session_id,
@@ -262,6 +250,8 @@ def test_session_list_places_aborted_badge_before_title() -> None:
     )
     assert "session-headline" not in rendered
     assert "A useful headline</div>" not in rendered
+
+
 def test_session_list_decodes_html_entities_once(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

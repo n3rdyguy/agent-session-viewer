@@ -28,12 +28,6 @@ from ..util import (
 )
 
 
-
-
-
-
-
-
 def codex_scan_session(path: Path, records: list[dict] | None = None) -> dict:
     """
     Single-pass scan of a Codex rollout file for summary, tokens, patches, settings.
@@ -110,7 +104,11 @@ def codex_scan_session(path: Path, records: list[dict] | None = None) -> dict:
             elif isinstance(sp, str):
                 sandbox = sp
             approval = payload.get("approval_policy") or approval
-            collab = payload.get("collaboration_mode") if isinstance(payload.get("collaboration_mode"), dict) else {}
+            collab = (
+                payload.get("collaboration_mode")
+                if isinstance(payload.get("collaboration_mode"), dict)
+                else {}
+            )
             settings = collab.get("settings") if isinstance(collab.get("settings"), dict) else {}
             effort = settings.get("reasoning_effort") or effort
             model = settings.get("model") or model
@@ -150,31 +148,43 @@ def codex_scan_session(path: Path, records: list[dict] | None = None) -> dict:
                 counts["assistant"] += 1
             elif et == "task_started":
                 counts["task"] += 1
-                events.append(make_turn(
-                    role="event",
-                    time=display_time(ts),
-                    id=payload.get("turn_id") or "",
-                    text=f"task_started\nid: {payload.get('turn_id') or ''}\nmodel_context_window: {payload.get('model_context_window') or ''}",
-                    meta="task",
-                ))
+                events.append(
+                    make_turn(
+                        role="event",
+                        time=display_time(ts),
+                        id=payload.get("turn_id") or "",
+                        text=f"task_started\nid: {payload.get('turn_id') or ''}\nmodel_context_window: {payload.get('model_context_window') or ''}",
+                        meta="task",
+                    )
+                )
             elif et == "task_complete":
-                events.append(make_turn(
-                    role="event",
-                    time=display_time(ts),
-                    id=payload.get("turn_id") or "",
-                    text=(
-                        f"task_complete\nid: {payload.get('turn_id') or ''}\n"
-                        f"duration_ms: {payload.get('duration_ms')}\n"
-                        f"ttft_ms: {payload.get('time_to_first_token_ms')}\n"
-                        f"{(payload.get('last_agent_message') or '')[:500]}"
-                    ),
-                    meta="task",
-                ))
+                events.append(
+                    make_turn(
+                        role="event",
+                        time=display_time(ts),
+                        id=payload.get("turn_id") or "",
+                        text=(
+                            f"task_complete\nid: {payload.get('turn_id') or ''}\n"
+                            f"duration_ms: {payload.get('duration_ms')}\n"
+                            f"ttft_ms: {payload.get('time_to_first_token_ms')}\n"
+                            f"{(payload.get('last_agent_message') or '')[:500]}"
+                        ),
+                        meta="task",
+                    )
+                )
             elif et == "token_count":
                 token_events += 1
                 info = payload.get("info") if isinstance(payload.get("info"), dict) else {}
-                total = info.get("total_token_usage") if isinstance(info.get("total_token_usage"), dict) else {}
-                last = info.get("last_token_usage") if isinstance(info.get("last_token_usage"), dict) else {}
+                total = (
+                    info.get("total_token_usage")
+                    if isinstance(info.get("total_token_usage"), dict)
+                    else {}
+                )
+                last = (
+                    info.get("last_token_usage")
+                    if isinstance(info.get("last_token_usage"), dict)
+                    else {}
+                )
                 if total:
                     last_total = total
                 if last:
@@ -188,11 +198,19 @@ def codex_scan_session(path: Path, records: list[dict] | None = None) -> dict:
                 # Approximate context used from last step total
                 if last.get("total_tokens"):
                     context_used = int(last["total_tokens"])
-                rl = payload.get("rate_limits") if isinstance(payload.get("rate_limits"), dict) else {}
+                rl = (
+                    payload.get("rate_limits")
+                    if isinstance(payload.get("rate_limits"), dict)
+                    else {}
+                )
                 if rl.get("plan_type"):
                     plan_type = rl.get("plan_type") or plan_type
             elif et == "thread_settings_applied":
-                settings = payload.get("thread_settings") if isinstance(payload.get("thread_settings"), dict) else {}
+                settings = (
+                    payload.get("thread_settings")
+                    if isinstance(payload.get("thread_settings"), dict)
+                    else {}
+                )
                 model = settings.get("model") or model
                 cwd = settings.get("cwd") or cwd
                 effort = settings.get("reasoning_effort") or effort
@@ -206,40 +224,47 @@ def codex_scan_session(path: Path, records: list[dict] | None = None) -> dict:
                 changes = payload.get("changes") if isinstance(payload.get("changes"), dict) else {}
                 for fpath, ch in changes.items():
                     ch = ch if isinstance(ch, dict) else {}
-                    patches.append({
-                        "hunk_id": call_id or fpath,
-                        "file_path": fpath,
-                        "event": ch.get("type") or ("ok" if payload.get("success") else "error"),
-                        "source": "patch_apply",
-                        "added": None,
-                        "removed": None,
-                        "start": None,
-                        "end": None,
-                        "prompt_index": None,
-                        "time": human_time(ts),
-                        "author_id": "",
-                        "diff": (ch.get("unified_diff") or "")[:400],
-                    })
+                    patches.append(
+                        {
+                            "hunk_id": call_id or fpath,
+                            "file_path": fpath,
+                            "event": ch.get("type")
+                            or ("ok" if payload.get("success") else "error"),
+                            "source": "patch_apply",
+                            "added": None,
+                            "removed": None,
+                            "start": None,
+                            "end": None,
+                            "prompt_index": None,
+                            "time": human_time(ts),
+                            "author_id": "",
+                            "diff": (ch.get("unified_diff") or "")[:400],
+                        }
+                    )
                 stdout = (payload.get("stdout") or "")[:300]
-                events.append(make_turn(
-                    role="event",
-                    time=display_time(ts),
-                    id=call_id,
-                    text=f"patch_apply_end · success={payload.get('success')}\n{stdout}\nfiles: {', '.join(list(changes)[:12])}",
-                    meta="patch",
-                ))
+                events.append(
+                    make_turn(
+                        role="event",
+                        time=display_time(ts),
+                        id=call_id,
+                        text=f"patch_apply_end · success={payload.get('success')}\n{stdout}\nfiles: {', '.join(list(changes)[:12])}",
+                        meta="patch",
+                    )
+                )
             elif et == "image_generation_end":
-                events.append(make_turn(
-                    role="event",
-                    time=display_time(ts),
-                    id=payload.get("call_id") or "",
-                    text=(
-                        f"image_generation_end · {payload.get('status')}\n"
-                        f"saved: {payload.get('saved_path') or '—'}\n"
-                        f"{(payload.get('revised_prompt') or '')[:400]}"
-                    ),
-                    meta="image",
-                ))
+                events.append(
+                    make_turn(
+                        role="event",
+                        time=display_time(ts),
+                        id=payload.get("call_id") or "",
+                        text=(
+                            f"image_generation_end · {payload.get('status')}\n"
+                            f"saved: {payload.get('saved_path') or '—'}\n"
+                            f"{(payload.get('revised_prompt') or '')[:400]}"
+                        ),
+                        meta="image",
+                    )
+                )
 
     # Token usage: cumulative total from last token_count (Codex running total)
     tokens = empty_token_usage()
@@ -290,30 +315,36 @@ def codex_scan_session(path: Path, records: list[dict] | None = None) -> dict:
     # Documents for the artifacts panel (collapsible + markdown), not plain other_state dumps
     artifacts: list[dict] = []
     if agents_md:
-        artifacts.append({
-            "id": "agents-md",
-            "title": "AGENTS.md",
-            "subtitle": agents_md_dir or cwd or "",
-            "kind": "markdown",
-            "text": agents_md,
-        })
+        artifacts.append(
+            {
+                "id": "agents-md",
+                "title": "AGENTS.md",
+                "subtitle": agents_md_dir or cwd or "",
+                "kind": "markdown",
+                "text": agents_md,
+            }
+        )
     base_inst = meta.get("base_instructions")
     if isinstance(base_inst, dict) and base_inst.get("text"):
-        artifacts.append({
-            "id": "base-instructions",
-            "title": "Base instructions",
-            "subtitle": "session_meta",
-            "kind": "markdown",
-            "text": str(base_inst.get("text") or ""),
-        })
+        artifacts.append(
+            {
+                "id": "base-instructions",
+                "title": "Base instructions",
+                "subtitle": "session_meta",
+                "kind": "markdown",
+                "text": str(base_inst.get("text") or ""),
+            }
+        )
     elif isinstance(base_inst, str) and base_inst.strip():
-        artifacts.append({
-            "id": "base-instructions",
-            "title": "Base instructions",
-            "subtitle": "session_meta",
-            "kind": "markdown",
-            "text": base_inst,
-        })
+        artifacts.append(
+            {
+                "id": "base-instructions",
+                "title": "Base instructions",
+                "subtitle": "session_meta",
+                "kind": "markdown",
+                "text": base_inst,
+            }
+        )
 
     titles = load_codex_session_index()
     sid = meta.get("id") or meta.get("session_id") or path.stem
@@ -326,9 +357,7 @@ def codex_scan_session(path: Path, records: list[dict] | None = None) -> dict:
         sid = meta.get("id") or meta.get("session_id") or m.group(1)
     headline = safe_codex_headline(first_user)
     title = (
-        safe_codex_headline(
-            (titles.get(str(sid)) or {}).get("thread_name")
-        )
+        safe_codex_headline((titles.get(str(sid)) or {}).get("thread_name"))
         or headline
         or path.name
     )
@@ -394,6 +423,7 @@ def get_codex_conversation(
     """
     turns: list[dict] = []
     idx = 0
+
     def content_pair(raw: Any, extra_images: Any = None) -> tuple[str, list[dict]]:
         return extract_text_and_images(
             raw,
@@ -448,13 +478,15 @@ def get_codex_conversation(
                             if payload.get("encrypted_content") is not None
                             else "(empty reasoning)"
                         )
-                    turns.append(make_turn(
-                        role="reasoning",
-                        time=display_time(ts_raw),
-                        id=rid,
-                        text="\n".join(body),
-                        meta="reasoning",
-                    ))
+                    turns.append(
+                        make_turn(
+                            role="reasoning",
+                            time=display_time(ts_raw),
+                            id=rid,
+                            text="\n".join(body),
+                            meta="reasoning",
+                        )
+                    )
                     continue
 
                 if ptype == "message":
@@ -469,33 +501,39 @@ def get_codex_conversation(
                     if role == "user":
                         stripped = text.lstrip()
                         if stripped.startswith(("# AGENTS.md", "<INSTRUCTIONS>", "# ")):
-                            turns.append(make_turn(
+                            turns.append(
+                                make_turn(
+                                    role="system",
+                                    time=display_time(ts_raw),
+                                    id=seq,
+                                    text=text,
+                                    meta="project_instructions",
+                                    images=images,
+                                )
+                            )
+                        # else: prefer event_msg user_message
+                        continue
+                    if role == "developer":
+                        turns.append(
+                            make_turn(
                                 role="system",
                                 time=display_time(ts_raw),
                                 id=seq,
                                 text=text,
-                                meta="project_instructions",
+                                meta="developer",
                                 images=images,
-                            ))
-                        # else: prefer event_msg user_message
+                            )
+                        )
                         continue
-                    if role == "developer":
-                        turns.append(make_turn(
-                            role="system",
+                    turns.append(
+                        make_turn(
+                            role=role,
                             time=display_time(ts_raw),
                             id=seq,
                             text=text,
-                            meta="developer",
                             images=images,
-                        ))
-                        continue
-                    turns.append(make_turn(
-                        role=role,
-                        time=display_time(ts_raw),
-                        id=seq,
-                        text=text,
-                        images=images,
-                    ))
+                        )
+                    )
                     continue
 
                 if ptype in ("function_call", "custom_tool_call", "local_shell_call"):
@@ -506,27 +544,31 @@ def get_codex_conversation(
                         args = pretty_json(args)
                     body = f"{name}\nid: {call_id}\n{args}".strip()
                     _, imgs = content_pair(body)
-                    turns.append(make_turn(
-                        role="tool_call",
-                        time=display_time(ts_raw),
-                        id=call_id or seq,
-                        text=body,
-                        meta=name,
-                        images=imgs,
-                    ))
+                    turns.append(
+                        make_turn(
+                            role="tool_call",
+                            time=display_time(ts_raw),
+                            id=call_id or seq,
+                            text=body,
+                            meta=name,
+                            images=imgs,
+                        )
+                    )
                     continue
 
                 if ptype in ("function_call_output", "custom_tool_call_output"):
                     call_id = payload.get("call_id") or payload.get("id") or ""
                     out = tool_output_text(payload.get("output"))
                     text, imgs = content_pair(out)
-                    turns.append(make_turn(
-                        role="tool_result",
-                        time=display_time(ts_raw),
-                        id=call_id or seq,
-                        text=text or "(empty tool result)",
-                        images=imgs,
-                    ))
+                    turns.append(
+                        make_turn(
+                            role="tool_result",
+                            time=display_time(ts_raw),
+                            id=call_id or seq,
+                            text=text or "(empty tool result)",
+                            images=imgs,
+                        )
+                    )
                     continue
 
             elif t == "event_msg":
@@ -542,39 +584,49 @@ def get_codex_conversation(
                     text, images = content_pair(msg, imgs_raw if imgs_raw else None)
                     # Also attach local file paths as file images
                     for pth in imgs_raw:
-                        if isinstance(pth, str) and pth and not any(
-                            (im.get("path") == pth or im.get("url") == pth) for im in images
+                        if (
+                            isinstance(pth, str)
+                            and pth
+                            and not any(
+                                (im.get("path") == pth or im.get("url") == pth) for im in images
+                            )
                         ):
                             if pth.startswith("data:image"):
                                 images.append(image_ref_data(pth))
                             else:
                                 images.append(image_ref_file(pth, pth))
                     if text.strip() or images:
-                        turns.append(make_turn(
-                            role="user",
-                            time=display_time(ts_raw),
-                            id=seq,
-                            text=text or "(image)",
-                            images=images,
-                        ))
+                        turns.append(
+                            make_turn(
+                                role="user",
+                                time=display_time(ts_raw),
+                                id=seq,
+                                text=text or "(image)",
+                                images=images,
+                            )
+                        )
                     continue
 
                 if et == "agent_message":
                     msg = payload.get("message") or payload.get("text") or ""
                     phase = payload.get("phase") or ""
                     if msg:
-                        turns.append(make_turn(
-                            role="assistant",
-                            time=display_time(ts_raw),
-                            id=seq,
-                            text=str(msg),
-                            meta=phase,
-                        ))
+                        turns.append(
+                            make_turn(
+                                role="assistant",
+                                time=display_time(ts_raw),
+                                id=seq,
+                                text=str(msg),
+                                meta=phase,
+                            )
+                        )
                     continue
 
                 if et == "patch_apply_end":
                     call_id = payload.get("call_id") or seq
-                    changes = payload.get("changes") if isinstance(payload.get("changes"), dict) else {}
+                    changes = (
+                        payload.get("changes") if isinstance(payload.get("changes"), dict) else {}
+                    )
                     lines = [
                         f"patch_apply · success={payload.get('success')}",
                         f"id: {call_id}",
@@ -587,13 +639,15 @@ def get_codex_conversation(
                         diff = ch.get("unified_diff") or ""
                         if diff:
                             lines.append(diff[:600] + ("…" if len(diff) > 600 else ""))
-                    turns.append(make_turn(
-                        role="event",
-                        time=display_time(ts_raw),
-                        id=call_id,
-                        text="\n".join(lines),
-                        meta="patch",
-                    ))
+                    turns.append(
+                        make_turn(
+                            role="event",
+                            time=display_time(ts_raw),
+                            id=call_id,
+                            text="\n".join(lines),
+                            meta="patch",
+                        )
+                    )
                     continue
 
                 if et == "image_generation_end":
@@ -608,14 +662,16 @@ def get_codex_conversation(
                     images = []
                     if saved:
                         images.append(image_ref_file(str(saved), str(saved)))
-                    turns.append(make_turn(
-                        role="event",
-                        time=display_time(ts_raw),
-                        id=call_id,
-                        text=text,
-                        meta="image",
-                        images=images,
-                    ))
+                    turns.append(
+                        make_turn(
+                            role="event",
+                            time=display_time(ts_raw),
+                            id=call_id,
+                            text=text,
+                            meta="image",
+                            images=images,
+                        )
+                    )
                     continue
 
                 if et in ("task_started", "task_complete", "turn_aborted"):
@@ -628,26 +684,30 @@ def get_codex_conversation(
                         )
                         if payload.get("last_agent_message"):
                             extra += f"\n{(payload.get('last_agent_message') or '')[:400]}"
-                    turns.append(make_turn(
-                        role="event",
-                        time=display_time(ts_raw),
-                        id=turn_id,
-                        text=f"{et}\nid: {turn_id}{extra}",
-                        meta="task",
-                    ))
+                    turns.append(
+                        make_turn(
+                            role="event",
+                            time=display_time(ts_raw),
+                            id=turn_id,
+                            text=f"{et}\nid: {turn_id}{extra}",
+                            meta="task",
+                        )
+                    )
                     continue
 
             elif t == "world_state" and payload.get("full"):
                 state = payload.get("state") if isinstance(payload.get("state"), dict) else {}
                 amd = state.get("agents_md") if isinstance(state.get("agents_md"), dict) else {}
                 if amd.get("text"):
-                    turns.append(make_turn(
-                        role="system",
-                        time=display_time(ts_raw),
-                        id=seq,
-                        text=f"# AGENTS.md ({amd.get('directory') or ''})\n\n{amd.get('text')}",
-                        meta="agents_md",
-                    ))
+                    turns.append(
+                        make_turn(
+                            role="system",
+                            time=display_time(ts_raw),
+                            id=seq,
+                            text=f"# AGENTS.md ({amd.get('directory') or ''})\n\n{amd.get('text')}",
+                            meta="agents_md",
+                        )
+                    )
                 continue
 
     except Exception:

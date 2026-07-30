@@ -11,7 +11,6 @@ from .config import CLAUDE_HOME, CODEX_HOME, GROK_HOME
 from .images import extract_text
 from .util import iter_jsonl, load_json
 
-
 _CODEX_HEADLINE_PUNCTUATION = frozenset(" .,:;!?'-_()/&+")
 _TURN_ABORTED_RE = re.compile(r"\bturn_aborted\b", re.IGNORECASE)
 
@@ -70,17 +69,25 @@ def discover_grok() -> list[dict]:
                 or meta.get("name")
                 or sid_dir.name[:12]
             )
-            sessions.append({
-                "agent": "grok",
-                "id": info.get("id") or sid_dir.name,
-                "path": str(sid_dir),
-                "cwd": info.get("cwd") or meta.get("cwd") or cwd_hint,
-                "title": str(title),
-                "created": meta.get("created_at") or meta.get("created"),
-                "updated": meta.get("updated_at") or meta.get("last_active_at") or meta.get("updated"),
-                "model": meta.get("current_model_id") or meta.get("model") or meta.get("model_id"),
-                "messages": meta.get("num_chat_messages") or meta.get("num_messages") or meta.get("message_count"),
-            })
+            sessions.append(
+                {
+                    "agent": "grok",
+                    "id": info.get("id") or sid_dir.name,
+                    "path": str(sid_dir),
+                    "cwd": info.get("cwd") or meta.get("cwd") or cwd_hint,
+                    "title": str(title),
+                    "created": meta.get("created_at") or meta.get("created"),
+                    "updated": meta.get("updated_at")
+                    or meta.get("last_active_at")
+                    or meta.get("updated"),
+                    "model": meta.get("current_model_id")
+                    or meta.get("model")
+                    or meta.get("model_id"),
+                    "messages": meta.get("num_chat_messages")
+                    or meta.get("num_messages")
+                    or meta.get("message_count"),
+                }
+            )
     return sessions
 
 
@@ -121,17 +128,19 @@ def discover_claude() -> list[dict]:
             except Exception:
                 pass
 
-            sessions.append({
-                "agent": "claude",
-                "id": sid,
-                "path": str(f),
-                "cwd": cwd_hint,
-                "title": sid[:18] + "…",
-                "created": created,
-                "updated": updated,
-                "model": model,
-                "messages": msg_count,
-            })
+            sessions.append(
+                {
+                    "agent": "claude",
+                    "id": sid,
+                    "path": str(f),
+                    "cwd": cwd_hint,
+                    "title": sid[:18] + "…",
+                    "created": created,
+                    "updated": updated,
+                    "model": model,
+                    "messages": msg_count,
+                }
+            )
     return sessions
 
 
@@ -207,7 +216,11 @@ def discover_codex() -> list[dict]:
                         t = obj.get("type")
                         payload = obj.get("payload") if isinstance(obj.get("payload"), dict) else {}
                         if t == "session_meta":
-                            meta = payload.get("meta") if isinstance(payload.get("meta"), dict) else payload
+                            meta = (
+                                payload.get("meta")
+                                if isinstance(payload.get("meta"), dict)
+                                else payload
+                            )
                             cwd = meta.get("cwd") or cwd
                             for key in ("id", "session_id"):
                                 if isinstance(meta.get(key), str) and meta[key]:
@@ -239,7 +252,9 @@ def discover_codex() -> list[dict]:
                             if candidate:
                                 headline = candidate
                                 aborted = codex_headline_was_aborted(message)
-                        elif t == "event_msg" and (payload.get("type") == "thread_settings_applied"):
+                        elif t == "event_msg" and (
+                            payload.get("type") == "thread_settings_applied"
+                        ):
                             settings = payload.get("thread_settings") or {}
                             model = settings.get("model") or model
                             cwd = settings.get("cwd") or cwd
@@ -252,11 +267,7 @@ def discover_codex() -> list[dict]:
             except Exception:
                 mtime_iso = None
             idx = titles.get(sid) or {}
-            title = (
-                safe_codex_headline(idx.get("thread_name"))
-                or headline
-                or f.name
-            )
+            title = safe_codex_headline(idx.get("thread_name")) or headline or f.name
             if idx.get("updated_at"):
                 updated = idx["updated_at"]
             elif mtime_iso:
@@ -264,19 +275,21 @@ def discover_codex() -> list[dict]:
             elif not updated and mtime_iso:
                 updated = mtime_iso
 
-            sessions.append({
-                "agent": "codex",
-                "id": sid,
-                "path": str(f),
-                "cwd": cwd or "?",
-                "title": str(title)[:120],
-                "headline": headline,
-                "aborted": aborted,
-                "created": created,
-                "updated": updated,
-                "model": model,
-                "messages": msg_count,
-            })
+            sessions.append(
+                {
+                    "agent": "codex",
+                    "id": sid,
+                    "path": str(f),
+                    "cwd": cwd or "?",
+                    "title": str(title)[:120],
+                    "headline": headline,
+                    "aborted": aborted,
+                    "created": created,
+                    "updated": updated,
+                    "model": model,
+                    "messages": msg_count,
+                }
+            )
     return sessions
 
 

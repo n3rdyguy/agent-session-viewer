@@ -51,19 +51,17 @@ def turns_to_markdown(turns: list[dict], title: str, agent: str, path: str, extr
             "system_reminder",
             "developer",
         }
-        lines.append(
-            format_markdown_content(t["text"], assume_markdown=assumes_markdown)
-        )
+        lines.append(format_markdown_content(t["text"], assume_markdown=assumes_markdown))
         lines.append("")
         lines.append("---")
         lines.append("")
     return "\n".join(lines)
 
 
-
 # ─────────────────────────────────────────────
 # Session load (shared by /view and /export)
 # ─────────────────────────────────────────────
+
 
 def load_session(agent: str, path: Path) -> dict:
     """
@@ -158,25 +156,25 @@ def summary_to_markdown(
 
     tok = summary.get("tokens") or {}
     if tok.get("available"):
-        lines.extend([
-            "",
-            "### Estimated token usage",
-            f"- **Input:** {tok.get('input_fmt')}  ",
-            f"- **Output:** {tok.get('output_fmt')}  ",
-            f"- **Cached read:** {tok.get('cached_fmt')}  ",
-            f"- **Reasoning:** {tok.get('reasoning_fmt')}  ",
-            f"- **Uncached input:** {tok.get('uncached_fmt')}  ",
-            f"- **Total:** {tok.get('total_fmt')}  ",
-            f"- *Source: {tok.get('source')}*",
-        ])
+        lines.extend(
+            [
+                "",
+                "### Estimated token usage",
+                f"- **Input:** {tok.get('input_fmt')}  ",
+                f"- **Output:** {tok.get('output_fmt')}  ",
+                f"- **Cached read:** {tok.get('cached_fmt')}  ",
+                f"- **Reasoning:** {tok.get('reasoning_fmt')}  ",
+                f"- **Uncached input:** {tok.get('uncached_fmt')}  ",
+                f"- **Total:** {tok.get('total_fmt')}  ",
+                f"- *Source: {tok.get('source')}*",
+            ]
+        )
 
     if resources and resources.get("todos"):
         lines.append("")
         lines.append("### Todos")
         for t in resources["todos"]:
             mark = "x" if t.get("status") == "completed" else " "
-            lines.append(
-                f"- [{mark}] `{t.get('id')}` {t.get('content')} ({t.get('status')})"
-            )
+            lines.append(f"- [{mark}] `{t.get('id')}` {t.get('content')} ({t.get('status')})")
 
     return "\n".join(lines)

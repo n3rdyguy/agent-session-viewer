@@ -207,14 +207,22 @@ On Windows, Grok session group folders are URL-encoded paths under `sessions\` (
 
 ## Tests
 
-Run the minimal parser suite with:
+Install the locked development environment and run all local quality gates with:
 
 ```bash
+uv sync --frozen
+uv run ruff check .
+uv run ruff format --check .
+uv run pyright
 uv run pytest
+uv build
+uv run python scripts/smoke_wheel.py
 ```
 
 The fixture-based tests cover:
 
+- Flask list, view, export, raw-download, and media route behavior with isolated
+  temporary Grok, Claude, and Codex homes
 - Agent-home path safety, traversal, prefix collisions, and symlink escapes
 - Image path detection and explicit mixed-content image extraction
 - Ensuring Markdown/HTML output hrefs are not treated as image attachments

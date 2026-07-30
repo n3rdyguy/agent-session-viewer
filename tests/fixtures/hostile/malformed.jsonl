@@ -1,0 +1,6 @@
+{"type":"user","message":{"content":"before"}}
+{not valid JSON
+42
+["valid", "but", "not", "an", "object"]
+null
+{"type":"assistant","message":{"content":"after"}}

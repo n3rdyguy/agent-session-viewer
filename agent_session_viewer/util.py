@@ -35,11 +35,7 @@ def decode_view_data(value: Any) -> Any:
     """
     if isinstance(value, dict):
         return {
-            key: (
-                item
-                if key in {"html", "path", "text", "url"}
-                else decode_view_data(item)
-            )
+            key: (item if key in {"html", "path", "text", "url"} else decode_view_data(item))
             for key, item in value.items()
         }
     if isinstance(value, list):
@@ -146,9 +142,7 @@ def finalize_token_usage(usage: dict) -> dict:
             "reasoning_fmt": format_tokens(stats["reasoning"]),
             "model_calls": stats["model_calls"],
         }
-        for model, stats in sorted(
-            usage["by_model"].items(), key=lambda item: -item[1]["input"]
-        )
+        for model, stats in sorted(usage["by_model"].items(), key=lambda item: -item[1]["input"])
     ]
     if usage.get("context_used") is not None:
         usage["context_used_fmt"] = format_tokens(usage["context_used"])
@@ -208,7 +202,10 @@ def path_allowed(path: Path) -> bool:
             return True
         except Exception:
             # Fallback for odd Windows path forms
-            rs, rr = str(resolved).lower().replace("\\", "/"), str(root.resolve()).lower().replace("\\", "/")
+            rs, rr = (
+                str(resolved).lower().replace("\\", "/"),
+                str(root.resolve()).lower().replace("\\", "/"),
+            )
             if rs == rr or rs.startswith(rr + "/"):
                 return True
     return False
