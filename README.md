@@ -25,7 +25,15 @@ Everything stays on your machine. The app only reads session files; it does not 
 - Filter by agent (All / Grok / Claude / Codex)
 - Search title, ID, path, model, and working directory
 - Chat-style conversation view with role-colored bubbles
-- Collapsible long tool outputs
+- **Preview** toggle: chat and events start collapsed; long content shows a short faded
+  snippet (fade only when the body overflows). Preference stored in `localStorage`
+- **File cards** toggle: shell tool results that pulled files split into per-file cards
+  (preference in `localStorage`)
+- Header chevron plus **Expand all** / **Collapse all** for the active tab
+- **Todos and prompt history** card when either is available; each prompt row is one line
+  (ellipsis when long) and jumps to that turn in chat when a match exists
+- One-click **Markdown export**
+- Raw transcript / summary download
 - **Markdown** toggle (GFM via [marked](https://marked.js.org/), sanitized with DOMPurify)
   - Preference stored in `localStorage`
   - Unfenced code-only messages and tool output are detected and rendered in language-tagged code blocks
@@ -33,8 +41,6 @@ Everything stays on your machine. The app only reads session files; it does not 
   - Agent tags like `<user_info>` / `<system-reminder>` stay visible; headings, lists, and bold still render
   - Image syntax and raw `<img>` tags in transcript output become links/text instead of loading images
   - Only explicit session image attachments render in the separate image gallery
-- One-click **Markdown export**
-- Raw transcript / summary download
 - Agent-aware path safety: only recognized sessions and their associated passive image
   media are served
 - Resilient JSONL reading: damaged or non-object records are skipped, later records remain
@@ -51,8 +57,9 @@ Grok sessions get a deeper view of the on-disk session folder:
 |------|----------------|
 | **Summary** | Title, model, agent name, reasoning effort, sandbox, cwd, message counts, branch/commit |
 | **Token usage** | Estimated in / out / cached / reasoning from `updates.jsonl` `turn_completed` events; context window from `signals.json` |
-| **Todos & settings** | `resources_state.json` checklist (`grok_build.Todo` / `Todo`, dict or list), falling back to replaying `todo_write` tool calls from `chat_history.jsonl` (including `merge`); tool params, scheduler / completions |
-| **Prompt history** | Project-level `prompt_history.jsonl` next to the session folder, filtered by session id |
+| **Todos & prompt history** | Checklist from `resources_state.json` (or replayed `todo_write` calls); project-level `prompt_history.jsonl` filtered by session id, with jump-to-turn links |
+| **Settings** | Tool params, scheduler / completions, other resource state |
+| **System instructions** | Injected system / developer / project-instruction blobs lifted out of the chat stream into a collapsed panel |
 | **Chat history** | Full `chat_history.jsonl`: user, assistant, **reasoning** (summary + `<encrypted>`), tool calls/results with **call ids** |
 | **Terminal** | Matched `terminal/<call-id>.log` previews and enrichment of thin tool results |
 | **Hunk records** | File edit events from `hunk_records.jsonl` |
@@ -69,13 +76,12 @@ Codex `rollout-*.jsonl` sessions under `~/.codex/sessions/` (and `archived_sessi
 | **List titles** | Safe `thread_name` from `~/.codex/session_index.jsonl`, plus a safe first-user-message headline when available |
 | **Summary** | Session id, model, originator/CLI, cwd, approval/sandbox, reasoning effort, personality, plan type, git branch/commit |
 | **Token usage** | From `event_msg` / `token_count` - last cumulative `total_token_usage` (in / out / cached / reasoning) + context window |
-| **Todos** | Checklist from `update_plan` tool calls - classic JSON `function_call` arguments and newer `custom_tool_call` / `exec` (`tools.update_plan({...})`); last non-empty plan wins |
-| **Prompt history** | Session prompts from `~/.codex/history.jsonl` (unix `ts` or ISO timestamp), filtered by session id |
+| **Todos & prompt history** | Checklist from `update_plan` tool calls (JSON `function_call`, `custom_tool_call` / `exec`); prompts from `~/.codex/history.jsonl`, with jump-to-turn links |
 | **Settings** | Approval policy, sandbox, effort, personality, provider, repo URL |
-| **AGENTS.md** | Injected workspace instructions from `world_state` |
-| **Chat history** | User + agent messages, **reasoning** (`<encrypted>` when present), tool calls/results with **call ids**, patches, image generation, task start/complete |
-| **Patches** | File edits from `patch_apply_end` (paths + diff snippets) |
-| **Events timeline** | Second tab: tasks, patches, image generation (not the full chat) |
+| **System instructions** | Developer / base / project-instruction injections and `AGENTS.md` from `world_state`, lifted into a collapsed panel |
+| **Chat history** | User + agent messages, **reasoning** (`<encrypted>` when present), tool calls/results with **call ids** only (no task lifecycle noise) |
+| **Patches** | File edits from `patch_apply_end` (paths + diff snippets) under Session artifacts |
+| **Events timeline** | Second tab: `task_started` / `task_complete`, patches, image generation (not mixed into Chat history) |
 | **Images** | User `local_images` / generated images; narrowly named clipboard captures under temp (`codex-clipboard-*`) can be previewed when linked from an authorized Codex session |
 
 ### Claude-focused (rich transcript view)
@@ -88,13 +94,13 @@ Claude Code `<session-uuid>.jsonl` transcripts under `~/.claude/projects/<encode
 | **Summary** | Session id, model, cwd, git branch, CLI version, permission mode, reasoning effort, message counts |
 | **Token usage** | Summed `message.usage` - input, output, cache **reads** and **writes**, with per-model rows when a session mixes models (e.g. Opus and Sonnet) |
 | **Settings** | Model, CLI version, permission mode, mode, effort, entrypoint, slug, cwd, git branch |
-| **Todos** | Task checklist from the transcript's `task_reminder` attachments (id, subject, status, blockers), falling back to `~/.claude/todos/<session-id>-agent-*.json` for older Claude Code versions |
+| **Todos & prompt history** | Task checklist from `task_reminder` attachments (fallback: `~/.claude/todos/<session-id>-agent-*.json`); prompts from `~/.claude/history.jsonl`, with jump-to-turn links |
 | **Chat history** | User + assistant messages, **thinking** (`<encrypted>` when only a signature is stored), tool calls/results matched by **`toolu_` call id** |
-| **System turns** | Slash commands and hook/informational `system` records, injected attachments (plan mode, permissions, task reminders), and `isMeta` `<system-reminder>` records shown as **system reminders** rather than as user messages |
+| **System turns** | Slash commands and hook/informational `system` records, injected attachments (plan mode, permissions, task reminders), and `isMeta` `<system-reminder>` records shown as **system reminders** rather than as user messages (inline; Claude has no separate System instructions panel) |
 | **Subagents** | Sidechain transcripts from `<session>/subagents/agent-*.jsonl` merged inline in timestamp order and tagged with the agent type; each is also viewable on its own |
 | **File edits** | Hunk records from `Edit` / `Write` / `MultiEdit` / `NotebookEdit` `toolUseResult`, with added/removed counts and line ranges from `structuredPatch` |
 | **Memory** | Project `<cwd>/CLAUDE.md` and user `~/.claude/CLAUDE.md` as artifact documents |
-| **Artifacts** | Skill and agent listings, plus the session's prompt history from `~/.claude/history.jsonl` |
+| **Artifacts** | Skill and agent listings |
 | **Events timeline** | Second tab: hook summaries, slash commands, turn durations, queue operations, permission-mode changes, file-history snapshots, attachments |
 
 Claude does not record a context-window size in the transcript, so the context bar stays
@@ -113,75 +119,142 @@ refused - and oversized files are truncated for display.
 
 ## Requirements
 
-- Python **3.10+** (the oldest version covered by CI; `.python-version` selects the
-  preferred development version)
-- [uv](https://github.com/astral-sh/uv)
+| Need | Notes |
+|------|--------|
+| **Python 3.10+** | Oldest version covered by CI. `.python-version` pins the preferred development version (currently 3.14); `uv` can install it for you. |
+| **[uv](https://docs.astral.sh/uv/)** | Package manager + project runner (creates `.venv`, installs deps from `uv.lock`). |
+| **A browser** | View the UI at `http://127.0.0.1:5050`. |
+| **Node.js** | **Not required** for running or developing the viewer. Markdown uses package-vendored **marked** and **DOMPurify** under `agent_session_viewer/static/vendor/` (no CDN, no `npm install`). |
 
-Markdown rendering uses package-vendored **marked** and **DOMPurify** assets and has no
-runtime CDN dependency. Session data itself is never uploaded.
+Runtime Python dependency: **Flask** only. Session data stays on your machine and is never uploaded.
 
 ### Runtime dependencies
 
-The Python runtime dependency is Flask. Browser-side Markdown rendering uses the pinned,
-package-owned marked and DOMPurify distributions listed with their versions, licenses,
-and upgrade procedure in `agent_session_viewer/static/vendor/README.md`. They are served
-locally; viewing a session does not require a CDN or other network service.
+Browser-side Markdown uses the pinned, package-owned marked and DOMPurify distributions
+listed with versions, licenses, and upgrade notes in
+`agent_session_viewer/static/vendor/README.md`. They are served locally; viewing a session
+does not need Node, a CDN, or other network services.
 
 ---
 
 ## Installation
+
+### 1. Install uv
+
+[uv](https://docs.astral.sh/uv/) is a fast Python package manager from Astral. It replaces
+the usual `pip` + manual venv workflow for this project: `uv sync` creates `.venv` and
+installs locked dependencies; `uv run …` runs commands in that environment without you
+activating it.
+
+**macOS / Linux** (curl installer):
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+**Windows** (PowerShell):
+
+```powershell
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+```
+
+**Alternative installs** (any platform):
+
+```bash
+# If you already have pip on a system Python:
+pip install uv
+
+# Or via pipx (isolated tool install):
+pipx install uv
+
+# Homebrew (macOS / Linux):
+brew install uv
+
+# WinGet (Windows):
+winget install --id=astral-sh.uv -e
+```
+
+Confirm:
+
+```bash
+uv --version
+```
+
+If the shell cannot find `uv` after install, open a new terminal (or ensure the installer’s
+bin directory is on your `PATH`). Official install docs:
+[docs.astral.sh/uv/getting-started/installation](https://docs.astral.sh/uv/getting-started/installation/).
+
+### 2. Clone and sync the project
 
 ```bash
 cd agent-session-viewer
 uv sync
 ```
 
-The installed application, including its templates and static assets, lives in the
-`agent_session_viewer/` package. The root `app.py` and `main.py` files remain deprecated
-source-checkout compatibility entrypoints for the v1 command forms.
+What that does:
+
+- Creates a project virtual environment at **`.venv`** (you can leave it alone)
+- Installs the app and dependencies from **`uv.lock`** (reproducible)
+- Can install a matching Python if needed (see `uv python install` / project pin)
+
+You do **not** need a separate `python -m venv` or `pip install -r …` step. Prefer
+`uv run …` over activating `.venv` by hand so every command uses the same locked env.
+
+Dev tools (pytest, ruff, pyright, playwright) are in the `dev` dependency group and come
+along with a normal `uv sync`. For a frozen CI-style install: `uv sync --frozen`.
+
+The installed application, including templates and static assets, lives in the
+`agent_session_viewer/` package. Root `app.py` and `main.py` remain deprecated
+source-checkout compatibility entrypoints for older command forms.
 
 ### Package layout
 
 ```text
 agent_session_viewer/
-  __main__.py     # python -m agent_session_viewer
-  cli.py          # installed console entrypoint
-  app.py          # Flask routes and local server
-  config.py       # Agent home-directory settings
-  discovery.py    # Session discovery and list metadata
-  images.py       # Image/content extraction and safe path handling
-  session.py      # Shared load/export shape
-  turns.py        # Canonical conversation turns
-  types.py        # Shared session, turn, card, image, and diagnostic shapes
-  util.py         # JSONL, token, time, and path helpers
-  templates/      # package-owned Jinja templates
-  static/         # package-owned CSS, JavaScript, icons, and vendored libraries
+  __main__.py       # python -m agent_session_viewer
+  cli.py            # installed console entrypoint
+  app.py            # Flask routes and local server
+  authorization.py  # Agent-aware path authorization
+  config.py         # Agent home-directory settings
+  discovery.py      # Session discovery and list metadata
+  file_reads.py     # Shell file-read splitting into per-file cards
+  images.py         # Image/content extraction and safe path handling
+  markdown_output.py
+  session.py        # Shared load/export shape
+  turns.py          # Canonical conversation turns
+  types.py          # Shared session, turn, card, image, and diagnostic shapes
+  util.py           # JSONL, token, time, and path helpers
+  templates/        # package-owned Jinja templates
+  static/           # package-owned CSS, JavaScript, icons, and vendored libraries
   agents/
     grok.py
     codex.py
     claude.py
 ```
 
-The agent modules use explicit branches and imports-there is no plugin
-registry or framework layer. Codex rollout records and Claude transcripts are
-each decoded once per session request and reused for the conversation, summary,
-tokens, events, and patches.
+The agent modules use explicit branches and imports; there is no plugin registry or
+framework layer. Codex rollout records and Claude transcripts are each decoded once per
+session request and reused for the conversation, summary, tokens, events, and patches.
 
 ---
 
 ## Usage
 
+After `uv sync`:
+
 ```bash
-uv run python app.py
-# or
-uv run python main.py
-# or after uv sync:
+# Preferred (installed console entrypoint):
 uv run agent-session-viewer
-# or:
+
+# Module form:
 uv run python -m agent_session_viewer
+
+# Deprecated root shims (still work in a source checkout):
+uv run python app.py
+uv run python main.py
 ```
 
-Open **http://127.0.0.1:5050**
+Open **http://127.0.0.1:5050** in any modern browser. No build step and no Node.
 
 The server binds to `127.0.0.1` only (local loopback).
 
@@ -214,10 +287,10 @@ INFO agent_session_viewer.session: session loading (codex) completed in 48.7 ms
 export ASV_DEBUG=1
 export ASV_TIMING_DEBUG=1
 export GROK_HOME=~/.grok
-uv run python app.py
+uv run agent-session-viewer
 
 # one-shot:
-ASV_DEBUG=1 ASV_TIMING_DEBUG=1 uv run python app.py
+ASV_DEBUG=1 ASV_TIMING_DEBUG=1 uv run agent-session-viewer
 ```
 
 **Windows PowerShell:**
@@ -226,10 +299,10 @@ ASV_DEBUG=1 ASV_TIMING_DEBUG=1 uv run python app.py
 $env:ASV_DEBUG = "1"
 $env:ASV_TIMING_DEBUG = "1"
 $env:GROK_HOME = "~/.grok"
-uv run python app.py
+uv run agent-session-viewer
 
 # one-shot:
-$env:ASV_DEBUG = "1"; $env:ASV_TIMING_DEBUG = "1"; uv run python app.py
+$env:ASV_DEBUG = "1"; $env:ASV_TIMING_DEBUG = "1"; uv run agent-session-viewer
 ```
 
 **Windows cmd.exe:**
@@ -238,7 +311,7 @@ $env:ASV_DEBUG = "1"; $env:ASV_TIMING_DEBUG = "1"; uv run python app.py
 set ASV_DEBUG=1
 set ASV_TIMING_DEBUG=1
 set GROK_HOME=~/.grok
-uv run python app.py
+uv run agent-session-viewer
 ```
 
 ---
@@ -268,7 +341,7 @@ degrade to empty when missing or damaged.
 | Path | Purpose |
 |------|---------|
 | `/` | Session list, search, agent filters |
-| `/view?agent=&path=` | Conversation plus available summary, artifacts, patches, and events |
+| `/view?agent=&path=` | Session view: summary, todos/prompt history, artifacts, system instructions (Grok/Codex), chat, and events |
 | `/export?agent=&path=` | Download conversation as Markdown |
 | `/raw?agent=&path=` | Download the raw file derived from an authorized session |
 | `/media?agent=&session=&path=` | Serve passive image media associated with an authorized session |
@@ -366,9 +439,10 @@ Reasoning steps show the model **summary** text; full chain-of-thought is stored
 
 - Read-only with respect to agent data: no writes to `~/.grok`, `~/.claude`, or `~/.codex`.
 - Claude subagent transcripts are merged into their parent session's chat inline and tagged; opening one directly is also supported.
-- Token totals are **estimates** reconstructed from `turn_completed.usage` (not a separate billing ledger). Reasoning is usually included in output tokens; the UI shows both.
-- Large tool outputs are collapsed until expanded.
-- Image and raw file access is restricted to paths under configured agent homes.
+- Token totals are **estimates** reconstructed from usage records (not a separate billing ledger). Reasoning is usually included in output tokens; the UI shows both.
+- Chat and events bubbles start collapsed; use Preview, the header chevron, or Expand all.
+- Image and raw file access is restricted to paths under configured agent homes (plus the
+  guarded Claude `CLAUDE.md` memory read described above).
 
 ---
 
