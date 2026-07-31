@@ -106,10 +106,10 @@ def test_hostile_markdown_is_sanitized_and_remote_images_are_not_fetched(
     assert page.evaluate("window.__asvXss") is None
 
     toggle = page.locator("#md-toggle")
-    page.locator('label.md-toggle:has(#md-toggle)').click()
+    page.locator("label.md-toggle:has(#md-toggle)").click()
     expect(toggle).not_to_be_checked()
     expect(page.locator(".md-plain").first).to_be_visible()
-    page.locator('label.md-toggle:has(#md-toggle)').click()
+    page.locator("label.md-toggle:has(#md-toggle)").click()
     expect(toggle).to_be_checked()
     expect(rich).to_be_visible()
     expect(page.locator('[data-copy="markdown"]').first).to_be_attached()

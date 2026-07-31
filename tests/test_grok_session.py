@@ -5,8 +5,6 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import pytest
-
 from agent_session_viewer.agents import grok
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -157,11 +155,7 @@ def test_resources_state_takes_precedence_over_chat(tmp_path: Path) -> None:
                     {
                         "name": "todo_write",
                         "arguments": json.dumps(
-                            {
-                                "todos": [
-                                    {"id": "chat", "content": "From chat", "status": "pending"}
-                                ]
-                            }
+                            {"todos": [{"id": "chat", "content": "From chat", "status": "pending"}]}
                         ),
                     }
                 ],

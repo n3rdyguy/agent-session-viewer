@@ -84,7 +84,13 @@ def test_grok_load_session_lifts_system_and_user_instructions(tmp_path: Path) ->
     (session_dir / "chat_history.jsonl").write_text(
         "\n".join(
             [
-                json.dumps({"type": "system", "content": "You are Grok.", "timestamp": "2026-07-30T08:00:00Z"}),
+                json.dumps(
+                    {
+                        "type": "system",
+                        "content": "You are Grok.",
+                        "timestamp": "2026-07-30T08:00:00Z",
+                    }
+                ),
                 json.dumps(
                     {
                         "type": "user",

@@ -203,9 +203,7 @@ def turns_to_markdown(turns: list[Turn], title: str, agent: str, path: str, extr
             if prefix is None:
                 prefix = t.get("text") or ""
             if str(prefix).strip():
-                lines.append(
-                    format_markdown_content(str(prefix), assume_markdown=assumes_markdown)
-                )
+                lines.append(format_markdown_content(str(prefix), assume_markdown=assumes_markdown))
                 lines.append("")
             for a in split_arts:
                 label = a.get("label") or a.get("path") or "file"

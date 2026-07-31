@@ -199,7 +199,9 @@ def test_rebind_turn_media_links_rewrites_html_and_file_hrefs() -> None:
     assert "agent=grok" in turn["images"][0]["href"]
 
 
-def test_load_session_rebinds_media_links_for_grok(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_load_session_rebinds_media_links_for_grok(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     from agent_session_viewer import config
 
     grok_home = tmp_path / "grok"

@@ -150,8 +150,10 @@ def test_shell_output_with_embedded_readme_fences_is_outer_fenced() -> None:
     assert formatted.startswith("```")
     assert formatted.endswith("```")
     # Outer fence must be longer than the embedded ``` lines so they stay literal.
-    assert formatted.startswith("````") or formatted.startswith("```text") or formatted.startswith(
-        "```python"
+    assert (
+        formatted.startswith("````")
+        or formatted.startswith("```text")
+        or formatted.startswith("```python")
     )
     assert "Exit code: 0" in formatted
     assert "## Installation" in formatted
