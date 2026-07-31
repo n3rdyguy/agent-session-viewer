@@ -178,6 +178,57 @@ def test_index_groups_sessions_by_project(client, monkeypatch: pytest.MonkeyPatc
     )
     # Codex's unknown message count no longer renders a "- msgs" placeholder.
     assert "- msgs" not in html
+    # Groups start collapsed; the Expand toggle is the way to open them all.
+    assert " open>" not in html
+    assert 'id="expand-toggle"' in html
+    # Sort controls render, and rows carry the keys the client sorter uses.
+    assert 'id="sort-field"' in html
+    assert 'id="sort-dir"' in html
+    assert '<option value="name">Name</option>' in html
+    assert 'data-name="proj-new"' in html
+    assert 'data-title="newest session"' in html
+    # Every project summary carries a pin toggle.
+    assert html.count('class="pin-btn"') == 3
+    # Each summary shows a two-letter badge per agent detected in the project.
+    assert '<span class="badge mini claude" title="claude">cl</span>' in html
+    assert '<span class="badge mini codex" title="codex">co</span>' in html
+    assert '<span class="badge mini grok" title="grok">gr</span>' in html
+    assert html.count("badge mini") == 3  # one per single-agent group
+    assert 'data-updated="1785405600.0"' in html  # 2026-07-30T10:00:00Z
+    assert 'data-created="1785405600.0"' in html  # falls back to updated
+
+
+def test_index_opens_groups_for_server_search_results(
+    client, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    app_module = importlib.import_module("agent_session_viewer.app")
+    monkeypatch.setattr(
+        app_module,
+        "all_sessions",
+        lambda _agent: [
+            {
+                "agent": "claude",
+                "id": "new-1",
+                "path": "new-1.jsonl",
+                "title": "Newest session",
+                "cwd": "C:/proj-new",
+                "updated": "2026-07-30T10:00:00Z",
+            },
+            {
+                "agent": "grok",
+                "id": "old-1",
+                "path": "old-1",
+                "title": "Older session",
+                "cwd": "C:/proj-old",
+                "updated": "2026-07-20T10:00:00Z",
+            },
+        ],
+    )
+
+    html = client.get("/", query_string={"q": "session"}).get_data(as_text=True)
+
+    # Matches must stay visible without JS, so search results render expanded.
+    assert html.count(" open>") == 2
 
 
 def test_index_loads_list_script(client) -> None:

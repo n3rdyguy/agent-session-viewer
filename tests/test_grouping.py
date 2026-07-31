@@ -83,3 +83,40 @@ def test_group_by_project_drive_root_name() -> None:
     groups = group_by_project([_card("C:/")])
 
     assert groups[0]["name"] == "C:"
+
+
+def test_group_by_project_lists_distinct_agents_newest_first() -> None:
+    groups = group_by_project(
+        [
+            {
+                "agent": "grok",
+                "id": "a",
+                "path": "a",
+                "cwd": "C:/proj",
+                "updated": "2026-07-01T10:00:00Z",
+            },
+            {
+                "agent": "claude",
+                "id": "b",
+                "path": "b",
+                "cwd": "C:/proj",
+                "updated": "2026-07-03T10:00:00Z",
+            },
+            {
+                "agent": "claude",
+                "id": "c",
+                "path": "c",
+                "cwd": "C:/proj",
+                "updated": "2026-07-02T10:00:00Z",
+            },
+            {
+                "agent": "",
+                "id": "d",
+                "path": "d",
+                "cwd": "C:/proj",
+                "updated": "2026-07-04T10:00:00Z",
+            },
+        ]
+    )
+
+    assert groups[0]["agents"] == ["claude", "grok"]  # deduped, blanks dropped

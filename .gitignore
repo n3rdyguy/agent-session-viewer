@@ -17,6 +17,9 @@ wheels/
 _view.html
 _view*.html
 
+# playwright-cli snapshot artifacts
+.playwright-cli/
+
 # Local planning / notes (not shipped)
 docs/
 

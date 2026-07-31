@@ -127,6 +127,33 @@ def test_discover_codex_rejects_unsafe_title_and_headline(
     assert session["headline"] == ""
 
 
+def test_codex_message_count_covers_records_past_the_head_window(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The card counts every record even though parsing stops at the head window."""
+    session_id = "019f9edd-ea9c-7741-ad03-59daedd955a2"
+    codex_home = tmp_path / "codex"
+    rollout = codex_home / "sessions" / f"rollout-2026-07-30T08-00-00-{session_id}.jsonl"
+    _write_rollout(rollout, session_id, "Count me")
+    filler = json.dumps(
+        {
+            "timestamp": "2026-07-30T08:01:00Z",
+            "type": "event_msg",
+            "payload": {"type": "agent_message", "message": "x"},
+        }
+    )
+    with rollout.open("a", encoding="utf-8") as fh:
+        fh.write("\n")  # blank lines are not records
+        for _ in range(150):
+            fh.write(filler + "\n")
+    monkeypatch.setattr(discovery, "CODEX_HOME", codex_home)
+
+    card = discovery.discover_codex()[0]
+
+    assert card["messages"] == 153  # 3 seed records + 150 appended
+
+
 def test_codex_summary_uses_only_safe_title_candidates(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

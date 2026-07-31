@@ -52,6 +52,19 @@
     }
 
     .count-line { color: var(--muted); margin: 0 0 1rem; font-size: 0.9rem; }
+    .list-meta {
+      display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;
+      margin-bottom: 1rem;
+    }
+    .list-meta .count-line { margin: 0; flex: 1; min-width: 180px; }
+    .sort-controls { display: flex; align-items: center; gap: 0.4rem; }
+    .sort-label { color: var(--muted); font-size: 0.82rem; }
+    .sort-controls select, .sort-controls button {
+      background: var(--card); border: 1px solid var(--border); color: var(--text);
+      border-radius: 8px; font-size: 0.82rem; padding: 0.3rem 0.5rem; cursor: pointer;
+    }
+    .sort-controls select:hover, .sort-controls button:hover { border-color: var(--accent); }
+    .sort-controls button { min-width: 2rem; }
     .project-group {
       background: var(--card); border: 1px solid var(--border); border-radius: 12px;
       margin-bottom: 0.9rem; overflow: hidden;
@@ -60,6 +73,14 @@
       display: flex; align-items: baseline; gap: 0.6rem; padding: 0.7rem 1.1rem;
       cursor: pointer; user-select: none; list-style: none;
     }
+    .pin-btn {
+      border: none; background: none; cursor: pointer; padding: 0 0.15rem;
+      line-height: 1; display: inline-flex; align-self: center;
+      color: var(--muted); opacity: 0.45;
+    }
+    .pin-btn:hover { opacity: 0.85; }
+    .pin-btn.on { color: var(--text); opacity: 1; }
+    .project-group.pinned { border-color: #6c9eff55; }
     .project-summary::-webkit-details-marker { display: none; }
     .project-summary::before {
       content: "▸"; color: var(--muted); flex: 0 0 auto;
@@ -102,6 +123,10 @@
     .badge {
       display: inline-block; padding: 0.18rem 0.55rem; border-radius: 5px;
       font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; margin-right: 0.5rem;
+    }
+    .badge.mini {
+      padding: 0.12rem 0.3rem; font-size: 0.6rem; margin-right: 0;
+      flex: 0 0 auto; align-self: center;
     }
     .badge.grok   { background: #7c3aed33; color: #c4b5fd; }
     .badge.claude { background: #d9770633; color: #fbbf24; }

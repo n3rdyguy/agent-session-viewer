@@ -420,12 +420,15 @@ def _scan_codex_card(path: Path) -> dict[str, Any]:
     created = model = cwd = None
     headline = ""
     aborted = False
+    nonblank_count = 0
     try:
         with path.open(encoding="utf-8", errors="replace") as fh:
             for line_number, line in enumerate(fh, 1):
-                if line_number > _DISCOVERY_HEAD_RECORDS:
-                    break
                 if not line.strip():
+                    continue
+                nonblank_count += 1
+                # Metadata lives in the head window; the rest is only counted.
+                if line_number > _DISCOVERY_HEAD_RECORDS:
                     continue
                 obj = decode_jsonl_record(path, line_number, line)
                 if obj is None:
@@ -485,6 +488,9 @@ def _scan_codex_card(path: Path) -> dict[str, Any]:
         "aborted": aborted,
         "created": created,
         "model": model,
+        # Exact chat counts need a full decode and are deferred to /view; the
+        # cheap full-file record count matches the Claude card value.
+        "messages": nonblank_count,
     }
 
 
@@ -524,8 +530,7 @@ def discover_codex() -> list[SessionCard]:
                     "created": card.get("created"),
                     "updated": updated,
                     "model": card.get("model"),
-                    # Exact counts require a full rollout scan and are deferred to /view.
-                    "messages": None,
+                    "messages": card.get("messages"),
                 }
             )
     _prune_agent_cache("codex", live_paths)
