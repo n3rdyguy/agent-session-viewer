@@ -29,7 +29,7 @@ def test_is_image_path(path: str, expected: bool) -> None:
 
 
 def test_extracts_explicit_data_image_and_preserves_text() -> None:
-    data_url = "data:image/png;base64,aGVsbG8="
+    data_url = "data:image/png;base64,iVBORw0KGgo="
     text, images = extract_text_and_images(
         [
             {"type": "text", "text": "Before"},
@@ -47,14 +47,14 @@ def test_extracts_explicit_data_image_and_preserves_text() -> None:
 @pytest.mark.parametrize(
     "payload",
     [
-        '{"type": "image", "url": "data:image/png;base64,aGVsbG8="}',
-        '{"image_url":"data:image/png;base64,aGVsbG8="}',
-        r'{\"type\": \"image\", \"url\": \"data:image/png;base64,aGVsbG8=\"}',
-        "data:image/png;base64,aGVsbG8=",
+        '{"type": "image", "url": "data:image/png;base64,iVBORw0KGgo="}',
+        '{"image_url":"data:image/png;base64,iVBORw0KGgo="}',
+        r"{\"type\": \"image\", \"url\": \"data:image/png;base64,iVBORw0KGgo=\"}",
+        "data:image/png;base64,iVBORw0KGgo=",
         "data:image/svg+xml;base64,PHN2Zz4=",
-        "![shot](data:image/png;base64,aGVsbG8=)",
-        [{"type": "input_image", "image_url": "data:image/png;base64,aGVsbG8="}],
-        [{"type": "image", "image_url": {"url": "data:image/png;base64,aGVsbG8="}}],
+        "![shot](data:image/png;base64,iVBORw0KGgo=)",
+        [{"type": "input_image", "image_url": "data:image/png;base64,iVBORw0KGgo="}],
+        [{"type": "image", "image_url": {"url": "data:image/png;base64,iVBORw0KGgo="}}],
         "data:image/svg+xml;charset=utf-8,<svg xmlns='http://www.w3.org/2000/svg'></svg>",
     ],
 )
@@ -66,11 +66,29 @@ def test_extracts_common_data_image_shapes(payload: object) -> None:
 
 
 def test_whitespace_inside_base64_is_stripped() -> None:
-    messy = "data:image/png;base64,aGVs\n bG8="
+    messy = "data:image/png;base64,iVBO\n Rw0KGgo="
     text, images = extract_data_images_from_text(f"img {messy} done")
     assert len(images) == 1
-    assert images[0]["url"] == "data:image/png;base64,aGVsbG8="
-    assert "aGVs\n" not in text
+    assert images[0]["url"] == "data:image/png;base64,iVBORw0KGgo="
+    assert "iVBO\n" not in text
+
+
+def test_data_urls_without_image_magic_bytes_stay_plain_text() -> None:
+    """Code that quotes stand-in data URLs must not become (broken) image cards."""
+    code = (
+        '51  |         \'{"image_url":"data:image/png;base64,aGVsbG8="}\',\n'
+        '52  +         r"{\\"url\\": \\"data:image/png;base64,aGVsbG8=\\"}",'
+    )
+    text, images = extract_text_and_images(code)
+
+    assert images == []
+    assert text == code  # nothing spliced into the displayed code
+
+
+def test_svg_data_url_requires_markup_payload() -> None:
+    _, images = extract_text_and_images("data:image/svg+xml;base64,aGVsbG8=")
+
+    assert images == []
 
 
 @pytest.mark.parametrize(

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
 import json
 import re
 from pathlib import Path
@@ -40,6 +42,38 @@ MARKDOWN_DATA_IMAGE_RE = re.compile(
 )
 
 
+_IMAGE_MAGIC_PREFIXES = (
+    b"\x89PNG\r\n\x1a\n",
+    b"\xff\xd8\xff",  # JPEG
+    b"GIF87a",
+    b"GIF89a",
+    b"BM",  # BMP
+    b"\x00\x00\x01\x00",  # ICO
+)
+
+
+def _base64_head_is_image(header_l: str, payload: str) -> bool:
+    """Decode the payload head and require real image bytes (or SVG markup).
+
+    Text can quote data URLs without carrying an image — code samples and test
+    fixtures use stand-in payloads like "aGVsbG8=" ("hello") — and those must
+    not become image cards.
+    """
+    prefix = payload[:24]
+    prefix = prefix[: len(prefix) - len(prefix) % 4]
+    try:
+        head = base64.b64decode(prefix)
+    except (binascii.Error, ValueError):
+        return False
+    if "svg" in header_l:
+        return head.lstrip()[:1] == b"<"
+    if head.startswith(_IMAGE_MAGIC_PREFIXES):
+        return True
+    if head.startswith(b"RIFF") and head[8:12] == b"WEBP":
+        return True
+    return len(head) >= 12 and head[4:8] == b"ftyp"  # AVIF/HEIF containers
+
+
 def _normalize_data_image_url(raw: str) -> str | None:
     """Clean and validate a candidate data:image URL for <img src> use."""
     if not raw or not isinstance(raw, str):
@@ -60,6 +94,8 @@ def _normalize_data_image_url(raw: str) -> str | None:
         # Trim trailing junk that often rides along from surrounding prose/JSON.
         payload = re.split(r"[^A-Za-z0-9+/=]+", payload, maxsplit=1)[0]
         if not payload:
+            return None
+        if not _base64_head_is_image(header_l, payload):
             return None
         return f"{header},{payload}"
     # Non-base64 (e.g. svg+xml;charset=utf-8,<svg…>) - keep payload, strip wrappers.
