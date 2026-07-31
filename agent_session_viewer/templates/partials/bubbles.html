@@ -1,32 +1,60 @@
+{# Import this macro "with context" so agent + path are available for /media. #}
 {% macro render_images(images) %}
   {% if images %}
   <div class="chat-images">
     {% for img in images %}
       {% if img.kind == 'data' %}
-      <figure class="chat-image">
+      <figure class="chat-image" data-image-kind="data">
         {% if img.snippet %}<div class="image-snippet">{{ img.snippet }}</div>{% endif %}
-        <img class="copyable-image" src="{{ img.url }}" alt="{{ img.label or 'image' }}"
-             title="Click to copy image to clipboard" loading="lazy">
-        <figcaption>Click image to copy · {{ img.mime or 'image' }}</figcaption>
+        <img class="preview-image" src="{{ img.url }}" alt="{{ img.label or 'image' }}"
+             data-copy-src="{{ img.url }}" loading="lazy">
+        <figcaption>
+          <span class="image-caption-label">{{ img.mime or 'image' }}</span>
+          <span class="image-copy-actions">
+            <button type="button" class="image-copy-btn" data-copy-mode="image" title="Copy image pixels">Copy image</button>
+            <button type="button" class="image-copy-btn" data-copy-mode="url" title="Copy data URL / source string">Copy URL</button>
+          </span>
+        </figcaption>
       </figure>
       {% elif img.kind == 'url' %}
-      <figure class="chat-image">
+      <figure class="chat-image" data-image-kind="url">
         {% if img.snippet %}<div class="image-snippet">{{ img.snippet }}</div>{% endif %}
         <a href="{{ img.url }}" target="_blank" rel="noopener">
-          <img src="{{ img.url }}" alt="{{ img.label or 'image' }}" loading="lazy">
+          <img class="preview-image" src="{{ img.url }}" alt="{{ img.label or 'image' }}"
+               data-copy-src="{{ img.url }}" loading="lazy">
         </a>
-        <figcaption><a href="{{ img.url }}" target="_blank" rel="noopener">{{ img.label or img.url }}</a></figcaption>
+        <figcaption>
+          <a href="{{ img.url }}" target="_blank" rel="noopener">{{ img.label or img.url }}</a>
+          <span class="image-copy-actions">
+            <button type="button" class="image-copy-btn" data-copy-mode="image" title="Copy image pixels">Copy image</button>
+            <button type="button" class="image-copy-btn" data-copy-mode="url" title="Copy image URL">Copy URL</button>
+          </span>
+        </figcaption>
       </figure>
       {% else %}
-      <figure class="chat-image">
+      {% set media_url = url_for('media', agent=agent, session=path, path=img.path) %}
+      {# Local files: click-to-show so previews render on demand via /media. #}
+      <figure class="chat-image chat-image-local" data-image-kind="file" data-media-src="{{ media_url }}">
         {% if img.snippet %}<div class="image-snippet">{{ img.snippet }}</div>{% endif %}
-        <a href="{{ url_for('media', agent=agent, session=path, path=img.path) }}" target="_blank" rel="noopener">
-          <img src="{{ url_for('media', agent=agent, session=path, path=img.path) }}" alt="{{ img.label or img.path }}" loading="lazy"
-               onerror="this.style.display='none'; this.nextElementSibling && (this.nextElementSibling.style.display='block');">
-        </a>
-        <div style="display:none;padding:0.75rem;color:var(--muted);font-size:0.8rem;">Preview unavailable</div>
+        <button type="button" class="image-reveal-btn" title="Load and show this local image">
+          <span class="image-reveal-icon" aria-hidden="true">🖼</span>
+          <span class="image-reveal-label">Click to show image</span>
+          <span class="image-reveal-sub">{{ img.label or img.path }}</span>
+        </button>
+        <div class="image-reveal-frame" hidden>
+          <a class="image-reveal-open" href="{{ media_url }}" target="_blank" rel="noopener" title="Open full size">
+            <img class="preview-image" alt="{{ img.label or img.path }}"
+                 data-copy-src="{{ media_url }}"
+                 data-copy-path="{{ img.path }}">
+          </a>
+          <div class="image-missing" hidden>Preview unavailable — try Open or Copy URL</div>
+        </div>
         <figcaption>
-          <a href="{{ url_for('media', agent=agent, session=path, path=img.path) }}" target="_blank" rel="noopener">{{ img.label or img.path }}</a>
+          <a href="{{ media_url }}" target="_blank" rel="noopener" title="Open image in new tab">{{ img.label or img.path }}</a>
+          <span class="image-copy-actions">
+            <button type="button" class="image-copy-btn" data-copy-mode="image" title="Copy image pixels">Copy image</button>
+            <button type="button" class="image-copy-btn" data-copy-mode="url" title="Copy media URL">Copy URL</button>
+          </span>
         </figcaption>
       </figure>
       {% endif %}
@@ -63,6 +91,7 @@
   {% endif %}
 {% endmacro %}
 
+{# Import this macro "with context" so nested render_images sees agent + path. #}
 {% macro render_bubbles(turns) %}
 <div class="chat">
   {% for t in turns %}

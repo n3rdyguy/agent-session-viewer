@@ -51,7 +51,8 @@ Grok sessions get a deeper view of the on-disk session folder:
 |------|----------------|
 | **Summary** | Title, model, agent name, reasoning effort, sandbox, cwd, message counts, branch/commit |
 | **Token usage** | Estimated in / out / cached / reasoning from `updates.jsonl` `turn_completed` events; context window from `signals.json` |
-| **Todos & settings** | `resources_state.json` — todo checklist, tool params, scheduler / completions |
+| **Todos & settings** | `resources_state.json` checklist (`grok_build.Todo` / `Todo`, dict or list), falling back to replaying `todo_write` tool calls from `chat_history.jsonl` (including `merge`); tool params, scheduler / completions |
+| **Prompt history** | Project-level `prompt_history.jsonl` next to the session folder, filtered by session id |
 | **Chat history** | Full `chat_history.jsonl`: user, assistant, **reasoning** (summary + `<encrypted>`), tool calls/results with **call ids** |
 | **Terminal** | Matched `terminal/<call-id>.log` previews and enrichment of thin tool results |
 | **Hunk records** | File edit events from `hunk_records.jsonl` |
@@ -68,6 +69,8 @@ Codex `rollout-*.jsonl` sessions under `~/.codex/sessions/` (and `archived_sessi
 | **List titles** | Safe `thread_name` from `~/.codex/session_index.jsonl`, plus a safe first-user-message headline when available |
 | **Summary** | Session id, model, originator/CLI, cwd, approval/sandbox, reasoning effort, personality, plan type, git branch/commit |
 | **Token usage** | From `event_msg` / `token_count` — last cumulative `total_token_usage` (in / out / cached / reasoning) + context window |
+| **Todos** | Checklist from `update_plan` tool calls — classic JSON `function_call` arguments and newer `custom_tool_call` / `exec` (`tools.update_plan({...})`); last non-empty plan wins |
+| **Prompt history** | Session prompts from `~/.codex/history.jsonl` (unix `ts` or ISO timestamp), filtered by session id |
 | **Settings** | Approval policy, sandbox, effort, personality, provider, repo URL |
 | **AGENTS.md** | Injected workspace instructions from `world_state` |
 | **Chat history** | User + agent messages, **reasoning** (`<encrypted>` when present), tool calls/results with **call ids**, patches, image generation, task start/complete |
@@ -350,6 +353,9 @@ hunk_records.jsonl       # file edit hunks
 terminal/<call-id>.log   # shell / task output
 recap_requests/*.json    # compaction / recap payloads
 assets/                  # user-attached images
+
+# Sibling of session folders (per project cwd):
+../prompt_history.jsonl  # user prompts for all sessions in this project
 ```
 
 Reasoning steps show the model **summary** text; full chain-of-thought is stored encrypted and displayed as `<encrypted>` (API `reasoningTokens` still count real reasoning usage).

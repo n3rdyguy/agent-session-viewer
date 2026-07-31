@@ -113,6 +113,71 @@ def test_uses_a_longer_fence_when_code_contains_backticks() -> None:
     assert format_markdown_content(source) == "````javascript\n" + source + "\n````"
 
 
+def test_shell_output_with_embedded_readme_fences_is_outer_fenced() -> None:
+    """Regression: Codex shell dumps of source + README broke Markdown mode.
+
+    call_Rgjj24g8CrcpLL42i54Cwp1q-style results start with Exit code metadata and
+    embed README fence lines; without an outer fence, marked treats # comments
+    and ## headings as live Markdown.
+    """
+    source = (
+        "Exit code: 0\n"
+        "Wall time: 4 seconds\n"
+        "Total output lines: 40\n"
+        "Output:\n"
+        '"""Flask routes and local development server."""\n'
+        "\n"
+        "from __future__ import annotations\n"
+        "\n"
+        "def run() -> None:\n"
+        "    print('ok')\n"
+        "\n"
+        "# Agent Session Viewer\n"
+        "\n"
+        "## Installation\n"
+        "\n"
+        "```bash\n"
+        "uv sync\n"
+        "```\n"
+        "\n"
+        "A typical Grok session directory includes:\n"
+        "\n"
+        "```\n"
+    )
+
+    formatted = format_markdown_content(source)
+
+    assert formatted.startswith("```")
+    assert formatted.endswith("```")
+    # Outer fence must be longer than the embedded ``` lines so they stay literal.
+    assert formatted.startswith("````") or formatted.startswith("```text") or formatted.startswith(
+        "```python"
+    )
+    assert "Exit code: 0" in formatted
+    assert "## Installation" in formatted
+    # The whole blob is one fenced block, not re-parsed as nested Markdown.
+    assert formatted.count("\n") >= source.count("\n")
+    body = formatted.strip("`").split("\n", 1)[1].rsplit("\n", 1)[0]
+    # After stripping outer fence lines, body matches source (minus possible rstrip).
+    assert body.rstrip() == source.rstrip()
+
+
+def test_unbalanced_internal_fence_is_outer_fenced() -> None:
+    source = "Captured log:\n\n```text\nhello\n"  # opener never closed
+
+    formatted = format_markdown_content(source)
+
+    assert formatted.startswith("```")
+    assert formatted.rstrip().endswith("```")
+    assert "```text\nhello" in formatted
+
+
+def test_balanced_markdown_with_fences_still_preserved() -> None:
+    source = "# Title\n\nSee:\n\n```python\nprint(1)\n```\n\nDone."
+
+    assert format_markdown_content(source) == source
+
+
 def test_markdown_export_fences_code_turns_but_not_prose() -> None:
     turns = [
         {"role": "assistant", "text": '{"ok": true}'},

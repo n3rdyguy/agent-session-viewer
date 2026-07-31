@@ -20,48 +20,177 @@
     showToast._t = setTimeout(() => toast.classList.remove('show'), 1800);
   }
 
-  async function copyImageToClipboard(img) {
-    try {
-      const resp = await fetch(img.src);
-      const blob = await resp.blob();
-      const type = blob.type || 'image/png';
-      if (navigator.clipboard && window.ClipboardItem) {
-        // Chrome often wants image/png specifically
-        let itemBlob = blob;
-        if (type !== 'image/png' && typeof createImageBitmap === 'function') {
-          try {
-            const bitmap = await createImageBitmap(blob);
-            const canvas = document.createElement('canvas');
-            canvas.width = bitmap.width;
-            canvas.height = bitmap.height;
-            canvas.getContext('2d').drawImage(bitmap, 0, 0);
-            itemBlob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
-          } catch (_) { /* use original */ }
-        }
-        await navigator.clipboard.write([
-          new ClipboardItem({ [itemBlob.type || 'image/png']: itemBlob })
-        ]);
-        showToast('Image copied to clipboard');
-        return;
-      }
-      // Fallback: copy data URL as text
-      await navigator.clipboard.writeText(img.src);
-      showToast('Image data URL copied as text');
-    } catch (err) {
-      try {
-        await navigator.clipboard.writeText(img.src);
-        showToast('Image data URL copied as text');
-      } catch (e2) {
-        showToast('Copy failed — try right-click → Copy image');
-      }
+  function imageCopySource(figureOrImg) {
+    const figure = figureOrImg.closest ? figureOrImg.closest('.chat-image') : null;
+    const img = figure
+      ? figure.querySelector('img.preview-image')
+      : (figureOrImg.matches && figureOrImg.matches('img.preview-image') ? figureOrImg : null);
+    if (!img) return { img: null, src: '' };
+    const src = img.getAttribute('data-copy-src') || img.currentSrc || img.src || '';
+    return { img: img, src: src };
+  }
+
+  async function copyTextToClipboard(text) {
+    if (!text) throw new Error('empty');
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(text);
+      return;
     }
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.setAttribute('readonly', '');
+    ta.style.position = 'fixed';
+    ta.style.left = '-9999px';
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+  }
+
+  async function copyImagePixels(img, src) {
+    // Prefer the live element when already decoded; otherwise fetch the source.
+    let blob = null;
+    if (img && img.complete && img.naturalWidth > 0 && typeof createImageBitmap === 'function') {
+      try {
+        const bitmap = await createImageBitmap(img);
+        const canvas = document.createElement('canvas');
+        canvas.width = bitmap.width;
+        canvas.height = bitmap.height;
+        canvas.getContext('2d').drawImage(bitmap, 0, 0);
+        blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
+      } catch (_) { /* fall through to fetch */ }
+    }
+    if (!blob) {
+      const resp = await fetch(src);
+      blob = await resp.blob();
+    }
+    const type = (blob && blob.type) || 'image/png';
+    if (!(navigator.clipboard && window.ClipboardItem)) {
+      await copyTextToClipboard(src);
+      showToast('Image URL copied (bitmap clipboard unavailable)');
+      return;
+    }
+    let itemBlob = blob;
+    if (type !== 'image/png' && typeof createImageBitmap === 'function') {
+      try {
+        const bitmap = await createImageBitmap(blob);
+        const canvas = document.createElement('canvas');
+        canvas.width = bitmap.width;
+        canvas.height = bitmap.height;
+        canvas.getContext('2d').drawImage(bitmap, 0, 0);
+        itemBlob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
+      } catch (_) { /* use original */ }
+    }
+    await navigator.clipboard.write([
+      new ClipboardItem({ [itemBlob.type || 'image/png']: itemBlob })
+    ]);
+    showToast('Image copied to clipboard');
+  }
+
+  async function copyImageUrl(src) {
+    // Prefer absolute URL for /media links so paste targets resolve.
+    let out = src || '';
+    if (out && out.startsWith('/')) {
+      out = window.location.origin + out;
+    }
+    await copyTextToClipboard(out);
+    showToast(out.startsWith('data:') ? 'Data URL copied' : 'Image URL copied');
+  }
+
+  function revealLocalImage(figure) {
+    if (!figure) return;
+    const src = figure.getAttribute('data-media-src') || '';
+    if (!src) {
+      showToast('No local image URL');
+      return;
+    }
+    const btn = figure.querySelector('.image-reveal-btn');
+    const frame = figure.querySelector('.image-reveal-frame');
+    const img = figure.querySelector('img.preview-image');
+    const missing = figure.querySelector('.image-missing');
+    if (!frame || !img) return;
+
+    if (btn) {
+      btn.disabled = true;
+      const label = btn.querySelector('.image-reveal-label');
+      if (label) label.textContent = 'Loading…';
+    }
+
+    const showFrame = function() {
+      frame.hidden = false;
+      if (btn) btn.hidden = true;
+      figure.classList.add('is-revealed');
+    };
+
+    img.onload = function() {
+      if (missing) missing.hidden = true;
+      img.style.display = '';
+      showFrame();
+    };
+    img.onerror = function() {
+      img.style.display = 'none';
+      if (missing) missing.hidden = false;
+      showFrame();
+      if (btn) {
+        btn.hidden = false;
+        btn.disabled = false;
+        const label = btn.querySelector('.image-reveal-label');
+        if (label) label.textContent = 'Retry show image';
+      }
+      showToast('Could not load local image');
+    };
+
+    // Force reload if retrying after a previous error.
+    if (img.getAttribute('src') === src) {
+      img.removeAttribute('src');
+    }
+    img.setAttribute('src', src);
+    img.setAttribute('data-copy-src', src);
   }
 
   document.addEventListener('click', (ev) => {
-    const img = ev.target.closest('img.copyable-image');
-    if (!img) return;
+    const revealBtn = ev.target.closest('.image-reveal-btn');
+    if (revealBtn) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      revealLocalImage(revealBtn.closest('.chat-image-local'));
+      return;
+    }
+
+    const btn = ev.target.closest('.image-copy-btn');
+    if (!btn) return;
     ev.preventDefault();
-    copyImageToClipboard(img);
+    ev.stopPropagation();
+    const mode = btn.getAttribute('data-copy-mode') || 'image';
+    const figure = btn.closest('.chat-image');
+    // Auto-reveal local images before copying pixels so src is populated.
+    if (mode === 'image' && figure && figure.classList.contains('chat-image-local') && !figure.classList.contains('is-revealed')) {
+      revealLocalImage(figure);
+    }
+    const { img, src } = imageCopySource(btn);
+    const resolvedSrc = src || (figure && figure.getAttribute('data-media-src')) || '';
+    if (!resolvedSrc) {
+      showToast('No image source to copy');
+      return;
+    }
+    if (mode === 'url') {
+      copyImageUrl(resolvedSrc).catch(() => showToast('Copy URL failed'));
+      return;
+    }
+    // Wait a tick for reveal to assign src when needed.
+    const tryCopy = function() {
+      const live = imageCopySource(btn);
+      const liveSrc = live.src || resolvedSrc;
+      return copyImagePixels(live.img, liveSrc);
+    };
+    Promise.resolve()
+      .then(tryCopy)
+      .catch(() => new Promise((r) => setTimeout(r, 120)).then(tryCopy))
+      .catch(() => {
+        copyImageUrl(resolvedSrc)
+          .then(() => showToast('Bitmap copy failed — URL copied instead'))
+          .catch(() => showToast('Copy failed — try right-click → Copy image'));
+      });
   });
 
 

@@ -22,7 +22,12 @@ from .authorization import (
 from .config import CLAUDE_HOME, CODEX_HOME, GROK_HOME
 from .discovery import all_sessions
 from .markdown_output import format_markdown_content
-from .session import load_session, summary_to_markdown, turns_to_markdown
+from .session import (
+    load_session,
+    summary_to_markdown,
+    system_artifacts_to_markdown,
+    turns_to_markdown,
+)
 from .util import decode_html_entities, decode_view_data
 
 app = Flask(__name__)
@@ -104,6 +109,7 @@ def view():
         summary=session["summary"],
         resources=session["resources"],
         artifacts=session["artifacts"],
+        system_artifacts=session.get("system_artifacts"),
         hunks=session["hunks"],
         terminal_logs=session["terminal_logs"],
         recaps=session["recaps"],
@@ -123,11 +129,15 @@ def export_md():
     agent = authorized.agent
 
     session = decode_view_data(load_session(agent, path))
-    extra = summary_to_markdown(
-        session["summary"],
-        agent=agent,
-        resources=session["resources"],
-    )
+    extra_parts = [
+        summary_to_markdown(
+            session["summary"],
+            agent=agent,
+            resources=session["resources"],
+        ),
+        system_artifacts_to_markdown(session.get("system_artifacts")),
+    ]
+    extra = "\n\n".join(part for part in extra_parts if part)
     md = turns_to_markdown(
         session["turns"],
         session["title"],

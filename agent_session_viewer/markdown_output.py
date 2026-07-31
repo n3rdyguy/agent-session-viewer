@@ -10,6 +10,21 @@ from .util import decode_html_entities
 
 _FULL_FENCE_RE = re.compile(r"^\s*(`{3,}|~{3,})[^\n]*\n[\s\S]*\n\1\s*$")
 _FENCE_LINE_RE = re.compile(r"(?:^|\n)\s*(?:`{3,}|~{3,})(?:[A-Za-z0-9_+-]+)?\s*(?:\n|$)")
+_FENCE_OPENER_RE = re.compile(r"^(\s*)(`{3,}|~{3,})(.*)$")
+# Codex / shell tool wrappers often prefix captured stdout. Treat those blobs as
+# preformatted even when the payload embeds README fences or other Markdown.
+_SHELL_OUTPUT_META_RE = re.compile(
+    r"(?is)\A(?:[ \t]*(?:"
+    r"Exit code\s*:.*|"
+    r"Wall time\s*:.*|"
+    r"Total output lines\s*:.*|"
+    r"Output\s*:|"
+    r"Stdout\s*:|"
+    r"Stderr\s*:|"
+    r"Command (?:output|failed|succeeded)\b.*|"
+    r"Process exited with (?:code|status)\s+\d+.*"
+    r")[ \t]*\n)+"
+)
 
 _LANGUAGE_RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("php", (r"<\?php\b", r"\bnamespace\s+[\w\\]+;", r"\$\w+\s*=", r"->\w+\s*\(")),
@@ -123,11 +138,43 @@ _LANGUAGE_RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
 )
 
 
-def detect_code_language(text: str) -> str | None:
-    """Return a Markdown fence language when *text* is predominantly code."""
+def _fences_are_balanced(text: str) -> bool:
+    """Return True when every fence opener has a matching closer (CommonMark-ish)."""
+    stack: list[tuple[str, int]] = []
+    for line in str(text or "").splitlines():
+        match = _FENCE_OPENER_RE.match(line)
+        if not match:
+            continue
+        marker = match.group(2)
+        info = match.group(3).strip()
+        char = marker[0]
+        length = len(marker)
+        # A closer matches the same fence char, is at least as long, and has no info string.
+        if stack and stack[-1][0] == char and length >= stack[-1][1] and not info:
+            stack.pop()
+        else:
+            stack.append((char, length))
+    return not stack
+
+
+def _wrap_as_fenced(source: str, language: str) -> str:
+    """Wrap *source* in a fence longer than any backtick run it already contains."""
+    longest_run = max((len(run) for run in re.findall(r"`+", source)), default=0)
+    fence = "`" * max(3, longest_run + 1)
+    return f"{fence}{language}\n{source.rstrip()}\n{fence}"
+
+
+def detect_code_language(text: str, *, allow_internal_fences: bool = False) -> str | None:
+    """Return a Markdown fence language when *text* is predominantly code.
+
+    When *allow_internal_fences* is true, embedded fence lines (for example a
+    README dump inside shell output) no longer suppress detection.
+    """
     source = str(text or "")
     stripped = source.strip()
-    if not stripped or _FULL_FENCE_RE.match(stripped) or _FENCE_LINE_RE.search(stripped):
+    if not stripped or _FULL_FENCE_RE.match(stripped):
+        return None
+    if not allow_internal_fences and _FENCE_LINE_RE.search(stripped):
         return None
 
     if stripped[:1] in "[{":
@@ -222,8 +269,6 @@ def detect_code_language(text: str) -> str | None:
 def format_markdown_content(text: str, assume_markdown: bool = False) -> str:
     """Decode and prepare Markdown content, optionally bypassing code detection."""
     source = decode_html_entities(text)
-    if _FENCE_LINE_RE.search(source):
-        return source
 
     # System instructions and Markdown documents often contain XML-like wrapper
     # tags around otherwise normal Markdown. Preserve their Markdown structure
@@ -231,11 +276,34 @@ def format_markdown_content(text: str, assume_markdown: bool = False) -> str:
     if assume_markdown:
         return source
 
+    stripped = source.strip()
+    if not stripped:
+        return source
+
+    # Already a single complete fenced block — leave it alone.
+    if _FULL_FENCE_RE.match(stripped):
+        return source
+
+    # Shell tool results often wrap captured files (including READMEs with their
+    # own fences). Fence the whole blob so embedded Markdown is not re-parsed.
+    shell_meta = _SHELL_OUTPUT_META_RE.match(stripped)
+    if shell_meta:
+        body = stripped[shell_meta.end() :]
+        language = detect_code_language(body, allow_internal_fences=True) or "text"
+        return _wrap_as_fenced(source, language)
+
+    # Truncated dumps leave an open fence; that poisons Markdown rendering of the
+    # whole bubble, so force a preformatted block with a longer outer fence.
+    if _FENCE_LINE_RE.search(source) and not _fences_are_balanced(source):
+        language = detect_code_language(source, allow_internal_fences=True) or "text"
+        return _wrap_as_fenced(source, language)
+
+    # Balanced internal fences usually mean intentional Markdown (prose + code).
+    if _FENCE_LINE_RE.search(source):
+        return source
+
     language = detect_code_language(source)
     if not language:
         return source
 
-    # Use a fence longer than any backtick run already present in the code.
-    longest_run = max((len(run) for run in re.findall(r"`+", source)), default=0)
-    fence = "`" * max(3, longest_run + 1)
-    return f"{fence}{language}\n{source.rstrip()}\n{fence}"
+    return _wrap_as_fenced(source, language)
