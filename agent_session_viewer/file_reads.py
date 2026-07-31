@@ -56,6 +56,8 @@ _SHELL_TOOL_NAMES = frozenset(
         "cmd",
         # Codex JS sandbox wrapper that embeds tools.shell_command({...})
         "exec",
+        # Claude Code shell tool
+        "Bash",
     }
 )
 
@@ -471,12 +473,39 @@ def _parse_one_file_read(segment: str) -> FileReadEntry | None:
     return None
 
 
+_CD_PREFIX_RE = re.compile(
+    r"(?is)^\s*cd\s+(?P<path>(?:'[^']+'|\"[^\"]+\"|[^\s;&|]+))\s*"
+    r"(?:&&|;)\s*"
+)
+
+
+def strip_cd_prefix(command: str) -> str:
+    """
+    Drop a leading ``cd <dir> &&`` / ``cd <dir>;`` so pure file-reads after a
+    directory change still parse (common in Claude Bash tool calls).
+    """
+    if not command:
+        return command
+    out = command.strip()
+    # Allow a few stacked cds
+    for _ in range(3):
+        match = _CD_PREFIX_RE.match(out)
+        if not match:
+            break
+        out = out[match.end() :].strip()
+    return out
+
+
 def parse_file_read_plan(command: str) -> list[FileReadEntry] | None:
     """
     If `command` is only pure file-read subcommands, return the plan.
     Otherwise return None.
     """
     if not command or not command.strip():
+        return None
+
+    command = strip_cd_prefix(command)
+    if not command:
         return None
 
     # Single-command path first (allows simple PowerShell pipelines like
@@ -691,6 +720,138 @@ def split_file_marker_output(body: str) -> tuple[str, list[FileArtifact]] | None
     return preamble, artifacts
 
 
+_NATIVE_READ_TOOL_NAMES = frozenset(
+    {
+        "read",
+        "read_file",
+        "readfile",
+        "view",
+        "view_file",
+    }
+)
+
+
+def _as_args_dict(arguments: Any) -> dict[str, Any] | None:
+    if arguments is None:
+        return None
+    if isinstance(arguments, dict):
+        return arguments
+    if isinstance(arguments, str):
+        stripped = arguments.strip()
+        if not stripped:
+            return None
+        try:
+            parsed = json.loads(stripped)
+        except json.JSONDecodeError:
+            return None
+        return parsed if isinstance(parsed, dict) else None
+    return None
+
+
+def _native_read_path(args: dict[str, Any]) -> str | None:
+    for key in (
+        "target_file",
+        "file_path",
+        "filePath",
+        "path",
+        "filename",
+        "file",
+    ):
+        val = args.get(key)
+        if isinstance(val, str) and val.strip():
+            return val.strip()
+    return None
+
+
+def _coerce_positive_int(value: Any) -> int | None:
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        n = int(value)
+    except (TypeError, ValueError):
+        return None
+    return n if n > 0 else None
+
+
+def native_read_file_artifact(
+    tool_name: str | None,
+    arguments: Any,
+    output: str,
+) -> FileArtifact | None:
+    """
+    Build one file card for structured read tools (Grok ``read_file``, Claude ``Read``).
+
+    Content is the tool_result body only — never re-reads the workspace.
+    """
+    name = (tool_name or "").strip().lower()
+    if "." in name:
+        name = name.rsplit(".", 1)[-1]
+    if name not in _NATIVE_READ_TOOL_NAMES:
+        return None
+
+    args = _as_args_dict(arguments) or {}
+    path = _native_read_path(args)
+    if not path:
+        return None
+
+    text = output if isinstance(output, str) else str(output or "")
+    # Skip empty / image-only / obvious non-file payloads
+    stripped = text.strip()
+    if not stripped:
+        return None
+    if stripped.lower().startswith("read image file:"):
+        return None
+    if stripped.lower().startswith("error") and len(stripped) < 80:
+        return None
+
+    offset = _coerce_positive_int(args.get("offset") or args.get("start_line") or args.get("start"))
+    limit = _coerce_positive_int(args.get("limit") or args.get("end_line") or args.get("count"))
+    # Claude sometimes uses offset as 0-based; treat 0 as missing, 1+ as start line.
+    end: int | None = None
+    start = offset
+    if start is not None and limit is not None:
+        # If limit looks like an absolute end line (rare), prefer start+count-1 when
+        # key was "limit"; both Grok and Claude use count-of-lines for limit.
+        end = start + limit - 1
+    elif start is None and limit is not None and args.get("end_line") is not None:
+        # end_line alone without start
+        end = limit
+        start = 1
+
+    entry: FileReadEntry = {
+        "path": path,
+        "range_kind": "slice" if start is not None and end is not None else "full",
+    }
+    if start is not None:
+        entry["start"] = start
+    if end is not None:
+        entry["end"] = end
+        if start is not None:
+            entry["expected_lines"] = end - start + 1
+    # Prefer line numbers embedded in the body:
+    # Grok ``185→``, Claude Code ``   1|`` or ``1\t`` (tab after line number)
+    numbered = re.findall(r"(?m)^\s*(\d+)(?:→|\||\t)", text)
+    if numbered:
+        try:
+            body_start = int(numbered[0])
+            body_end = int(numbered[-1])
+            if 1 <= body_start <= body_end:
+                # Body numbers win when args omitted; otherwise fill missing end
+                if start is None:
+                    entry["start"] = body_start
+                    entry["end"] = body_end
+                    entry["range_kind"] = "slice"
+                    entry["expected_lines"] = body_end - body_start + 1
+                elif end is None:
+                    entry["end"] = body_end
+                    entry["range_kind"] = "slice"
+                    entry["expected_lines"] = body_end - int(entry["start"]) + 1
+        except ValueError:
+            pass
+
+    return _artifact_from_entry(entry, text, split=True)
+
+
 def file_artifacts_for_tool_result(
     *,
     tool_name: str | None,
@@ -707,13 +868,19 @@ def file_artifacts_for_tool_result(
       (shell meta and any preamble before the first file)
 
     Supports:
-    1. Explicit ``FILE path`` markers in stdout (PowerShell multi-file dumps)
-    2. Pure file-read shell commands (sed/cat/Get-Content/…)
+    1. Structured native read tools (Grok ``read_file``, Claude ``Read``)
+    2. Explicit ``FILE path`` markers in stdout (PowerShell multi-file dumps)
+    3. Pure file-read shell commands (sed/cat/Get-Content/…)
 
     Also unwraps Codex ``exec`` scripts that embed ``tools.shell_command``.
     Returns ``([], None)`` when content cannot be partitioned. Callers should
     keep the full ``output`` as the turn text for flat (toggle-off) display.
     """
+    # 0) Native structured file reads (one card, full tool_result body)
+    native = native_read_file_artifact(tool_name, arguments, output)
+    if native is not None:
+        return [native], ""
+
     header, body = strip_shell_output_meta(output)
 
     # 1) Output-driven: FILE markers (works even without a parseable command)

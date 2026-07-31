@@ -167,7 +167,61 @@ def test_extract_shell_command_from_json() -> None:
         '{"command":"sed -n \'1,2p\' x.py","workdir":"C:\\\\tmp"}',
     )
     assert cmd == "sed -n '1,2p' x.py"
+    # Structured read tools are not shell commands
     assert extract_shell_command("read_file", '{"path":"x.py"}') is None
+    assert extract_shell_command("Bash", {"command": "cat a.py"}) == "cat a.py"
+    assert extract_shell_command("run_terminal_command", {"command": "head -n 3 f"}) == (
+        "head -n 3 f"
+    )
+
+
+def test_native_read_file_and_claude_read() -> None:
+    from agent_session_viewer.file_reads import native_read_file_artifact, strip_cd_prefix
+
+    grok = native_read_file_artifact(
+        "read_file",
+        {"target_file": "README.md", "offset": 185, "limit": 80},
+        "185→ The server binds to loopback.\n186→ Next line.\n",
+    )
+    assert grok is not None
+    assert grok["path"] == "README.md"
+    assert grok["start"] == 185
+    assert grok["end"] == 264
+    assert "loopback" in (grok["text"] or "")
+
+    claude = native_read_file_artifact(
+        "Read",
+        {"file_path": "parser.py"},
+        "     1|parser contents\n     2|line two\n",
+    )
+    assert claude is not None
+    assert claude["path"] == "parser.py"
+    assert claude["label"] == "parser.py · lines 1–2"
+
+    # Claude Code often uses "N\\t" line prefixes (tab), not pipe
+    claude_tab = native_read_file_artifact(
+        "Read",
+        {"file_path": r"C:\proj\godmorgen_bot.py"},
+        '1\t"""doc"""\n2\t\n3\timport argparse\n',
+    )
+    assert claude_tab is not None
+    assert claude_tab["label"].endswith("· lines 1–3")
+    assert claude_tab["start"] == 1 and claude_tab["end"] == 3
+
+    arts, prefix = file_artifacts_for_tool_result(
+        tool_name="read_file",
+        arguments={"target_file": "a.py"},
+        output="1→ hello\n",
+    )
+    assert len(arts) == 1
+    assert arts[0]["path"] == "a.py"
+    assert prefix == ""
+
+    assert strip_cd_prefix('cd "/tmp/x" && cat a.py') == "cat a.py"
+    plan = parse_file_read_plan('cd "C:/proj" && cat requirements.txt')
+    assert plan is not None and plan[0]["path"] == "requirements.txt"
+    # multi-arg cat still not partitioned
+    assert parse_file_read_plan('cd "C:/proj" && cat a.txt b.txt') is None
 
 
 def test_extract_command_from_codex_exec_script() -> None:
@@ -312,6 +366,28 @@ def test_codex_fixture_file_reads() -> None:
     assert "alpha" in exec_files["file_artifacts"][0]["text"]
     assert "beta" in exec_files["file_artifacts"][1]["text"]
     assert "FILE a.py" not in (exec_files.get("file_read_prefix") or "")
+
+
+def test_grok_and_claude_fixtures_get_file_cards() -> None:
+    from agent_session_viewer.agents.claude import get_claude_conversation
+    from agent_session_viewer.agents.grok import get_grok_conversation
+
+    grok_turns = get_grok_conversation(Path(__file__).parent / "fixtures" / "grok")
+    grok_result = next(t for t in grok_turns if t["role"] == "tool_result")
+    assert grok_result.get("file_artifacts")
+    assert grok_result["file_artifacts"][0]["path"] == "parser.py"
+    assert "parser contents" in grok_result["file_artifacts"][0]["text"]
+    # Full body kept for flat mode
+    assert "parser contents" in grok_result["text"]
+
+    claude_path = Path(__file__).parent / "fixtures" / "claude" / "session-fixture.jsonl"
+    claude_turns = get_claude_conversation(claude_path)
+    claude_result = next(
+        t for t in claude_turns if t["role"] == "tool_result" and t.get("id") == "toolu_read1"
+    )
+    assert claude_result.get("file_artifacts")
+    assert claude_result["file_artifacts"][0]["path"] == "parser.py"
+    assert "parser contents" in claude_result["file_artifacts"][0]["text"]
 
 
 def test_tool_result_file_reads_template_order_and_modes() -> None:
