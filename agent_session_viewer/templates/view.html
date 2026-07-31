@@ -171,11 +171,12 @@
 </div>
 {% endif %}
 
-{% if resources and (resources.todos or resources.settings or resources.scheduler_tasks or resources.reported_completions) %}
-<div class="panel">
-  <h3>Resources · todos &amp; settings</h3>
+{% set prompt_history = resources.prompt_history if resources else none %}
+{% if resources and (resources.todos or prompt_history) %}
+<div class="panel todos-prompt-panel">
+  <h3>Todos and prompt history</h3>
   {% if resources.todos %}
-  <p style="margin:0 0 0.5rem; color:var(--muted); font-size:0.85rem;">Todos ({{ resources.todos|length }})</p>
+  <p class="panel-section-label">Todos ({{ resources.todos|length }})</p>
   <ul class="todo-list">
     {% for t in resources.todos %}
     <li>
@@ -187,8 +188,37 @@
   </ul>
   {% endif %}
 
+  {% if prompt_history %}
+  <p class="panel-section-label"{% if resources.todos %} style="margin-top:0.85rem;"{% endif %}>
+    Prompt history ({{ prompt_history|length }})
+  </p>
+  <ul class="prompt-history-list">
+    {% for row in prompt_history %}
+    <li>
+      {% if row.turn_anchor %}
+      <a class="prompt-history-link" href="#{{ row.turn_anchor }}" title="Jump to this turn in chat">
+        {% if row.time %}<span class="prompt-history-time">{{ row.time }}</span><span class="prompt-history-sep"> — </span>{% endif %}
+        <span class="prompt-history-text">{{ row.display }}</span>
+      </a>
+      {% else %}
+      <span class="prompt-history-unlinked">
+        {% if row.time %}<span class="prompt-history-time">{{ row.time }}</span><span class="prompt-history-sep"> — </span>{% endif %}
+        <span class="prompt-history-text">{{ row.display }}</span>
+      </span>
+      {% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+</div>
+{% endif %}
+
+{% if resources and (resources.settings or resources.scheduler_tasks or resources.reported_completions or resources.other_state) %}
+<div class="panel">
+  <h3>Resources · settings</h3>
+
   {% if resources.reported_completions %}
-  <details style="margin-top:0.85rem;">
+  <details>
     <summary>Reported task completions ({{ resources.reported_completions|length }})</summary>
     <ul class="artifact-list">
       {% for id in resources.reported_completions %}
@@ -237,60 +267,6 @@
     </ul>
   </details>
   {% endif %}
-</div>
-{% endif %}
-
-{% if system_artifacts %}
-<div class="panel system-panel">
-  <details class="system-panel-details">
-    <summary>
-      System instructions
-      <span class="system-panel-count">({{ system_artifacts|length }})</span>
-    </summary>
-    <p class="system-panel-hint">
-      Injected system / developer messages and project instructions, moved out of the chat stream.
-    </p>
-    <div class="artifact-docs collapsible-artifact-docs">
-      {% for a in system_artifacts %}
-      <details class="collapsible-artifact-doc">
-        <summary>
-          <span class="collapsible-artifact-title">{{ a.title or 'system' }}</span>
-          {% if a.subtitle %}<span class="sub">{{ a.subtitle }}</span>{% endif %}
-          {% if a.role %}<span class="msgid">{{ a.role }}</span>{% endif %}
-        </summary>
-        <div class="artifact-doc"
-             data-role={{ (a.title or 'system')|tojson }}
-             data-time=""
-             data-id={{ (a.id or '')|tojson }}
-             data-model=""
-             data-meta={{ (a.subtitle or a.kind or '')|tojson }}>
-          <div class="artifact-doc-head">
-            <div class="artifact-doc-head-main">
-              <strong>{{ a.title or 'system' }}</strong>
-              {% if a.subtitle %}<span class="sub">{{ a.subtitle }}</span>{% endif %}
-            </div>
-            <div class="bubble-header-actions">
-              <div class="copy-menu">
-                <button type="button" class="copy-btn" aria-haspopup="menu" aria-expanded="false" title="Copy document">
-                  Copy ▾
-                </button>
-                <div class="copy-menu-panel" role="menu">
-                  <div class="copy-hint">Copy this document</div>
-                  <button type="button" role="menuitem" data-copy="markdown">As Markdown</button>
-                  <button type="button" role="menuitem" data-copy="raw">As raw text</button>
-                </div>
-              </div>
-            </div>
-          </div>
-          <div class="artifact-doc-body">
-            {# Full body only after expand — no fold clip / minimal preview. #}
-            {{ render_md_block(a.text or '', '', '', true) }}
-          </div>
-        </div>
-      </details>
-      {% endfor %}
-    </div>
-  </details>
 </div>
 {% endif %}
 
@@ -401,6 +377,60 @@
 </div>
 {% endif %}
 
+{% if system_artifacts %}
+<div class="panel system-panel">
+  <details class="system-panel-details">
+    <summary>
+      System instructions
+      <span class="system-panel-count">({{ system_artifacts|length }})</span>
+    </summary>
+    <p class="system-panel-hint">
+      Injected system / developer messages and project instructions, moved out of the chat stream.
+    </p>
+    <div class="artifact-docs collapsible-artifact-docs">
+      {% for a in system_artifacts %}
+      <details class="collapsible-artifact-doc">
+        <summary>
+          <span class="collapsible-artifact-title">{{ a.title or 'system' }}</span>
+          {% if a.subtitle %}<span class="sub">{{ a.subtitle }}</span>{% endif %}
+          {% if a.role %}<span class="msgid">{{ a.role }}</span>{% endif %}
+        </summary>
+        <div class="artifact-doc"
+             data-role={{ (a.title or 'system')|tojson }}
+             data-time=""
+             data-id={{ (a.id or '')|tojson }}
+             data-model=""
+             data-meta={{ (a.subtitle or a.kind or '')|tojson }}>
+          <div class="artifact-doc-head">
+            <div class="artifact-doc-head-main">
+              <strong>{{ a.title or 'system' }}</strong>
+              {% if a.subtitle %}<span class="sub">{{ a.subtitle }}</span>{% endif %}
+            </div>
+            <div class="bubble-header-actions">
+              <div class="copy-menu">
+                <button type="button" class="copy-btn" aria-haspopup="menu" aria-expanded="false" title="Copy document">
+                  Copy ▾
+                </button>
+                <div class="copy-menu-panel" role="menu">
+                  <div class="copy-hint">Copy this document</div>
+                  <button type="button" role="menuitem" data-copy="markdown">As Markdown</button>
+                  <button type="button" role="menuitem" data-copy="raw">As raw text</button>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="artifact-doc-body">
+            {# Full body only after expand — no fold clip / minimal preview. #}
+            {{ render_md_block(a.text or '', '', '', true) }}
+          </div>
+        </div>
+      </details>
+      {% endfor %}
+    </div>
+  </details>
+</div>
+{% endif %}
+
 <div class="tabs-row">
   <div class="tabs" id="view-tabs">
     <button type="button" class="active" data-tab="chat">Chat history ({{ turns|length }})</button>
@@ -418,7 +448,7 @@
 
 <div id="tab-chat" class="tab-panel active">
 {% if turns %}
-  {{ render_bubbles(turns) }}
+  {{ render_bubbles(turns, 'turn-') }}
 {% else %}
   <div class="empty">Could not parse conversation from this session.</div>
 {% endif %}

@@ -202,12 +202,10 @@ def test_prompt_history_is_filtered_by_session(tmp_path: Path) -> None:
     rows = grok.grok_prompt_history(session, "sess-mine")
     assert [r["display"] for r in rows] == ["mine", "$ ls"]
 
-    artifacts = grok.grok_resources(session)["artifacts"]
-    history = next(a for a in artifacts if a["id"] == "prompt-history")
-    assert "Prompt history" == history["title"]
-    assert "mine" in history["text"]
-    assert "other" not in history["text"]
-    assert "$ ls" in history["text"]
+    resources = grok.grok_resources(session)
+    history = resources["prompt_history"]
+    assert [r["display"] for r in history] == ["mine", "$ ls"]
+    assert not any(a.get("id") == "prompt-history" for a in resources.get("artifacts") or [])
 
 
 def test_fixture_conversation_still_loads() -> None:

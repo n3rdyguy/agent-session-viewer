@@ -574,19 +574,6 @@ def claude_scan_session(
     artifacts[:0] = claude_memory_documents(cwd)
 
     history = claude_prompt_history(session_id)
-    if history:
-        artifacts.append(
-            {
-                "id": "prompt-history",
-                "title": "Prompt history",
-                "subtitle": f"history.jsonl · {len(history)} prompt(s)",
-                "kind": "markdown",
-                "text": "\n".join(
-                    f"- {row['time']} — {row['display']}" if row["time"] else f"- {row['display']}"
-                    for row in history
-                ),
-            }
-        )
 
     settings_rows: list[dict[str, Any]] = []
     for key, value in (
@@ -640,6 +627,7 @@ def claude_scan_session(
         "reported_completions": [],
         "settings": settings_rows,
         "other_state": [],
+        "prompt_history": history,
     }
 
     return {
