@@ -469,9 +469,14 @@
       position: relative;
       overflow: hidden;
     }
-    /* Preview on (default): same clipped fade as .fold collapsed bodies */
+    /* Preview on: cap height when collapsed. Fade only when JS marks overflow
+       (.is-clipped) so short content that fits is not faded. */
     body.preview-on .bubble[data-body-collapsed="true"] > .bubble-body {
       max-height: 14rem;
+      -webkit-mask-image: none;
+      mask-image: none;
+    }
+    body.preview-on .bubble[data-body-collapsed="true"] > .bubble-body.is-clipped {
       -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 62%, transparent 100%);
       mask-image: linear-gradient(to bottom, #000 0%, #000 62%, transparent 100%);
     }
@@ -753,10 +758,14 @@
       position: relative;
       transition: max-height 0.15s ease;
     }
-    /* Preview on: collapsed folds show the same clipped snippet as tool_result */
+    /* Preview on: cap fold height; fade only when content overflows (.is-clipped). */
     body.preview-on .fold[data-collapsed="true"] .fold-body {
       max-height: 14rem;
       overflow: hidden;
+      -webkit-mask-image: none;
+      mask-image: none;
+    }
+    body.preview-on .fold[data-collapsed="true"] .fold-body.is-clipped {
       -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 62%, transparent 100%);
       mask-image: linear-gradient(to bottom, #000 0%, #000 62%, transparent 100%);
     }

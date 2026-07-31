@@ -255,6 +255,8 @@
   function setFoldCollapsed(fold, collapsed) {
     if (!fold) return;
     fold.setAttribute('data-collapsed', collapsed ? 'true' : 'false');
+    var foldBody = fold.querySelector('.fold-body');
+    if (foldBody && !collapsed) foldBody.classList.remove('is-clipped');
     var expanded = collapsed ? 'false' : 'true';
     var btn = fold.querySelector('.fold-toggle');
     if (btn) {
@@ -269,6 +271,7 @@
       headerBtn.setAttribute('aria-expanded', expanded);
       headerBtn.title = collapsed ? 'Expand' : 'Collapse';
     }
+    schedulePreviewClipUpdate();
   }
 
   function toggleFold(fold) {
@@ -344,6 +347,8 @@
   function setBubbleBodyCollapsed(root, collapsed) {
     if (!root || !root.hasAttribute('data-body-collapsed')) return;
     root.setAttribute('data-body-collapsed', collapsed ? 'true' : 'false');
+    var body = root.querySelector(':scope > .bubble-body');
+    if (body && !collapsed) body.classList.remove('is-clipped');
     var btn = root.querySelector(':scope > .bubble-header .fold-header-btn');
     if (btn) {
       btn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
@@ -354,6 +359,7 @@
         btn.title = hasFiles && fileReadsModeOn() ? 'Collapse' : 'Collapse';
       }
     }
+    schedulePreviewClipUpdate();
   }
 
   function syncFileReadHeaderBtn(root) {
@@ -692,6 +698,7 @@
         rich.hidden = true;
       }
     });
+    schedulePreviewClipUpdate();
   }
 
   if (mdToggle) {
@@ -756,6 +763,7 @@
   var fileReadsToggle = document.getElementById('file-reads-toggle');
   function setFileReadsMode(on) {
     document.body.classList.toggle('file-reads-on', !!on);
+    schedulePreviewClipUpdate();
   }
   if (fileReadsToggle) {
     var fileReadsPrefer = true;
@@ -779,6 +787,7 @@
   var previewToggle = document.getElementById('preview-toggle');
   function setPreviewMode(on) {
     document.body.classList.toggle('preview-on', !!on);
+    schedulePreviewClipUpdate();
   }
   if (previewToggle) {
     var previewPrefer = true;
@@ -796,5 +805,37 @@
   } else {
     setPreviewMode(true);
   }
+
+  // Fade the bottom of collapsed previews only when content actually overflows
+  // the max-height cap (short messages that fit stay fully opaque).
+  var previewClipRaf = 0;
+  function updatePreviewClipState() {
+    previewClipRaf = 0;
+    var previewOn = document.body.classList.contains('preview-on');
+    document.querySelectorAll('.bubble-body.is-clipped, .fold-body.is-clipped').forEach(function(el) {
+      if (!previewOn) el.classList.remove('is-clipped');
+    });
+    if (!previewOn) return;
+
+    document.querySelectorAll(
+      '.bubble[data-body-collapsed="true"] > .bubble-body'
+    ).forEach(function(el) {
+      el.classList.toggle('is-clipped', el.scrollHeight > el.clientHeight + 1);
+    });
+    document.querySelectorAll(
+      '.fold[data-collapsed="true"] > .fold-body'
+    ).forEach(function(el) {
+      el.classList.toggle('is-clipped', el.scrollHeight > el.clientHeight + 1);
+    });
+  }
+  function schedulePreviewClipUpdate() {
+    if (previewClipRaf) return;
+    previewClipRaf = window.requestAnimationFrame(function() {
+      // Second frame: wait for layout after mode toggles / markdown swap.
+      previewClipRaf = window.requestAnimationFrame(updatePreviewClipState);
+    });
+  }
+  window.addEventListener('resize', schedulePreviewClipUpdate);
+  schedulePreviewClipUpdate();
 
 })();
