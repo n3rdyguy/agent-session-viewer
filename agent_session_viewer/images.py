@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import quote
 
-from .util import truncate
+from .util import decode_html_entities, truncate
 
 IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".ico", ".avif"}
 IMAGE_PATH_RE = re.compile(
@@ -22,14 +22,51 @@ IMAGE_FILES_BLOCK_RE = re.compile(
     r"<image_files>\s*(.*?)\s*</image_files>",
     re.IGNORECASE | re.DOTALL,
 )
+# JSON object blobs that embed a data URL under url / image_url / src.
+# Supports optional "type":"image", pretty-printed whitespace, and escaped quotes.
 DATA_IMAGE_JSON_RE = re.compile(
-    r'\{\s*"type"\s*:\s*"image"\s*,\s*"url"\s*:\s*"(data:image/[^"]+)"\s*\}',
+    r"\{[^{}]*?"
+    r'(?:\\?"type\\?"\s*:\s*\\?"image\\?"\s*,\s*)?'
+    r'\\?"(?:url|image_url|src)\\?"\s*:\s*\\?"'
+    r"(data:image/[^\"\\]+)"
+    r'\\?"'
+    r"[^{}]*?\}",
+    re.IGNORECASE | re.DOTALL,
+)
+# Markdown image pointing at a data URL: ![alt](data:image/...)
+MARKDOWN_DATA_IMAGE_RE = re.compile(
+    r"!\[[^\]]*\]\(\s*(data:image/[^)\s]+)\s*\)",
     re.IGNORECASE,
 )
-DATA_IMAGE_URL_RE = re.compile(
-    r"(data:image/(?:png|jpe?g|gif|webp|bmp|svg\+xml|x-icon|avif);base64,[A-Za-z0-9+/=\s]+)",
-    re.IGNORECASE,
-)
+
+
+def _normalize_data_image_url(raw: str) -> str | None:
+    """Clean and validate a candidate data:image URL for <img src> use."""
+    if not raw or not isinstance(raw, str):
+        return None
+    url = raw.strip().strip("`'\"")
+    # Undo common JSON/string escaping of the data-URL body.
+    if "\\/" in url:
+        url = url.replace("\\/", "/")
+    if not url.lower().startswith("data:image/"):
+        return None
+    comma = url.find(",")
+    if comma < 0:
+        return None
+    header, payload = url[:comma], url[comma + 1 :]
+    header_l = header.lower()
+    if ";base64" in header_l:
+        payload = re.sub(r"\s+", "", payload)
+        # Trim trailing junk that often rides along from surrounding prose/JSON.
+        payload = re.split(r"[^A-Za-z0-9+/=]+", payload, maxsplit=1)[0]
+        if not payload:
+            return None
+        return f"{header},{payload}"
+    # Non-base64 (e.g. svg+xml;charset=utf-8,<svg…>) — keep payload, strip wrappers.
+    payload = payload.strip().rstrip(".,;:)")
+    if not payload:
+        return None
+    return f"{header},{payload}"
 
 
 def is_image_path(path: str | Path) -> bool:
@@ -97,13 +134,30 @@ def image_ref_data(url: str, label: str = "", snippet: str | None = None) -> dic
     }
 
 
-def image_ref_file(path: str, label: str = "", snippet: str | None = None) -> dict:
+def media_href(path: str, *, agent: str | None = None, session: str | None = None) -> str:
+    """Build a /media URL that includes the session authorization context."""
+    q = [f"path={quote(str(path), safe='')}"]
+    if agent:
+        q.append(f"agent={quote(str(agent), safe='')}")
+    if session:
+        q.append(f"session={quote(str(session), safe='')}")
+    return "/media?" + "&".join(q)
+
+
+def image_ref_file(
+    path: str,
+    label: str = "",
+    snippet: str | None = None,
+    *,
+    agent: str | None = None,
+    session: str | None = None,
+) -> dict:
     return {
         "kind": "file",
         "path": path,
         "label": label or path,
-        "href": f"/media?path={path}",  # path urlencoded in template
-        "copyable": False,
+        "href": media_href(path, agent=agent, session=session),
+        "copyable": True,  # UI can copy the media URL string (and bitmap when loaded)
         "snippet": snippet or image_json_snippet(path=path),
     }
 
@@ -124,34 +178,42 @@ def collect_image_blocks(block: dict) -> list[dict]:
                 url = f"data:{media};base64,{source.get('data')}"
             else:
                 url = source.get("url") or ""
-        if isinstance(url, str) and url.startswith("data:image"):
-            images.append(
-                image_ref_data(
-                    url,
-                    block.get("alt") or "image",
-                    snippet=image_json_snippet(url=url),
-                )
-            )
-        elif isinstance(url, str) and url.strip():
-            # http(s) or path-like
-            if url.startswith(("http://", "https://")):
+        if isinstance(url, str):
+            cleaned = _normalize_data_image_url(url)
+            if cleaned:
                 images.append(
-                    {
-                        "kind": "url",
-                        "url": url,
-                        "label": block.get("alt") or url,
-                        "copyable": False,
-                        "snippet": image_json_snippet(url=url),
-                    }
-                )
-            else:
-                images.append(
-                    image_ref_file(
-                        url,
-                        block.get("alt") or url,
-                        snippet=image_json_snippet(url=url, path=url),
+                    image_ref_data(
+                        cleaned,
+                        block.get("alt") or "image",
+                        snippet=image_json_snippet(url=cleaned),
                     )
                 )
+            elif url.strip():
+                # http(s) or path-like
+                if url.startswith(("http://", "https://")):
+                    images.append(
+                        {
+                            "kind": "url",
+                            "url": url,
+                            "label": block.get("alt") or url,
+                            "copyable": True,
+                            "snippet": image_json_snippet(url=url),
+                        }
+                    )
+                else:
+                    images.append(
+                        image_ref_file(
+                            url,
+                            block.get("alt") or url,
+                            snippet=image_json_snippet(url=url, path=url),
+                        )
+                    )
+        # Nested OpenAI-style image_url: { url: "..." }
+        nested = block.get("image_url")
+        if isinstance(nested, dict) and nested.get("url") and not images:
+            images.extend(
+                collect_image_blocks({"type": "image", "url": nested.get("url"), "alt": block.get("alt")})
+            )
         path = block.get("path") or block.get("file_path") or block.get("filename")
         if path:
             images.append(
@@ -161,6 +223,18 @@ def collect_image_blocks(block: dict) -> list[dict]:
                     snippet=image_json_snippet(path=str(path)),
                 )
             )
+    else:
+        # Blocks that only carry image_url / url / source without a typed image role.
+        candidate = block.get("url") or block.get("image_url") or ""
+        if isinstance(candidate, dict):
+            candidate = candidate.get("url") or candidate.get("image_url") or ""
+        source = block.get("source") if isinstance(block.get("source"), dict) else None
+        has_data = isinstance(candidate, str) and candidate.startswith("data:image")
+        has_b64 = bool(source and source.get("data"))
+        if has_data or has_b64:
+            fake = dict(block)
+            fake["type"] = "image"
+            return collect_image_blocks(fake)
     return images
 
 
@@ -175,17 +249,24 @@ def extract_images_list(raw: Any) -> list[dict]:
         return images
     for item in raw:
         if isinstance(item, str):
-            if item.startswith("data:image"):
-                images.append(image_ref_data(item))
+            cleaned = _normalize_data_image_url(item)
+            if cleaned:
+                images.append(image_ref_data(cleaned))
             elif is_image_path(item) or "/" in item or "\\" in item:
                 images.append(image_ref_file(item, item))
         elif isinstance(item, dict):
+            before = len(images)
             images.extend(collect_image_blocks(item))
-            # bare url field
-            if not images and item.get("url"):
-                url = item["url"]
-                if isinstance(url, str) and url.startswith("data:image"):
-                    images.append(image_ref_data(url))
+            if len(images) == before:
+                for key in ("url", "image_url", "src"):
+                    val = item.get(key)
+                    if isinstance(val, dict):
+                        val = val.get("url") or val.get("image_url")
+                    if isinstance(val, str):
+                        cleaned = _normalize_data_image_url(val)
+                        if cleaned:
+                            images.append(image_ref_data(cleaned))
+                            break
     return images
 
 
@@ -241,39 +322,115 @@ def extract_image_paths_from_text(text: str) -> list[str]:
     return found
 
 
+def _scan_raw_data_image_urls(text: str) -> list[tuple[int, int, str]]:
+    """Locate raw data:image spans in text as (start, end, raw_url)."""
+    found: list[tuple[int, int, str]] = []
+    lower = text.lower()
+    start = 0
+    while True:
+        i = lower.find("data:image/", start)
+        if i < 0:
+            break
+        comma = text.find(",", i)
+        if comma < 0:
+            break
+        header = text[i:comma]
+        header_l = header.lower()
+        j = comma + 1
+        if ";base64" in header_l:
+            # Allow internal whitespace/newlines inside base64, but stop before
+            # trailing prose. Padding '=' ends the payload.
+            while j < len(text):
+                ch = text[j]
+                if ch.isalnum() or ch in "+/":
+                    j += 1
+                    continue
+                if ch == "=":
+                    j += 1
+                    while j < len(text) and text[j] == "=":
+                        j += 1
+                    break
+                if ch in "\r\n\t ":
+                    k = j
+                    while k < len(text) and text[k] in "\r\n\t ":
+                        k += 1
+                    if k < len(text) and (text[k].isalnum() or text[k] in "+/"):
+                        j = k
+                        continue
+                    break
+                break
+        else:
+            # Non-base64 payloads (often svg+xml). Prefer a complete <svg>…</svg>
+            # block when present; otherwise stop at a clear delimiter.
+            if j < len(text) and text[j] == "<":
+                close = lower.find("</svg>", j)
+                if close >= 0:
+                    j = close + len("</svg>")
+                else:
+                    while j < len(text) and text[j] not in "\"'\n\r":
+                        j += 1
+            else:
+                while j < len(text) and text[j] not in "\"'\n\r <>":
+                    j += 1
+        raw = text[i:j]
+        if _normalize_data_image_url(raw):
+            found.append((i, j, raw))
+        start = max(j, i + 1)
+    return found
+
+
 def extract_data_images_from_text(text: str) -> tuple[str, list[dict]]:
     """
     Pull inline data-URL images (and JSON image objects) out of text so we can
     render them, leaving a short placeholder in the text.
     """
-    if not text or "data:image" not in text:
+    if not text or "data:image" not in text.lower():
         return text, []
 
     images: list[dict] = []
+    seen: set[str] = set()
     out = text
 
-    def keep_json(match: re.Match) -> str:
-        url = match.group(1)
-        url_clean = re.sub(r"\s+", "", url)
-        if url_clean.startswith("data:image"):
-            snippet = image_json_snippet(url=url_clean)
-            images.append(image_ref_data(url_clean, snippet=snippet))
-            # Keep a short JSON snippet in the transcript text
-            return snippet
-        return match.group(0)
+    def remember(url: str) -> str | None:
+        cleaned = _normalize_data_image_url(url)
+        if not cleaned:
+            return None
+        # Skip truncated display placeholders (ellipsis) so we don't invent a
+        # second broken image from our own snippet text.
+        if "…" in url or "..." in url:
+            return image_json_snippet(url=cleaned) if cleaned in seen else None
+        key = f"{cleaned[:80]}:{len(cleaned)}"
+        snippet = image_json_snippet(url=cleaned)
+        if key not in seen:
+            seen.add(key)
+            images.append(image_ref_data(cleaned, snippet=snippet))
+        return snippet
 
-    def keep_url(match: re.Match) -> str:
-        url = re.sub(r"\s+", "", match.group(1))
-        if url.startswith("data:image"):
-            snippet = image_json_snippet(url=url)
-            images.append(image_ref_data(url, snippet=snippet))
-            return snippet
-        return match.group(0)
+    def keep_json(match: re.Match) -> str:
+        snippet = remember(match.group(1))
+        return snippet if snippet is not None else match.group(0)
+
+    def keep_md(match: re.Match) -> str:
+        snippet = remember(match.group(1))
+        if snippet is None:
+            return match.group(0)
+        alt_end = match.group(0).find("]")
+        alt = match.group(0)[2:alt_end] if alt_end > 2 else ""
+        return f"![{alt}]({snippet})"
 
     out = DATA_IMAGE_JSON_RE.sub(keep_json, out)
-    # Only replace long base64 payloads still left in free text
-    if "data:image" in out:
-        out = DATA_IMAGE_URL_RE.sub(keep_url, out)
+    out = MARKDOWN_DATA_IMAGE_RE.sub(keep_md, out)
+
+    # Scan remaining free-text data URLs (base64 and non-base64) right-to-left
+    # so offsets stay valid while replacing.
+    if "data:image" in out.lower():
+        spans = _scan_raw_data_image_urls(out)
+        for start, end, raw in reversed(spans):
+            if "…" in raw or "..." in raw:
+                continue
+            snippet = remember(raw)
+            if snippet is not None:
+                out = out[:start] + snippet + out[end:]
 
     return out, images
 
@@ -435,10 +592,18 @@ def extract_text(content: Any) -> str:
     return text
 
 
-def linkify_image_paths_html(text: str, images: list[dict] | None = None) -> str:
+def linkify_image_paths_html(
+    text: str,
+    images: list[dict] | None = None,
+    *,
+    agent: str | None = None,
+    session: str | None = None,
+) -> str:
     """
     Escape text for HTML, then turn known image paths into clickable links.
     Returns safe HTML.
+
+    ``agent`` and ``session`` are required for working /media links (authorization).
     """
     from html import escape
 
@@ -449,24 +614,54 @@ def linkify_image_paths_html(text: str, images: list[dict] | None = None) -> str
     if images:
         for img in images:
             if img.get("kind") == "file" and img.get("path"):
-                paths.append(img["path"])
+                paths.append(str(img["path"]))
                 if img.get("label") and img["label"] != img["path"]:
-                    paths.append(img["label"])
+                    paths.append(str(img["label"]))
     # Also paths still visible in text
     paths.extend(extract_image_paths_from_text(text))
 
     # Longest first so nested prefixes don't break replacement
     for path in sorted(set(paths), key=len, reverse=True):
-        if not path or path not in text:
-            # label may appear even when resolved path differs
-            pass
+        if not path:
+            continue
         esc_path = escape(path)
         if esc_path not in html:
             continue
-        href = "/media?path=" + quote(path, safe="")
+        href = media_href(path, agent=agent, session=session)
         link = (
             f'<a class="img-path-link" href="{escape(href)}" '
             f'target="_blank" rel="noopener">{esc_path}</a>'
         )
         html = html.replace(esc_path, link)
     return html
+
+
+def rebind_turn_media_links(
+    turns: list[dict] | None,
+    *,
+    agent: str,
+    session: str | Path,
+) -> list[dict] | None:
+    """Rebuild path→/media HTML on turns now that agent/session are known."""
+    if not turns:
+        return turns
+    session_str = str(session)
+    for turn in turns:
+        if not isinstance(turn, dict):
+            continue
+        text = turn.get("text") or ""
+        images = turn.get("images") if isinstance(turn.get("images"), list) else []
+        # Refresh file hrefs on image refs too (used by some clients / exports).
+        for img in images:
+            if isinstance(img, dict) and img.get("kind") == "file" and img.get("path"):
+                img["href"] = media_href(str(img["path"]), agent=agent, session=session_str)
+                img["copyable"] = True
+            elif isinstance(img, dict) and img.get("kind") in ("data", "url"):
+                img["copyable"] = True
+        turn["html"] = linkify_image_paths_html(
+            decode_html_entities(str(text)),
+            images,
+            agent=agent,
+            session=session_str,
+        )
+    return turns
