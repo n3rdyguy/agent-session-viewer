@@ -55,6 +55,7 @@ class SessionData(TypedDict, total=False):
     summary: dict[str, Any] | None
     resources: dict[str, Any] | None
     artifacts: list[dict[str, Any]] | None
+    system_artifacts: list[dict[str, Any]] | None
     hunks: list[dict[str, Any]] | None
     terminal_logs: list[dict[str, Any]] | None
     recaps: list[dict[str, Any]] | None

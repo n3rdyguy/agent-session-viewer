@@ -19,11 +19,82 @@ from .agents.grok import (
     grok_terminal_logs,
     grok_updates_timeline,
 )
+from .images import rebind_turn_media_links
 from .markdown_output import format_markdown_content
 from .types import SessionData, Turn
 from .util import collect_parse_diagnostics, iter_jsonl
 
 LOGGER = logging.getLogger(__name__)
+
+# Grok/Codex inject large system/developer/project-instruction blobs as chat
+# turns; the view lifts those into a collapsed System panel. Claude does not
+# persist the same injected base instructions in the transcript — its system
+# turns (hooks, slash commands, reminders) stay inline in the chat.
+_SYSTEM_PANEL_AGENTS = frozenset({"grok", "codex"})
+
+
+def is_system_panel_turn(turn: Turn | dict) -> bool:
+    """True for system / developer / synthetic user-instruction turns."""
+    role = str(turn.get("role") or "").strip().lower()
+    if role in ("system", "system_reminder", "developer"):
+        return True
+    # Grok: synthetic "user (project_instructions)", "user (user_info)", …
+    if role.startswith("user (") and role.endswith(")"):
+        return True
+    # Fallback: Grok environment block recorded as a plain user turn.
+    text = str(turn.get("text") or "").lstrip()
+    if role == "user" and text.startswith("<user_info>"):
+        return True
+    return False
+
+
+def system_turn_title(turn: Turn | dict) -> str:
+    """Human label for a system-panel artifact built from a chat turn."""
+    meta = str(turn.get("meta") or "").strip()
+    role = str(turn.get("role") or "system").strip()
+    if meta and meta not in (turn.get("id"),):
+        return meta.replace("_", " ")
+    role_l = role.lower()
+    if role_l.startswith("user (") and role_l.endswith(")"):
+        return role[6:-1].replace("_", " ")
+    text = str(turn.get("text") or "").lstrip()
+    if role_l == "user" and text.startswith("<user_info>"):
+        return "user info"
+    return role.replace("_", " ")
+
+
+def turns_to_system_artifacts(turns: list[Turn]) -> list[dict]:
+    """Map system-ish turns onto the shared artifact-doc shape."""
+    docs: list[dict] = []
+    for index, turn in enumerate(turns, 1):
+        if not is_system_panel_turn(turn):
+            continue
+        title = system_turn_title(turn)
+        subtitle_parts = [p for p in (turn.get("time"), turn.get("id")) if p]
+        docs.append(
+            {
+                "id": str(turn.get("id") or f"system-{index}"),
+                "title": title,
+                "subtitle": " · ".join(str(p) for p in subtitle_parts),
+                "kind": "markdown",
+                "text": str(turn.get("text") or ""),
+                "role": str(turn.get("role") or "system"),
+                "meta": str(turn.get("meta") or ""),
+            }
+        )
+    return docs
+
+
+def split_system_panel_turns(turns: list[Turn]) -> tuple[list[Turn], list[dict]]:
+    """Return (chat_turns, system_artifacts) for Grok/Codex views."""
+    chat: list[Turn] = []
+    system_turns: list[Turn] = []
+    for turn in turns:
+        if is_system_panel_turn(turn):
+            system_turns.append(turn)
+        else:
+            chat.append(turn)
+    return chat, turns_to_system_artifacts(system_turns)
 
 
 def turns_to_markdown(turns: list[Turn], title: str, agent: str, path: str, extra: str = "") -> str:
@@ -93,16 +164,23 @@ def load_session(agent: str, path: Path) -> SessionData:
                 (time.perf_counter() - started) * 1000,
             )
     session["diagnostics"] = diagnostics
+    # make_turn runs before agent/session are known to the path linker; rebind
+    # /media links so path previews work for every agent.
+    session_agent = str(session.get("agent") or agent)
+    session_path = session.get("path") or path
+    rebind_turn_media_links(session.get("turns"), agent=session_agent, session=session_path)
+    rebind_turn_media_links(session.get("updates"), agent=session_agent, session=session_path)
     return session
 
 
 def _load_session(agent: str, path: Path) -> SessionData:
     """Load a session while the caller owns diagnostic collection."""
     title = path.name
-    turns = []
+    turns: list[Turn] = []
     summary = None
     resources = None
     artifacts = None
+    system_artifacts: list[dict] | None = None
     hunks = None
     terminal_logs = None
     recaps = None
@@ -137,6 +215,10 @@ def _load_session(agent: str, path: Path) -> SessionData:
         terminal_logs = grok_terminal_logs(path)
         recaps = grok_recap_requests(path)
         updates = grok_updates_timeline(path)
+
+    if agent in _SYSTEM_PANEL_AGENTS and turns:
+        turns, system_artifacts = split_system_panel_turns(turns)
+
     return {
         "agent": agent,
         "path": path,
@@ -145,6 +227,7 @@ def _load_session(agent: str, path: Path) -> SessionData:
         "summary": summary,
         "resources": resources,
         "artifacts": artifacts,
+        "system_artifacts": system_artifacts,
         "hunks": hunks,
         "terminal_logs": terminal_logs,
         "recaps": recaps,
@@ -216,3 +299,22 @@ def summary_to_markdown(
             lines.append(f"- [{mark}] `{t.get('id')}` {t.get('content')} ({t.get('status')})")
 
     return "\n".join(lines)
+
+
+def system_artifacts_to_markdown(system_artifacts: list[dict] | None) -> str:
+    """Export lifted system instructions for Grok/Codex markdown downloads."""
+    if not system_artifacts:
+        return ""
+    lines = ["### System instructions", ""]
+    for doc in system_artifacts:
+        title = doc.get("title") or "system"
+        subtitle = doc.get("subtitle") or ""
+        header = f"#### {title}"
+        if subtitle:
+            header += f" · {subtitle}"
+        lines.append(header)
+        lines.append("")
+        text = str(doc.get("text") or "")
+        lines.append(format_markdown_content(text, assume_markdown=True))
+        lines.append("")
+    return "\n".join(lines).rstrip()
