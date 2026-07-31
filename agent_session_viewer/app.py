@@ -29,13 +29,14 @@ from .session import (
     system_artifacts_to_markdown,
     turns_to_markdown,
 )
-from .util import decode_html_entities, decode_view_data, human_time, rel_time
+from .util import decode_html_entities, decode_view_data, epoch_seconds, human_time, rel_time
 
 app = Flask(__name__)
 app.jinja_env.filters["markdown_content"] = format_markdown_content
 app.jinja_env.filters["decode_html_entities"] = decode_html_entities
 app.jinja_env.filters["human_time"] = human_time
 app.jinja_env.filters["rel_time"] = rel_time
+app.jinja_env.filters["epoch_seconds"] = epoch_seconds
 
 
 @app.after_request

@@ -14,6 +14,11 @@
     <a href="{{ url_for('index', agent='claude', q=q or '') }}" class="{{ 'active' if agent == 'claude' else '' }}">Claude</a>
     <a href="{{ url_for('index', agent='codex', q=q or '') }}" class="{{ 'active' if agent == 'codex' else '' }}">Codex</a>
   </div>
+  <label class="md-toggle" title="Expand or collapse all project groups">
+    <input type="checkbox" id="expand-toggle" autocomplete="off">
+    <span class="track" aria-hidden="true"></span>
+    <span class="md-toggle-label">Expand</span>
+  </label>
   <label class="md-toggle" title="Show the first user prompt under each session">
     <input type="checkbox" id="prompts-toggle" autocomplete="off">
     <span class="track" aria-hidden="true"></span>
@@ -22,22 +27,42 @@
 </div>
 
 {% if projects %}
-  <p class="count-line" id="count-line">
-    {{ sessions|length }} session{{ 's' if sessions|length != 1 else '' }} in
-    {{ projects|length }} project{{ 's' if projects|length != 1 else '' }}
-    {% if q %} matching “{{ q }}”{% endif %}
-  </p>
+  <div class="list-meta">
+    <p class="count-line" id="count-line">
+      {{ sessions|length }} session{{ 's' if sessions|length != 1 else '' }} in
+      {{ projects|length }} project{{ 's' if projects|length != 1 else '' }}
+      {% if q %} matching “{{ q }}”{% endif %}
+    </p>
+    <div class="sort-controls">
+      <label class="sort-label" for="sort-field">Sort</label>
+      <select id="sort-field" autocomplete="off">
+        <option value="updated">Updated</option>
+        <option value="created">Created</option>
+      </select>
+      <button type="button" id="sort-dir" autocomplete="off" title="Newest first">↓</button>
+    </div>
+  </div>
   {% for p in projects %}
-  <details class="project-group" open data-project-key="{{ p.key }}">
+  {# Collapsed by default; kept open for server-side search results so they stay
+     visible without JS. list.js applies the persisted Expand state on load. #}
+  <details class="project-group" data-project-key="{{ p.key }}"{% if q %} open{% endif %}>
     <summary class="project-summary">
       <span class="project-name">{{ p.name }}</span>
       {% if p.cwd %}<span class="project-path" title="{{ p.cwd }}">{{ p.cwd }}</span>{% endif %}
       <span class="project-count">{{ p.count }}</span>
+      <button type="button" class="pin-btn" title="Pin project" aria-pressed="false">
+        {# Inline SVG (Bootstrap Icons "pin", MIT) so the glyph follows currentColor. #}
+        <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+          <path d="M4.146.146A.5.5 0 0 1 4.5 0h7a.5.5 0 0 1 .5.5c0 .68-.342 1.174-.646 1.479-.126.125-.25.224-.354.298v4.431l.078.048c.203.127.476.314.751.555C12.36 7.775 13 8.527 13 9.5a.5.5 0 0 1-.5.5h-4v4.5c0 .276-.224 1.5-.5 1.5s-.5-1.224-.5-1.5V10h-4a.5.5 0 0 1-.5-.5c0-.973.64-1.725 1.17-2.189A6 6 0 0 1 5 6.708V2.277a3 3 0 0 1-.354-.298C4.342 1.674 4 1.179 4 .5a.5.5 0 0 1 .146-.354z"/>
+        </svg>
+      </button>
     </summary>
     <ul class="session-list">
       {% for s in p.sessions %}
       <li class="session-row"
-          data-search="{{ ((s.title or '') ~ ' ' ~ (s.id or '') ~ ' ' ~ (s.cwd or '') ~ ' ' ~ (s.path or '') ~ ' ' ~ (s.model or '') ~ ' ' ~ (s.headline or ''))|lower }}">
+          data-search="{{ ((s.title or '') ~ ' ' ~ (s.id or '') ~ ' ' ~ (s.cwd or '') ~ ' ' ~ (s.path or '') ~ ' ' ~ (s.model or '') ~ ' ' ~ (s.headline or ''))|lower }}"
+          data-updated="{{ (s.updated or s.created)|epoch_seconds }}"
+          data-created="{{ (s.created or s.updated)|epoch_seconds }}">
         <a href="{{ url_for('view', path=s.path, agent=s.agent) }}">
           <span class="badge {{ s.agent }}">{{ s.agent }}</span>
           {% if s.aborted %}<span class="badge aborted">aborted</span>{% endif %}
