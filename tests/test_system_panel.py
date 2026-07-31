@@ -166,7 +166,7 @@ def test_attach_prompt_history_anchors_matches_user_turns() -> None:
     history = [
         {"display": "First prompt", "time": "t1"},
         {"display": "Second prompt", "time": "t2"},
-        {"display": "$ ls", "time": "t3"},  # bash — no sequential fallback
+        {"display": "$ ls", "time": "t3"},  # bash - no sequential fallback
     ]
     linked = attach_prompt_history_anchors(history, turns)
     assert linked[0]["turn_anchor"] == "turn-1"

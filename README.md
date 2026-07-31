@@ -11,7 +11,7 @@ Supports:
 Everything stays on your machine. The app only reads session files; it does not send data anywhere.
 
 > Claude Code parity was implemented by Claude Code, which read its own `~/.claude`
-> transcripts to reverse-engineer the format — then found its own edits sitting in the
+> transcripts to reverse-engineer the format - then found its own edits sitting in the
 > live session file and used them as test data for the file-edit parser. The snake ate
 > its own tail and reported the calorie count.
 
@@ -68,8 +68,8 @@ Codex `rollout-*.jsonl` sessions under `~/.codex/sessions/` (and `archived_sessi
 |------|----------------|
 | **List titles** | Safe `thread_name` from `~/.codex/session_index.jsonl`, plus a safe first-user-message headline when available |
 | **Summary** | Session id, model, originator/CLI, cwd, approval/sandbox, reasoning effort, personality, plan type, git branch/commit |
-| **Token usage** | From `event_msg` / `token_count` — last cumulative `total_token_usage` (in / out / cached / reasoning) + context window |
-| **Todos** | Checklist from `update_plan` tool calls — classic JSON `function_call` arguments and newer `custom_tool_call` / `exec` (`tools.update_plan({...})`); last non-empty plan wins |
+| **Token usage** | From `event_msg` / `token_count` - last cumulative `total_token_usage` (in / out / cached / reasoning) + context window |
+| **Todos** | Checklist from `update_plan` tool calls - classic JSON `function_call` arguments and newer `custom_tool_call` / `exec` (`tools.update_plan({...})`); last non-empty plan wins |
 | **Prompt history** | Session prompts from `~/.codex/history.jsonl` (unix `ts` or ISO timestamp), filtered by session id |
 | **Settings** | Approval policy, sandbox, effort, personality, provider, repo URL |
 | **AGENTS.md** | Injected workspace instructions from `world_state` |
@@ -86,7 +86,7 @@ Claude Code `<session-uuid>.jsonl` transcripts under `~/.claude/projects/<encode
 |------|----------------|
 | **List titles** | Real titles from `ai-title` / `custom-title` / `last-prompt` records, plus a first-user-message headline; the working directory comes from the records, not the lossy encoded folder name |
 | **Summary** | Session id, model, cwd, git branch, CLI version, permission mode, reasoning effort, message counts |
-| **Token usage** | Summed `message.usage` — input, output, cache **reads** and **writes**, with per-model rows when a session mixes models (e.g. Opus and Sonnet) |
+| **Token usage** | Summed `message.usage` - input, output, cache **reads** and **writes**, with per-model rows when a session mixes models (e.g. Opus and Sonnet) |
 | **Settings** | Model, CLI version, permission mode, mode, effort, entrypoint, slug, cwd, git branch |
 | **Todos** | Task checklist from the transcript's `task_reminder` attachments (id, subject, status, blockers), falling back to `~/.claude/todos/<session-id>-agent-*.json` for older Claude Code versions |
 | **Chat history** | User + assistant messages, **thinking** (`<encrypted>` when only a signature is stored), tool calls/results matched by **`toolu_` call id** |
@@ -103,11 +103,11 @@ hidden; token totals are summed per message rather than read from a running tota
 Claude also has no equivalent of Codex's `session_meta.base_instructions`: injected
 instructions are never written to the transcript. The memory documents are therefore read
 from disk and carry the caveat **"on disk now, may differ from this session"** in their
-header — they show those files as they stand now, which may differ from what the session
+header - they show those files as they stand now, which may differ from what the session
 was actually given. The caveat sits in the subtitle rather than the body,
 so both copy actions still yield the file verbatim. Only a real file still named
-`CLAUDE.md` is read — a symlink pointing elsewhere resolves to a different name and is
-refused — and oversized files are truncated for display.
+`CLAUDE.md` is read - a symlink pointing elsewhere resolves to a different name and is
+refused - and oversized files are truncated for display.
 
 ---
 
@@ -162,7 +162,7 @@ agent_session_viewer/
     claude.py
 ```
 
-The agent modules use explicit branches and imports—there is no plugin
+The agent modules use explicit branches and imports-there is no plugin
 registry or framework layer. Codex rollout records and Claude transcripts are
 each decoded once per session request and reused for the conversation, summary,
 tokens, events, and patches.
@@ -256,7 +256,7 @@ On Windows, Grok session group folders are URL-encoded paths under `sessions\` (
 Claude also reads two sibling files under `CLAUDE_HOME` when they exist: `todos/<session-id>-agent-*.json`,
 a fallback for Claude Code versions that wrote the checklist to disk rather than into the
 transcript, and `history.jsonl` for that session's prompt history. It reads
-`CLAUDE.md` from `CLAUDE_HOME` and from the session's recorded working directory — the one
+`CLAUDE.md` from `CLAUDE_HOME` and from the session's recorded working directory - the one
 place the viewer reads outside an agent home, guarded by a fixed filename, a post-resolution
 name check, and a size cap. None of these are served by a route; all are read locally and
 degrade to empty when missing or damaged.
@@ -283,8 +283,8 @@ escape through traversal or symlinks, cross-agent paths, home-level configuratio
 and active SVG media are denied. Grok raw downloads prefer `chat_history.jsonl` and fall
 back to `summary.json`; Claude and Codex raw downloads are their authorized JSONL file.
 Claude authorizes exactly two shapes: `<project>/<session>.jsonl` and a subagent transcript
-at `<project>/<session>/subagents/agent-*.jsonl`. Anything else at that depth — a different
-directory name, a different filename prefix, a non-`.jsonl` suffix, or a deeper path — is
+at `<project>/<session>/subagents/agent-*.jsonl`. Anything else at that depth - a different
+directory name, a different filename prefix, a non-`.jsonl` suffix, or a deeper path - is
 denied.
 
 ### Security and supported threat model

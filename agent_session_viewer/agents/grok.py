@@ -982,7 +982,7 @@ def get_grok_conversation(path: Path) -> list[dict]:
                 )
                 continue
 
-            # Unknown types — still show something useful
+            # Unknown types - still show something useful
             rid = obj.get("id") or obj.get("tool_call_id") or seq
             text, images = content_pair(
                 obj.get("content") or obj.get("message") or obj.get("text"),

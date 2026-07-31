@@ -47,7 +47,7 @@
                  data-copy-src="{{ media_url }}"
                  data-copy-path="{{ img.path }}">
           </a>
-          <div class="image-missing" hidden>Preview unavailable — try Open or Copy URL</div>
+          <div class="image-missing" hidden>Preview unavailable - try Open or Copy URL</div>
         </div>
         <figcaption>
           <a href="{{ media_url }}" target="_blank" rel="noopener" title="Open image in new tab">{{ img.label or img.path }}</a>
@@ -74,7 +74,7 @@
 {% endmacro %}
 
 {% macro render_foldable(text, html='', assume_markdown=false, force_fold=false) %}
-  {# One full copy of the content; CSS clips when collapsed — no duplicate snippet.
+  {# One full copy of the content; CSS clips when collapsed - no duplicate snippet.
      force_fold: always wrap (used when bubble-level collapse is not available). #}
   {% if text and (force_fold or text|length > 500) %}
   <div class="fold" data-collapsed="true">
@@ -151,7 +151,8 @@
       <div class="file-reads-split">
         {% if (t.file_read_prefix or '')|trim %}
         <div class="file-read-prefix">
-          {{ render_foldable(t.file_read_prefix, '', false) }}
+          {# Bubble-level collapse/preview covers long text - no nested Show full. #}
+          {{ render_md_block(t.file_read_prefix, '', '', false) }}
         </div>
         {% endif %}
         <div class="inline-file-reads">
@@ -182,15 +183,16 @@
       </div>
       {# Flat view: original tool_result stdout (toggle off). #}
       <div class="file-reads-flat">
-        {{ render_foldable(t.text, t.html or '', assumes_markdown) }}
+        {{ render_md_block(t.text, t.html or '', '', assumes_markdown) }}
       </div>
       {% elif t.role == 'reasoning' %}
-        {{ render_foldable(raw_text, '') }}
+        {{ render_md_block(raw_text, '', '', false) }}
         {% if '<encrypted>' in t.text %}
           <span class="encrypted-tag">&lt;encrypted&gt;</span>
         {% endif %}
       {% else %}
-        {{ render_foldable(t.text, t.html or '', assumes_markdown) }}
+        {# Header chevron + Preview toggle handle collapse for chat and events. #}
+        {{ render_md_block(t.text, t.html or '', '', assumes_markdown) }}
       {% endif %}
     </div>
   </div>
