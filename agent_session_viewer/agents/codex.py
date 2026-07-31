@@ -705,11 +705,13 @@ def get_codex_conversation(
     session_cwd: str | None = None,
 ) -> list[dict]:
     """
-    Full Codex rollout transcript:
-    - event_msg user/agent messages (chat)
+    Full Codex rollout transcript (chat only):
+    - event_msg user/agent messages
     - response_item reasoning / tools
     - developer / AGENTS.md injections as system
-    - patch / image events
+
+    Task / patch / image lifecycle events belong on the Events timeline
+    (``codex_scan_session``), not in Chat history.
     """
     turns: list[dict] = []
     idx = 0
@@ -958,78 +960,8 @@ def get_codex_conversation(
                         )
                     continue
 
-                if et == "patch_apply_end":
-                    call_id = payload.get("call_id") or seq
-                    changes = (
-                        payload.get("changes") if isinstance(payload.get("changes"), dict) else {}
-                    )
-                    lines = [
-                        f"patch_apply · success={payload.get('success')}",
-                        f"id: {call_id}",
-                    ]
-                    if payload.get("stdout"):
-                        lines.append(str(payload.get("stdout"))[:800])
-                    for fpath, ch in list(changes.items())[:30]:
-                        ch = ch if isinstance(ch, dict) else {}
-                        lines.append(f"\n{ch.get('type') or 'edit'}: {fpath}")
-                        diff = ch.get("unified_diff") or ""
-                        if diff:
-                            lines.append(diff[:600] + ("…" if len(diff) > 600 else ""))
-                    turns.append(
-                        make_turn(
-                            role="event",
-                            time=display_time(ts_raw),
-                            id=call_id,
-                            text="\n".join(lines),
-                            meta="patch",
-                        )
-                    )
-                    continue
-
-                if et == "image_generation_end":
-                    call_id = payload.get("call_id") or seq
-                    saved = payload.get("saved_path") or ""
-                    text = (
-                        f"image_generation · {payload.get('status')}\n"
-                        f"id: {call_id}\n"
-                        f"saved: {saved}\n"
-                        f"{str(payload.get('revised_prompt') or '')[:500]}"
-                    )
-                    images = []
-                    if saved:
-                        images.append(image_ref_file(str(saved), str(saved)))
-                    turns.append(
-                        make_turn(
-                            role="event",
-                            time=display_time(ts_raw),
-                            id=call_id,
-                            text=text,
-                            meta="image",
-                            images=images,
-                        )
-                    )
-                    continue
-
-                if et in ("task_started", "task_complete", "turn_aborted"):
-                    turn_id = payload.get("turn_id") or seq
-                    extra = ""
-                    if et == "task_complete":
-                        extra = (
-                            f"\nduration_ms: {payload.get('duration_ms')}"
-                            f"\nttft_ms: {payload.get('time_to_first_token_ms')}"
-                        )
-                        if payload.get("last_agent_message"):
-                            extra += f"\n{str(payload.get('last_agent_message') or '')[:400]}"
-                    turns.append(
-                        make_turn(
-                            role="event",
-                            time=display_time(ts_raw),
-                            id=turn_id,
-                            text=f"{et}\nid: {turn_id}{extra}",
-                            meta="task",
-                        )
-                    )
-                    continue
+                # task_started / task_complete / turn_aborted / patch_apply_end /
+                # image_generation_end are collected for the Events timeline only.
 
             elif t == "world_state" and payload.get("full"):
                 state = payload.get("state") if isinstance(payload.get("state"), dict) else {}

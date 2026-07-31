@@ -52,6 +52,34 @@ def test_codex_fixture_turn_roles_and_ids() -> None:
     assert all(turn["time"] for turn in turns)
 
 
+def test_codex_chat_omits_task_lifecycle_events(tmp_path: Path) -> None:
+    """task_started/complete belong on the Events timeline, not Chat history."""
+    from agent_session_viewer.session import load_session
+
+    rollout = tmp_path / "rollout-codex-task-event.jsonl"
+    rollout.write_text(
+        "\n".join(
+            [
+                '{"timestamp":"2026-07-30T08:00:00Z","type":"session_meta","payload":{"id":"codex-task","cwd":"C:/p"}}',
+                '{"timestamp":"2026-07-30T08:00:01Z","type":"event_msg","payload":{"type":"task_started","turn_id":"t1","model_context_window":200000}}',
+                '{"timestamp":"2026-07-30T08:00:02Z","type":"event_msg","payload":{"type":"user_message","message":"hello"}}',
+                '{"timestamp":"2026-07-30T08:00:03Z","type":"event_msg","payload":{"type":"agent_message","message":"hi"}}',
+                '{"timestamp":"2026-07-30T08:00:04Z","type":"event_msg","payload":{"type":"task_complete","turn_id":"t1","duration_ms":10}}',
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    session = load_session("codex", rollout)
+    assert [t["role"] for t in session["turns"]] == ["user", "assistant"]
+    assert all(t["role"] != "event" for t in session["turns"])
+    assert any(
+        t["role"] == "event" and "task_started" in (t.get("text") or "")
+        for t in (session.get("updates") or [])
+    )
+
+
 def test_claude_fixture_turn_roles_and_tool_call_ids() -> None:
     subagents = load_subagent_records(CLAUDE_SESSION)
     turns = get_claude_conversation(CLAUDE_SESSION, subagents=subagents)
