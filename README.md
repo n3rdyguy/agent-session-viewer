@@ -10,11 +10,6 @@ Supports:
 
 Everything stays on your machine. The app only reads session files; it does not send data anywhere.
 
-> Claude Code parity was implemented by Claude Code, which read its own `~/.claude`
-> transcripts to reverse-engineer the format - then found its own edits sitting in the
-> live session file and used them as test data for the file-edit parser. The snake ate
-> its own tail and reported the calorie count.
-
 ---
 
 ## Features
