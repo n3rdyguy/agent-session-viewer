@@ -905,6 +905,14 @@ def get_grok_conversation(path: Path) -> list[dict]:
                 text, images = content_pair(obj.get("content"), obj.get("images"))
                 synthetic = obj.get("synthetic_reason") or ""
                 role = msg_type
+                # Injected environment block (often without synthetic_reason):
+                # <user_info>…</user_info> plus optional <git_status> etc.
+                if (
+                    msg_type == "user"
+                    and not synthetic
+                    and text.lstrip().startswith("<user_info>")
+                ):
+                    synthetic = "user_info"
                 if synthetic:
                     role = "system_reminder" if "reminder" in synthetic else f"user ({synthetic})"
                 if msg_type == "system":

@@ -129,6 +129,46 @@
     .panel details > summary:hover { color: var(--accent); }
     .panel details[open] > summary { margin-bottom: 0.75rem; color: var(--text); }
 
+    .system-panel summary {
+      font-size: 0.95rem; font-weight: 600; color: var(--accent);
+      letter-spacing: 0.02em;
+    }
+    .system-panel-count {
+      color: var(--muted); font-weight: 500; font-size: 0.88rem;
+    }
+    .system-panel-hint {
+      margin: 0 0 0.75rem; color: var(--muted); font-size: 0.82rem;
+    }
+    /* Nested docs (system + session artifacts): title-only when collapsed, no fold clip. */
+    .collapsible-artifact-docs { margin-top: 0.35rem; gap: 0.55rem; }
+    .collapsible-artifact-doc {
+      border: 1px solid var(--border); border-radius: 10px; background: #12161f;
+      overflow: hidden;
+    }
+    .collapsible-artifact-doc > summary {
+      display: flex; flex-wrap: wrap; align-items: center; gap: 0.45rem 0.75rem;
+      padding: 0.55rem 0.85rem;
+      cursor: pointer; list-style: none; user-select: none;
+      color: var(--muted); font-size: 0.86rem; font-weight: 500;
+      background: #1a2030;
+    }
+    .collapsible-artifact-doc > summary::-webkit-details-marker { display: none; }
+    .collapsible-artifact-doc > summary:hover { color: var(--accent); }
+    .collapsible-artifact-doc[open] > summary {
+      margin-bottom: 0; border-bottom: 1px solid var(--border); color: var(--text);
+    }
+    .collapsible-artifact-title { color: inherit; font-weight: 600; }
+    .collapsible-artifact-doc .sub {
+      color: var(--muted); font-size: 0.78rem;
+      font-family: ui-monospace, Menlo, Consolas, monospace;
+    }
+    .collapsible-artifact-doc .artifact-doc {
+      border: none; border-radius: 0; background: transparent;
+    }
+    .collapsible-artifact-doc .artifact-doc-head {
+      background: transparent; border-bottom: 1px solid var(--border);
+    }
+
     .summary-grid {
       display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
       gap: 0.55rem 1rem; font-size: 0.85rem;

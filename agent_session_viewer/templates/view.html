@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "partials/bubbles.html" import render_bubbles, render_foldable %}
+{% from "partials/bubbles.html" import render_bubbles, render_foldable, render_md_block %}
 {% block title %}{{ title }}{% endblock %}
 {% block content %}
 
@@ -230,60 +230,115 @@
 </div>
 {% endif %}
 
+{% if system_artifacts %}
+<div class="panel system-panel">
+  <details class="system-panel-details">
+    <summary>
+      System instructions
+      <span class="system-panel-count">({{ system_artifacts|length }})</span>
+    </summary>
+    <p class="system-panel-hint">
+      Injected system / developer messages and project instructions, moved out of the chat stream.
+    </p>
+    <div class="artifact-docs collapsible-artifact-docs">
+      {% for a in system_artifacts %}
+      <details class="collapsible-artifact-doc">
+        <summary>
+          <span class="collapsible-artifact-title">{{ a.title or 'system' }}</span>
+          {% if a.subtitle %}<span class="sub">{{ a.subtitle }}</span>{% endif %}
+          {% if a.role %}<span class="msgid">{{ a.role }}</span>{% endif %}
+        </summary>
+        <div class="artifact-doc"
+             data-role={{ (a.title or 'system')|tojson }}
+             data-time=""
+             data-id={{ (a.id or '')|tojson }}
+             data-model=""
+             data-meta={{ (a.subtitle or a.kind or '')|tojson }}>
+          <div class="artifact-doc-head">
+            <div class="artifact-doc-head-main">
+              <strong>{{ a.title or 'system' }}</strong>
+              {% if a.subtitle %}<span class="sub">{{ a.subtitle }}</span>{% endif %}
+            </div>
+            <div class="bubble-header-actions">
+              <div class="copy-menu">
+                <button type="button" class="copy-btn" aria-haspopup="menu" aria-expanded="false" title="Copy document">
+                  Copy ▾
+                </button>
+                <div class="copy-menu-panel" role="menu">
+                  <div class="copy-hint">Copy this document</div>
+                  <button type="button" role="menuitem" data-copy="markdown">As Markdown</button>
+                  <button type="button" role="menuitem" data-copy="raw">As raw text</button>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="artifact-doc-body">
+            {# Full body only after expand — no fold clip / minimal preview. #}
+            {{ render_md_block(a.text or '', '', '', true) }}
+          </div>
+        </div>
+      </details>
+      {% endfor %}
+    </div>
+  </details>
+</div>
+{% endif %}
+
 {% if artifacts or hunks or terminal_logs or recaps %}
 <div class="panel">
   <h3>Session artifacts</h3>
 
   {% if artifacts %}
-  <details open>
+  <details>
     <summary>Documents ({{ artifacts|length }})</summary>
-    <div class="artifact-docs">
+    <div class="artifact-docs collapsible-artifact-docs">
       {% for a in artifacts %}
-      {% set art_foldable = a.text and a.text|length > 500 %}
       {% set artifact_kind = (a.kind or '')|lower %}
       {% set artifact_title = (a.title or '')|lower %}
       {% set artifact_is_markdown = artifact_kind in ['markdown', 'md', 'mdown', 'mkd', 'text/markdown'] or artifact_title.endswith(('.md', '.markdown', '.mdown', '.mkd')) %}
-      <div class="artifact-doc"
-           data-role={{ (a.title or 'document')|tojson }}
-           data-time=""
-           data-id={{ (a.id or '')|tojson }}
-           data-model=""
-           data-meta={{ (a.subtitle or a.kind or '')|tojson }}>
-        <div class="artifact-doc-head">
-          <div class="artifact-doc-head-main">
-            <strong>{{ a.title }}</strong>
-            {% if a.subtitle %}<span class="sub">{{ a.subtitle }}</span>{% endif %}
-            {% if a.kind %}<span class="msgid">{{ a.kind }}</span>{% endif %}
-          </div>
-          <div class="bubble-header-actions">
-            {% if art_foldable %}
-            <button type="button" class="fold-header-btn" aria-expanded="false" title="Expand">
-              <span class="fold-chevron" aria-hidden="true">▾</span>
-            </button>
-            {% endif %}
-            <div class="copy-menu">
-              <button type="button" class="copy-btn" aria-haspopup="menu" aria-expanded="false" title="Copy document">
-                Copy ▾
-              </button>
-              <div class="copy-menu-panel" role="menu">
-                <div class="copy-hint">Copy this document</div>
-                <button type="button" role="menuitem" data-copy="markdown">As Markdown</button>
-                <button type="button" role="menuitem" data-copy="raw">As raw text</button>
+      {# Nested details: title only when collapsed — no fold clip / minimal preview. #}
+      <details class="collapsible-artifact-doc">
+        <summary>
+          <span class="collapsible-artifact-title">{{ a.title or 'document' }}</span>
+          {% if a.subtitle %}<span class="sub">{{ a.subtitle }}</span>{% endif %}
+          {% if a.kind %}<span class="msgid">{{ a.kind }}</span>{% endif %}
+        </summary>
+        <div class="artifact-doc"
+             data-role={{ (a.title or 'document')|tojson }}
+             data-time=""
+             data-id={{ (a.id or '')|tojson }}
+             data-model=""
+             data-meta={{ (a.subtitle or a.kind or '')|tojson }}>
+          <div class="artifact-doc-head">
+            <div class="artifact-doc-head-main">
+              <strong>{{ a.title }}</strong>
+              {% if a.subtitle %}<span class="sub">{{ a.subtitle }}</span>{% endif %}
+            </div>
+            <div class="bubble-header-actions">
+              <div class="copy-menu">
+                <button type="button" class="copy-btn" aria-haspopup="menu" aria-expanded="false" title="Copy document">
+                  Copy ▾
+                </button>
+                <div class="copy-menu-panel" role="menu">
+                  <div class="copy-hint">Copy this document</div>
+                  <button type="button" role="menuitem" data-copy="markdown">As Markdown</button>
+                  <button type="button" role="menuitem" data-copy="raw">As raw text</button>
+                </div>
               </div>
             </div>
           </div>
+          <div class="artifact-doc-body">
+            {{ render_md_block(a.text or '', '', '', artifact_is_markdown) }}
+          </div>
         </div>
-        <div class="artifact-doc-body">
-          {{ render_foldable(a.text or '', '', artifact_is_markdown) }}
-        </div>
-      </div>
+      </details>
       {% endfor %}
     </div>
   </details>
   {% endif %}
 
   {% if hunks %}
-  <details style="margin-top:0.6rem;" {% if hunks|length <= 12 and not artifacts %}open{% endif %}>
+  <details style="margin-top:0.6rem;">
     <summary>{% if agent == 'codex' %}Patches{% else %}Hunk records{% endif %} ({{ hunks|length }}) · file edits</summary>
     <ul class="artifact-list">
       {% for h in hunks %}
@@ -302,7 +357,7 @@
   {% endif %}
 
   {% if terminal_logs %}
-  <details style="margin-top:0.6rem;" {% if terminal_logs|length <= 8 %}open{% endif %}>
+  <details style="margin-top:0.6rem;">
     <summary>Terminal logs ({{ terminal_logs|length }}) · matched by call id</summary>
     <ul class="artifact-list">
       {% for t in terminal_logs %}
