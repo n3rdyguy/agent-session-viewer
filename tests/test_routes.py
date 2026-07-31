@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import importlib
 import json
 import re
 from html import unescape
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
+
+import pytest
 
 
 def _write_claude_session(path: Path) -> None:
@@ -115,6 +118,72 @@ def test_search_query_round_trips_through_agent_filters(client) -> None:
     for href in links:
         parsed = parse_qs(urlparse(unescape(href)).query, keep_blank_values=True)
         assert parsed["q"] == [query]
+
+
+def test_index_groups_sessions_by_project(client, monkeypatch: pytest.MonkeyPatch) -> None:
+    app_module = importlib.import_module("agent_session_viewer.app")
+    monkeypatch.setattr(
+        app_module,
+        "all_sessions",
+        lambda _agent: [
+            {
+                "agent": "claude",
+                "id": "new-1",
+                "path": "new-1.jsonl",
+                "title": "Newest session",
+                "cwd": "C:/proj-new",
+                "updated": "2026-07-30T10:00:00Z",
+                "messages": 4,
+            },
+            {
+                "agent": "claude",
+                "id": "new-2",
+                "path": "new-2.jsonl",
+                "title": "Second session",
+                "cwd": "C:\\proj-new",
+                "updated": "2026-07-29T10:00:00Z",
+                "messages": 2,
+            },
+            {
+                "agent": "grok",
+                "id": "old-1",
+                "path": "old-1",
+                "title": "Older session",
+                "cwd": "C:/proj-old",
+                "updated": "2026-07-20T10:00:00Z",
+                "messages": 1,
+            },
+            {
+                "agent": "codex",
+                "id": "stray",
+                "path": "stray.jsonl",
+                "title": "Stray session",
+                "cwd": "?",
+                "updated": "2026-07-25T10:00:00Z",
+                "messages": None,
+            },
+        ],
+    )
+
+    html = client.get("/").get_data(as_text=True)
+
+    assert html.count('class="project-group"') == 3
+    assert "4 sessions in" in html
+    assert "3 projects" in html
+    assert "(no project)" in html
+    # Windows and POSIX spellings of proj-new merge into one group, newest first.
+    assert 'data-project-key="c:/proj-new"' in html
+    assert html.index('data-project-key="c:/proj-new"') < html.index(
+        'data-project-key="c:/proj-old"'
+    )
+    # Codex's unknown message count no longer renders a "- msgs" placeholder.
+    assert "- msgs" not in html
+
+
+def test_index_loads_list_script(client) -> None:
+    response = client.get("/")
+
+    assert b"/static/list.js" in response.data
 
 
 def test_view_characterization(client, agent_homes: dict[str, Path]) -> None:

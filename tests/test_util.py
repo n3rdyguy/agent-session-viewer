@@ -1,8 +1,60 @@
+from datetime import datetime
 from pathlib import Path
 
 import pytest
 
 from agent_session_viewer import util
+
+# 2026-07-30T10:00:00Z
+_EPOCH = 1785405600.0
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("2026-07-30T10:00:00Z", _EPOCH),
+        ("2026-07-30T12:00:00+02:00", _EPOCH),
+        (1785405600, _EPOCH),
+        (1785405600000.0, _EPOCH),  # ms heuristic, mirrors human_time
+        ("1785405600", _EPOCH),
+        ("", 0.0),
+        (None, 0.0),
+        (True, 0.0),
+        ("garbage", 0.0),
+    ],
+)
+def test_epoch_seconds(value: object, expected: float) -> None:
+    assert util.epoch_seconds(value) == expected
+
+
+def test_epoch_seconds_naive_iso_uses_local_time() -> None:
+    assert util.epoch_seconds("2026-07-30T10:00:00") > 0.0
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        (_EPOCH - 30, "just now"),
+        (_EPOCH + 500, "just now"),  # clock skew
+        (_EPOCH - 300, "5m ago"),
+        (_EPOCH - 3 * 3600, "3h ago"),
+        (_EPOCH - 2 * 86400, "2d ago"),
+        ("", ""),
+        (None, ""),
+        ("garbage", ""),
+    ],
+)
+def test_rel_time(value: object, expected: str) -> None:
+    assert util.rel_time(value, now=_EPOCH) == expected
+
+
+def test_rel_time_beyond_a_week_shows_local_date() -> None:
+    ts = _EPOCH - 30 * 86400
+    assert util.rel_time(ts, now=_EPOCH) == datetime.fromtimestamp(ts).strftime("%Y-%m-%d")
+
+
+def test_rel_time_accepts_iso_strings() -> None:
+    assert util.rel_time("2026-07-30T08:00:00Z", now=_EPOCH) == "2h ago"
 
 
 def test_decode_view_data_decodes_display_values_but_preserves_sources() -> None:

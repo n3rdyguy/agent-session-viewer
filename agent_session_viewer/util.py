@@ -5,6 +5,7 @@ from __future__ import annotations
 import html
 import json
 import logging
+import time
 from contextlib import contextmanager
 from contextvars import ContextVar
 from datetime import datetime
@@ -128,6 +129,46 @@ def human_time(ts: str | float | int | None) -> str:
 def display_time(ts: str | float | int | None) -> str:
     """Format a timestamp for display; ids belong in a turn's ``id`` field."""
     return human_time(ts)
+
+
+def epoch_seconds(ts: str | float | int | None) -> float:
+    """Normalize ISO strings and unix second/ms numbers to epoch seconds; 0.0 when unknown."""
+    if ts is None or ts == "" or isinstance(ts, bool):
+        return 0.0
+    try:
+        if isinstance(ts, (int, float)):
+            value = float(ts)
+        else:
+            text = str(ts).strip()
+            try:
+                value = float(text)
+            except ValueError:
+                return datetime.fromisoformat(text.replace("Z", "+00:00")).timestamp()
+        if value > 1e12:  # ms, same heuristic as human_time
+            value = value / 1000.0
+        return value
+    except (OverflowError, OSError, TypeError, ValueError):
+        return 0.0
+
+
+def rel_time(ts: str | float | int | None, now: float | None = None) -> str:
+    """Compact relative age: 'just now', '5m ago', '3h ago', '2d ago'; a date beyond 7 days."""
+    epoch = epoch_seconds(ts)
+    if epoch == 0.0:
+        return ""
+    diff = (time.time() if now is None else now) - epoch
+    if diff < 60:
+        return "just now"
+    if diff < 3600:
+        return f"{int(diff // 60)}m ago"
+    if diff < 86400:
+        return f"{int(diff // 3600)}h ago"
+    if diff < 7 * 86400:
+        return f"{int(diff // 86400)}d ago"
+    try:
+        return datetime.fromtimestamp(epoch).strftime("%Y-%m-%d")
+    except (OverflowError, OSError, ValueError):
+        return ""
 
 
 def truncate(s: str, n: int = 140) -> str:

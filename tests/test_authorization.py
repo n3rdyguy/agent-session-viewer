@@ -144,6 +144,44 @@ def test_media_requires_session_context_and_stays_within_it(client, agent_homes)
     assert denied.status_code == 403
 
 
+def test_claude_media_allows_only_the_owning_sessions_image_cache(client, agent_homes) -> None:
+    session = _jsonl(agent_homes["claude"] / "projects/project/abc123.jsonl")
+    cached = agent_homes["claude"] / "image-cache/abc123/1.png"
+    cached.parent.mkdir(parents=True)
+    cached.write_bytes(b"\x89PNG\r\n\x1a\n")
+    foreign = agent_homes["claude"] / "image-cache/other-session/1.png"
+    foreign.parent.mkdir(parents=True)
+    foreign.write_bytes(b"\x89PNG\r\n\x1a\n")
+
+    allowed = client.get(
+        "/media",
+        query_string={"agent": "claude", "session": session, "path": cached},
+    )
+    denied = client.get(
+        "/media",
+        query_string={"agent": "claude", "session": session, "path": foreign},
+    )
+
+    assert allowed.status_code == 200
+    assert denied.status_code == 403
+
+
+def test_claude_subagent_media_uses_the_owning_sessions_image_cache(client, agent_homes) -> None:
+    project = agent_homes["claude"] / "projects/project"
+    _jsonl(project / "abc123.jsonl")
+    subagent = _jsonl(project / "abc123/subagents/agent-1.jsonl")
+    cached = agent_homes["claude"] / "image-cache/abc123/1.png"
+    cached.parent.mkdir(parents=True)
+    cached.write_bytes(b"\x89PNG\r\n\x1a\n")
+
+    response = client.get(
+        "/media",
+        query_string={"agent": "claude", "session": subagent, "path": cached},
+    )
+
+    assert response.status_code == 200
+
+
 def test_svg_is_not_served_as_same_origin_media(client, agent_homes) -> None:
     session = agent_homes["grok"] / "sessions/project/session"
     _jsonl(session / "chat_history.jsonl")
