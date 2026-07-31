@@ -19,6 +19,11 @@
       <span class="track" aria-hidden="true"></span>
       <span class="md-toggle-label">Markdown</span>
     </label>
+    <label class="md-toggle" title="Split shell file reads into per-file cards inside tool results">
+      <input type="checkbox" id="file-reads-toggle" autocomplete="off">
+      <span class="track" aria-hidden="true"></span>
+      <span class="md-toggle-label">File cards</span>
+    </label>
     <a class="btn btn-primary" href="{{ url_for('export_md', path=path, agent=agent) }}">
       ↓ Export Markdown
     </a>

@@ -97,7 +97,8 @@
   {% for t in turns %}
   {% set raw_text = t.text.replace('<encrypted>', '') if t.role == 'reasoning' else t.text %}
   {% set fold_text = raw_text if t.role == 'reasoning' else (t.text or '') %}
-  {% set is_foldable = fold_text and fold_text|length > 500 %}
+  {% set has_file_reads = t.file_artifacts and t.file_artifacts|length > 0 %}
+  {% set is_foldable = (fold_text and fold_text|length > 500) or has_file_reads %}
   {% set role_key = (t.role or '')|lower %}
   {% set assumes_markdown = role_key in ['system', 'system_reminder', 'developer'] %}
   <div class="bubble {{ t.role.split(' ')[0] }}"
@@ -105,7 +106,8 @@
        data-time={{ (t.time or '')|tojson }}
        data-id={{ (t.id or '')|tojson }}
        data-model={{ (t.model or '')|tojson }}
-       data-meta={{ (t.meta or '')|tojson }}>
+       data-meta={{ (t.meta or '')|tojson }}
+       {% if has_file_reads %}data-file-reads="true"{% endif %}>
     <div class="bubble-header">
       <div class="bubble-header-main">
         <span class="role">{{ t.role }}</span>
@@ -114,10 +116,12 @@
         {% if t.id %}<span class="msgid">{{ t.id }}</span>{% endif %}
         {% if t.model %}<span>{{ t.model }}</span>{% endif %}
         {% if t.meta and t.meta != t.id %}<span>{{ t.meta }}</span>{% endif %}
+        {% if has_file_reads %}<span class="sub">{{ t.file_artifacts|length }} file{{ 's' if t.file_artifacts|length != 1 else '' }}</span>{% endif %}
       </div>
       <div class="bubble-header-actions">
         {% if is_foldable %}
-        <button type="button" class="fold-header-btn" aria-expanded="false" title="Expand">
+        <button type="button" class="fold-header-btn" aria-expanded="false"
+                title="{{ 'Expand files' if has_file_reads else 'Expand' }}">
           <span class="fold-chevron" aria-hidden="true">▾</span>
         </button>
         {% endif %}
@@ -137,7 +141,44 @@
     <div class="bubble-body">
       {{ render_images(t.images) }}
 
-      {% if t.role == 'reasoning' %}
+      {% if has_file_reads %}
+      {# Split view: non-file output first (top of tool_result), then file cards. #}
+      <div class="file-reads-split">
+        {% if (t.file_read_prefix or '')|trim %}
+        <div class="file-read-prefix">
+          {{ render_foldable(t.file_read_prefix, '', false) }}
+        </div>
+        {% endif %}
+        <div class="inline-file-reads">
+          {% for a in t.file_artifacts %}
+          {% set art_label = a.label or a.path or 'file' %}
+          {% set art_text = a.text or '' %}
+          {% set art_path_l = (a.path or '')|lower %}
+          {% set art_is_md = art_path_l.endswith(('.md', '.markdown', '.mdown', '.mkd')) %}
+          <details class="inline-file-read"{% if a.split and art_text and (t.file_artifacts|length) == 1 %} open{% endif %}>
+            <summary>
+              <span class="inline-file-label">{{ art_label }}</span>
+              {% if art_text %}<span class="sub">{{ art_text|length }} chars</span>{% endif %}
+            </summary>
+            {% if art_text %}
+            <div class="inline-file-body artifact-doc"
+                 data-role={{ art_label|tojson }}
+                 data-time=""
+                 data-id={{ ((t.id or '') ~ ':file:' ~ loop.index0)|tojson }}
+                 data-model=""
+                 data-meta="file_read">
+              {{ render_md_block(art_text, '', 'inline-file-md', art_is_md) }}
+            </div>
+            {% endif %}
+          </details>
+          {% endfor %}
+        </div>
+      </div>
+      {# Flat view: original tool_result stdout (toggle off). #}
+      <div class="file-reads-flat">
+        {{ render_foldable(t.text, t.html or '', assumes_markdown) }}
+      </div>
+      {% elif t.role == 'reasoning' %}
         {{ render_foldable(raw_text, '') }}
         {% if '<encrypted>' in t.text %}
           <span class="encrypted-tag">&lt;encrypted&gt;</span>

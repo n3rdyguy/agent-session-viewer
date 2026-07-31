@@ -7,6 +7,7 @@ from typing import Any
 
 from .. import config
 from ..discovery import safe_claude_headline
+from ..file_reads import extract_shell_command, file_artifacts_for_tool_result
 from ..images import extract_text, extract_text_and_images
 from ..turns import format_tool_args, make_turn
 from ..types import SessionData, Turn
@@ -671,6 +672,8 @@ def _turns_from_records(
     out: list[tuple[str, int, Turn]] = []
     idx = 0
     last_ts = ""
+    # tool_use id → {name, arguments, command?} for file-card pairing
+    tool_meta_by_call: dict[str, dict[str, Any]] = {}
 
     def content_pair(raw: Any) -> tuple[str, list[dict]]:
         return extract_text_and_images(raw, session_dir=session_dir, cwd=session_cwd)
@@ -819,7 +822,22 @@ def _turns_from_records(
                     flush_body()
                     call_id = str(block.get("id") or "")
                     name = str(block.get("name") or "tool")
-                    args = format_tool_args(block.get("input"))
+                    raw_input = block.get("input")
+                    if call_id:
+                        meta_entry: dict[str, Any] = {"name": name}
+                        if raw_input is not None:
+                            meta_entry["arguments"] = raw_input
+                        cmd = extract_shell_command(name, raw_input)
+                        if not cmd and name.lower() in {"bash", "shell", "zsh"}:
+                            # Claude Bash stores the command under input.command
+                            if isinstance(raw_input, dict) and isinstance(
+                                raw_input.get("command"), str
+                            ):
+                                cmd = raw_input["command"]
+                        if cmd:
+                            meta_entry["command"] = cmd
+                        tool_meta_by_call[call_id] = meta_entry
+                    args = format_tool_args(raw_input)
                     text = f"{name}\nid: {call_id}\n{args}".strip()
                     _, images = content_pair(text)
                     add(
@@ -841,14 +859,31 @@ def _turns_from_records(
                     text, images = content_pair(_tool_result_text(block))
                     if block.get("is_error"):
                         text = f"error: {text}" if text else "error"
+                    file_artifacts = None
+                    file_read_prefix = None
+                    meta = tool_meta_by_call.get(call_id) if call_id else None
+                    if meta or text:
+                        artifacts, prefix = file_artifacts_for_tool_result(
+                            tool_name=(meta or {}).get("name"),
+                            arguments=(meta or {}).get("arguments"),
+                            command=(meta or {}).get("command"),
+                            output=text or "",
+                        )
+                        if artifacts:
+                            file_artifacts = list(artifacts)
+                            file_read_prefix = prefix if prefix is not None else ""
+                    if not (text or "").strip() and not images and not file_artifacts:
+                        text = "(empty tool result)"
                     add(
                         make_turn(
                             role="tool_result",
                             time=display_time(ts),
                             id=call_id or seq,
-                            text=text or "(empty tool result)",
+                            text=text,
                             meta=agent_label,
                             images=images,
+                            file_artifacts=file_artifacts,
+                            file_read_prefix=file_read_prefix,
                         ),
                         sort_ts,
                     )
