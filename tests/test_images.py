@@ -102,6 +102,48 @@ def test_resolves_existing_session_image_only(tmp_path: Path) -> None:
     assert resolve_session_image_path("missing.png", session_dir=session_dir) is None
 
 
+def test_prose_path_mentions_only_become_cards_when_the_file_exists(tmp_path: Path) -> None:
+    session_dir = tmp_path / "session"
+    session_dir.mkdir()
+    real = session_dir / "shot.png"
+    real.write_bytes(b"\x89PNG\r\n\x1a\n")
+
+    text, images = extract_text_and_images(
+        f"cache layout is ~/.claude/image-cache/<session-id>/N.png, see {real}",
+        session_dir=session_dir,
+    )
+
+    assert [image["path"] for image in images] == [str(real.resolve())]
+    assert "/N.png" in text  # the placeholder stays plain prose
+
+
+def test_structured_image_refs_resolve_against_the_session(tmp_path: Path) -> None:
+    session_dir = tmp_path / "session"
+    session_dir.mkdir()
+    shot = session_dir / "shot.png"
+    shot.write_bytes(b"\x89PNG\r\n\x1a\n")
+
+    _, images = extract_text_and_images(
+        [{"type": "image", "path": "shot.png"}],
+        extra_images=["missing.png"],  # tool_result-style images field, file gone
+        session_dir=session_dir,
+    )
+
+    assert [image["path"] for image in images] == [str(shot.resolve())]
+
+
+def test_linkify_ignores_paths_without_a_matching_image_card() -> None:
+    html = linkify_image_paths_html(
+        "cache layout is /N.png",
+        [],
+        agent="claude",
+        session="C:/sess.jsonl",
+    )
+
+    assert "img-path-link" not in html
+    assert "/N.png" in html
+
+
 def test_media_href_includes_agent_and_session() -> None:
     href = media_href(r"C:\tmp\a.png", agent="grok", session=r"C:\sess")
     assert href.startswith("/media?")

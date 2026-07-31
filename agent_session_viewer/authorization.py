@@ -144,7 +144,15 @@ def resolve_media_path(session: AuthorizedSession, requested: str) -> Path:
         # Subagent transcripts live two levels below the project directory that owns
         # any associated media, so authorize against the project directory itself.
         parent = session.path.parent
-        roots = (parent.parent.parent,) if parent.name == "subagents" else (parent,)
+        if parent.name == "subagents":
+            project = parent.parent.parent
+            session_id = parent.parent.name
+        else:
+            project = parent
+            session_id = session.path.stem
+        # Pasted images are cached outside the projects tree, in a directory named
+        # by the owning session id; only that session's cache is in bounds.
+        roots = (project, config.CLAUDE_HOME / "image-cache" / session_id)
     else:
         roots = (
             session.path.parent,
