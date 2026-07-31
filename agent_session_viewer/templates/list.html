@@ -38,6 +38,7 @@
       <select id="sort-field" autocomplete="off">
         <option value="updated">Updated</option>
         <option value="created">Created</option>
+        <option value="name">Name</option>
       </select>
       <button type="button" id="sort-dir" autocomplete="off" title="Newest first">↓</button>
     </div>
@@ -45,7 +46,7 @@
   {% for p in projects %}
   {# Collapsed by default; kept open for server-side search results so they stay
      visible without JS. list.js applies the persisted Expand state on load. #}
-  <details class="project-group" data-project-key="{{ p.key }}"{% if q %} open{% endif %}>
+  <details class="project-group" data-project-key="{{ p.key }}" data-name="{{ p.name|lower }}"{% if q %} open{% endif %}>
     <summary class="project-summary">
       <span class="project-name">{{ p.name }}</span>
       {% if p.cwd %}<span class="project-path" title="{{ p.cwd }}">{{ p.cwd }}</span>{% endif %}
@@ -62,7 +63,8 @@
       <li class="session-row"
           data-search="{{ ((s.title or '') ~ ' ' ~ (s.id or '') ~ ' ' ~ (s.cwd or '') ~ ' ' ~ (s.path or '') ~ ' ' ~ (s.model or '') ~ ' ' ~ (s.headline or ''))|lower }}"
           data-updated="{{ (s.updated or s.created)|epoch_seconds }}"
-          data-created="{{ (s.created or s.updated)|epoch_seconds }}">
+          data-created="{{ (s.created or s.updated)|epoch_seconds }}"
+          data-title="{{ (s.title or '')|lower }}">
         <a href="{{ url_for('view', path=s.path, agent=s.agent) }}">
           <span class="badge {{ s.agent }}">{{ s.agent }}</span>
           {% if s.aborted %}<span class="badge aborted">aborted</span>{% endif %}

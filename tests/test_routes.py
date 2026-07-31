@@ -181,9 +181,12 @@ def test_index_groups_sessions_by_project(client, monkeypatch: pytest.MonkeyPatc
     # Groups start collapsed; the Expand toggle is the way to open them all.
     assert " open>" not in html
     assert 'id="expand-toggle"' in html
-    # Sort controls render, and rows carry the epochs the client sorter uses.
+    # Sort controls render, and rows carry the keys the client sorter uses.
     assert 'id="sort-field"' in html
     assert 'id="sort-dir"' in html
+    assert '<option value="name">Name</option>' in html
+    assert 'data-name="proj-new"' in html
+    assert 'data-title="newest session"' in html
     # Every project summary carries a pin toggle.
     assert html.count('class="pin-btn"') == 3
     assert 'data-updated="1785405600.0"' in html  # 2026-07-30T10:00:00Z

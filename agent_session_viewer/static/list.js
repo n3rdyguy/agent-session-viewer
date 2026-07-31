@@ -123,24 +123,31 @@
   const SORT_DIR_KEY = 'asv-list-sort-dir';
   const sortField = document.getElementById('sort-field');
   const sortDirBtn = document.getElementById('sort-dir');
+  const SORT_FIELDS = ['updated', 'created', 'name'];
   let field = 'updated';
   let dir = 'desc';
   try {
-    if (localStorage.getItem(SORT_FIELD_KEY) === 'created') field = 'created';
+    const storedField = localStorage.getItem(SORT_FIELD_KEY);
+    if (SORT_FIELDS.includes(storedField)) field = storedField;
     if (localStorage.getItem(SORT_DIR_KEY) === 'asc') dir = 'asc';
   } catch (e) { /* ignore */ }
 
   function applySort() {
     const sign = dir === 'desc' ? -1 : 1;
-    const rowKey = row => parseFloat(row.dataset[field]) || 0;
+    const byName = field === 'name';
+    const rowKey = row => (byName
+      ? (row.dataset.title || '')
+      : parseFloat(row.dataset[field]) || 0);
+    const cmp = (a, b) => (byName ? String(a).localeCompare(String(b)) : a - b);
     groups.forEach(group => {
       const list = group.querySelector('.session-list');
       if (!list) return;
       Array.from(list.querySelectorAll('.session-row'))
-        .sort((a, b) => sign * (rowKey(a) - rowKey(b)))
+        .sort((a, b) => sign * cmp(rowKey(a), rowKey(b)))
         .forEach(row => list.appendChild(row));
     });
     const groupKey = group => {
+      if (byName) return group.dataset.name || '';
       const keys = Array.from(group.querySelectorAll('.session-row')).map(rowKey);
       if (!keys.length) return 0;
       return dir === 'desc' ? Math.max(...keys) : Math.min(...keys);
@@ -148,21 +155,24 @@
     const parent = groups[0].parentNode;
     const pinRank = group => (pins.has(group.dataset.projectKey) ? 0 : 1);
     groups.slice()
-      .sort((a, b) => (pinRank(a) - pinRank(b)) || sign * (groupKey(a) - groupKey(b)))
+      .sort((a, b) => (pinRank(a) - pinRank(b)) || sign * cmp(groupKey(a), groupKey(b)))
       .forEach(group => parent.insertBefore(group, noMatches));
   }
 
   const updateDirButton = () => {
     sortDirBtn.textContent = dir === 'desc' ? '↓' : '↑';
-    sortDirBtn.title = dir === 'desc' ? 'Newest first' : 'Oldest first';
+    sortDirBtn.title = field === 'name'
+      ? (dir === 'desc' ? 'Z to A' : 'A to Z')
+      : (dir === 'desc' ? 'Newest first' : 'Oldest first');
   };
 
   if (sortField && sortDirBtn) {
     sortField.value = field;
     updateDirButton();
     sortField.addEventListener('change', () => {
-      field = sortField.value === 'created' ? 'created' : 'updated';
+      field = SORT_FIELDS.includes(sortField.value) ? sortField.value : 'updated';
       try { localStorage.setItem(SORT_FIELD_KEY, field); } catch (e) { /* ignore */ }
+      updateDirButton();
       applySort();
     });
     sortDirBtn.addEventListener('click', () => {
