@@ -8,6 +8,9 @@
     document.querySelectorAll('.tab-panel').forEach(p => {
       p.classList.toggle('active', p.id === 'tab-' + name);
     });
+    // Hidden tab panels (display:none) report zero height on first load, so
+    // preview fade (.is-clipped) must be remeasured after a tab is shown.
+    schedulePreviewClipUpdate();
   }
   tabs.forEach(btn => {
     btn.addEventListener('click', () => {
