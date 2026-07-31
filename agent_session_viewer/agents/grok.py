@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from ..file_reads import extract_shell_command, file_artifacts_for_tool_result
 from ..images import extract_text, extract_text_and_images
 from ..turns import format_tool_args, make_turn
 from ..util import (
@@ -351,7 +352,9 @@ def grok_resources(path: Path) -> dict:
     if not todos:
         todos = todos_from_chat_history(path)
     if todos:
-        todos.sort(key=lambda t: (_STATUS_RANK.get(str(t.get("status") or ""), 9), str(t.get("id") or "")))
+        todos.sort(
+            key=lambda t: (_STATUS_RANK.get(str(t.get("status") or ""), 9), str(t.get("id") or ""))
+        )
 
     scheduler = state.get("grok_build.Scheduler") or {}
     tasks = []
@@ -440,7 +443,9 @@ def grok_resources(path: Path) -> dict:
                 "subtitle": f"prompt_history.jsonl · {len(history)} prompt(s)",
                 "kind": "markdown",
                 "text": "\n".join(
-                    f"- {row['time']} — {row['display']}" if row.get("time") else f"- {row['display']}"
+                    f"- {row['time']} — {row['display']}"
+                    if row.get("time")
+                    else f"- {row['display']}"
                     for row in history
                 ),
             }
@@ -760,6 +765,8 @@ def get_grok_conversation(path: Path) -> list[dict]:
 
     turns: list[dict] = []
     idx = 0
+    # call_id → {name, arguments, command?} for file-card pairing
+    tool_meta_by_call: dict[str, dict[str, Any]] = {}
 
     def content_pair(raw: Any, extra_images: Any = None) -> tuple[str, list[dict]]:
         return extract_text_and_images(
@@ -841,9 +848,18 @@ def get_grok_conversation(path: Path) -> list[dict]:
                 for tc in tool_calls:
                     if not isinstance(tc, dict):
                         continue
-                    tcid = tc.get("id") or ""
-                    name = tc.get("name") or "tool"
-                    args = format_tool_args(tc.get("arguments") or tc.get("input"))
+                    tcid = str(tc.get("id") or "")
+                    name = str(tc.get("name") or "tool")
+                    raw_args = tc.get("arguments") if "arguments" in tc else tc.get("input")
+                    if tcid:
+                        meta_entry: dict[str, Any] = {"name": name}
+                        if raw_args is not None:
+                            meta_entry["arguments"] = raw_args
+                        cmd = extract_shell_command(name, raw_args)
+                        if cmd:
+                            meta_entry["command"] = cmd
+                        tool_meta_by_call[tcid] = meta_entry
+                    args = format_tool_args(raw_args)
                     body = f"{name}\nid: {tcid}\n{args}".strip()
                     # Tool args may embed image paths
                     _, tc_images = content_pair(body)
@@ -871,7 +887,7 @@ def get_grok_conversation(path: Path) -> list[dict]:
                 continue
 
             if msg_type == "tool_result":
-                tcid = obj.get("tool_call_id") or obj.get("toolCallId") or ""
+                tcid = str(obj.get("tool_call_id") or obj.get("toolCallId") or "")
                 content, images = content_pair(obj.get("content"), obj.get("images"))
                 # Enrich from terminal log when result only points at a log / is thin
                 log_text = term_map.get(tcid) if tcid else None
@@ -890,13 +906,30 @@ def get_grok_conversation(path: Path) -> list[dict]:
                         # re-scan log for image paths
                         _, more = content_pair(content)
                         images = images + more
+                file_artifacts = None
+                file_read_prefix = None
+                meta = tool_meta_by_call.get(tcid) if tcid else None
+                if meta or content:
+                    artifacts, prefix = file_artifacts_for_tool_result(
+                        tool_name=(meta or {}).get("name"),
+                        arguments=(meta or {}).get("arguments"),
+                        command=(meta or {}).get("command"),
+                        output=content or "",
+                    )
+                    if artifacts:
+                        file_artifacts = list(artifacts)
+                        file_read_prefix = prefix if prefix is not None else ""
+                if not (content or "").strip() and not images and not file_artifacts:
+                    content = "(empty tool result)"
                 turns.append(
                     make_turn(
                         role="tool_result",
                         time=display_time(obj.get("timestamp")),
                         id=tcid or seq,
-                        text=content or "(empty tool result)",
+                        text=content,
                         images=images,
+                        file_artifacts=file_artifacts,
+                        file_read_prefix=file_read_prefix,
                     )
                 )
                 continue
@@ -907,11 +940,7 @@ def get_grok_conversation(path: Path) -> list[dict]:
                 role = msg_type
                 # Injected environment block (often without synthetic_reason):
                 # <user_info>…</user_info> plus optional <git_status> etc.
-                if (
-                    msg_type == "user"
-                    and not synthetic
-                    and text.lstrip().startswith("<user_info>")
-                ):
+                if msg_type == "user" and not synthetic and text.lstrip().startswith("<user_info>"):
                     synthetic = "user_info"
                 if synthetic:
                     role = "system_reminder" if "reminder" in synthetic else f"user ({synthetic})"
