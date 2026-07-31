@@ -24,6 +24,11 @@
       <span class="track" aria-hidden="true"></span>
       <span class="md-toggle-label">File cards</span>
     </label>
+    <label class="md-toggle" title="Show a short preview of every collapsed chat bubble (user, assistant, tools, …). Off = headers only until expanded.">
+      <input type="checkbox" id="preview-toggle" autocomplete="off" checked>
+      <span class="track" aria-hidden="true"></span>
+      <span class="md-toggle-label">Preview</span>
+    </label>
     <a class="btn btn-primary" href="{{ url_for('export_md', path=path, agent=agent) }}">
       ↓ Export Markdown
     </a>

@@ -418,6 +418,10 @@ def test_tool_result_file_reads_template_order_and_modes() -> None:
     assert "artifact-doc-head" not in html
     assert "data-file-reads" in html
     assert "fold-header-btn" in html
+    # tool_result bodies start collapsed; single file card may still be open inside
+    assert 'data-body-collapsed="true"' in html
+    assert "inline-file-read" in html and " open" in html
+    # Preview toggle lives on the view page (global collapsed-snippet control)
     # Prefix block appears before file cards in the HTML
     assert html.index("file-read-prefix") < html.index("inline-file-reads")
     assert html.index("file-reads-split") < html.index("file-reads-flat")

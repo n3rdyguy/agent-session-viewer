@@ -73,9 +73,10 @@
   </div>
 {% endmacro %}
 
-{% macro render_foldable(text, html='', assume_markdown=false) %}
-  {# One full copy of the content; CSS clips when collapsed — no duplicate snippet. #}
-  {% if text and text|length > 500 %}
+{% macro render_foldable(text, html='', assume_markdown=false, force_fold=false) %}
+  {# One full copy of the content; CSS clips when collapsed — no duplicate snippet.
+     force_fold: always wrap (used when bubble-level collapse is not available). #}
+  {% if text and (force_fold or text|length > 500) %}
   <div class="fold" data-collapsed="true">
     <div class="fold-body">
       {{ render_md_block(text, html, '', assume_markdown) }}
@@ -98,8 +99,11 @@
   {% set raw_text = t.text.replace('<encrypted>', '') if t.role == 'reasoning' else t.text %}
   {% set fold_text = raw_text if t.role == 'reasoning' else (t.text or '') %}
   {% set has_file_reads = t.file_artifacts and t.file_artifacts|length > 0 %}
-  {% set is_foldable = (fold_text and fold_text|length > 500) or has_file_reads %}
   {% set role_key = (t.role or '')|lower %}
+  {% set has_images = t.images and t.images|length > 0 %}
+  {# Every chat bubble starts collapsed; Preview toggle controls the clipped snippet. #}
+  {% set body_collapsed = (fold_text and fold_text|length > 0) or has_file_reads or has_images %}
+  {% set is_foldable = body_collapsed %}
   {% set assumes_markdown = role_key in ['system', 'system_reminder', 'developer'] %}
   <div class="bubble {{ t.role.split(' ')[0] }}"
        data-role={{ (t.role or '')|tojson }}
@@ -107,7 +111,8 @@
        data-id={{ (t.id or '')|tojson }}
        data-model={{ (t.model or '')|tojson }}
        data-meta={{ (t.meta or '')|tojson }}
-       {% if has_file_reads %}data-file-reads="true"{% endif %}>
+       {% if has_file_reads %}data-file-reads="true"{% endif %}
+       {% if body_collapsed %}data-body-collapsed="true"{% endif %}>
     <div class="bubble-header">
       <div class="bubble-header-main">
         <span class="role">{{ t.role }}</span>
@@ -120,8 +125,7 @@
       </div>
       <div class="bubble-header-actions">
         {% if is_foldable %}
-        <button type="button" class="fold-header-btn" aria-expanded="false"
-                title="{{ 'Expand files' if has_file_reads else 'Expand' }}">
+        <button type="button" class="fold-header-btn" aria-expanded="false" title="Expand">
           <span class="fold-chevron" aria-hidden="true">▾</span>
         </button>
         {% endif %}
@@ -146,7 +150,7 @@
       <div class="file-reads-split">
         {% if (t.file_read_prefix or '')|trim %}
         <div class="file-read-prefix">
-          {{ render_foldable(t.file_read_prefix, '', false) }}
+          {{ render_md_block(t.file_read_prefix, '', '', false) }}
         </div>
         {% endif %}
         <div class="inline-file-reads">
@@ -176,15 +180,15 @@
       </div>
       {# Flat view: original tool_result stdout (toggle off). #}
       <div class="file-reads-flat">
-        {{ render_foldable(t.text, t.html or '', assumes_markdown) }}
+        {{ render_md_block(t.text, t.html or '', '', assumes_markdown) }}
       </div>
       {% elif t.role == 'reasoning' %}
-        {{ render_foldable(raw_text, '') }}
+        {{ render_md_block(raw_text, '', '', false) }}
         {% if '<encrypted>' in t.text %}
           <span class="encrypted-tag">&lt;encrypted&gt;</span>
         {% endif %}
       {% else %}
-        {{ render_foldable(t.text, t.html or '', assumes_markdown) }}
+        {{ render_md_block(t.text, t.html or '', '', assumes_markdown) }}
       {% endif %}
     </div>
   </div>

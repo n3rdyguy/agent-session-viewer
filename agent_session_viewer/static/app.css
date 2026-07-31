@@ -420,6 +420,30 @@
       align-self: stretch; max-width: 100%; background: var(--tool-result-bg);
       border-color: var(--tool-result-border); border-radius: 10px; font-size: 0.88rem;
     }
+    /* tool_result starts collapsed; body preview vs full controlled by Preview toggle */
+    .bubble[data-body-collapsed="true"] > .bubble-body {
+      position: relative;
+      overflow: hidden;
+    }
+    /* Preview on (default): same clipped fade as .fold collapsed bodies */
+    body.preview-on .bubble[data-body-collapsed="true"] > .bubble-body {
+      max-height: 14rem;
+      -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 62%, transparent 100%);
+      mask-image: linear-gradient(to bottom, #000 0%, #000 62%, transparent 100%);
+    }
+    /* Preview off: hide collapsed body entirely (header only) */
+    body:not(.preview-on) .bubble[data-body-collapsed="true"] > .bubble-body {
+      display: none;
+      max-height: 0;
+      -webkit-mask-image: none;
+      mask-image: none;
+    }
+    .bubble[data-body-collapsed="false"] > .bubble-body {
+      max-height: none;
+      overflow: visible;
+      -webkit-mask-image: none;
+      mask-image: none;
+    }
     .bubble-header {
       display: flex; gap: 0.75rem; align-items: center; justify-content: space-between;
       font-size: 0.78rem; color: var(--muted); flex-wrap: wrap;
@@ -685,11 +709,22 @@
       position: relative;
       transition: max-height 0.15s ease;
     }
-    .fold[data-collapsed="true"] .fold-body {
+    /* Preview on: collapsed folds show the same clipped snippet as tool_result */
+    body.preview-on .fold[data-collapsed="true"] .fold-body {
       max-height: 14rem;
       overflow: hidden;
       -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 62%, transparent 100%);
       mask-image: linear-gradient(to bottom, #000 0%, #000 62%, transparent 100%);
+    }
+    /* Preview off: collapsed folds hide content (Show full still available) */
+    body:not(.preview-on) .fold[data-collapsed="true"] .fold-body {
+      max-height: 0;
+      overflow: hidden;
+      -webkit-mask-image: none;
+      mask-image: none;
+    }
+    body:not(.preview-on) .fold[data-collapsed="true"] .fold-toggle {
+      margin-top: 0.25rem;
     }
     .fold[data-collapsed="false"] .fold-body {
       max-height: none;
