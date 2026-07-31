@@ -161,7 +161,7 @@ refused - and oversized files are truncated for display.
 
 | Need | Notes |
 |------|--------|
-| **Python 3.10+** | Oldest version covered by CI. `.python-version` pins the preferred development version (currently 3.14); `uv` can install it for you. |
+| **[Python](https://www.python.org/downloads/latest) 3.10+** | Oldest version covered by CI. `.python-version` pins the preferred development version (the [latest stable release](https://www.python.org/downloads/latest), currently 3.14); `uv` can install it for you. |
 | **[uv](https://docs.astral.sh/uv/)** | Package manager + project runner (creates `.venv`, installs deps from `uv.lock`). |
 | **A browser** | View the UI at `http://127.0.0.1:5050`. |
 | **Node.js** | **Not required** for running or developing the viewer. Markdown uses package-vendored **marked** and **DOMPurify** under `agent_session_viewer/static/vendor/` (no CDN, no `npm install`). |
