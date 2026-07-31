@@ -1,5 +1,6 @@
 (function() {
   const MD_KEY = 'asv-markdown';
+  const FILE_READS_KEY = 'asv-file-reads';
   const tabs = document.querySelectorAll('#view-tabs [data-tab]');
   tabs.forEach(btn => {
     btn.addEventListener('click', () => {
@@ -281,17 +282,73 @@
     });
   });
 
+  function setDetailsOpen(detailsList, open) {
+    detailsList.forEach(function(d) { d.open = !!open; });
+  }
+
+  function fileReadsIn(root) {
+    return root ? root.querySelectorAll('details.inline-file-read') : [];
+  }
+
+  function syncFileReadHeaderBtn(root) {
+    if (!root) return;
+    var btn = root.querySelector(':scope > .bubble-header .fold-header-btn');
+    if (!btn) return;
+    var files = fileReadsIn(root);
+    if (!files.length) return;
+    var anyOpen = false;
+    files.forEach(function(d) { if (d.open) anyOpen = true; });
+    btn.setAttribute('aria-expanded', anyOpen ? 'true' : 'false');
+    btn.title = anyOpen ? 'Collapse files' : 'Expand files';
+  }
+
+  function fileReadsModeOn() {
+    return document.body.classList.contains('file-reads-on');
+  }
+
   document.querySelectorAll('.fold-header-btn').forEach(function(btn) {
     btn.addEventListener('click', function() {
       var root = btn.closest('.bubble, .artifact-doc');
-      var fold = root ? root.querySelector('.fold') : null;
+      if (!root) return;
+      var files = fileReadsIn(root);
+      // When File cards are on, chevron opens all file rows (+ prefix folds).
+      // When off, behave like a normal fold on the flat tool_result body.
+      if (files.length && fileReadsModeOn()) {
+        var expand = btn.getAttribute('aria-expanded') !== 'true';
+        setDetailsOpen(files, expand);
+        root.querySelectorAll('.file-reads-split .fold').forEach(function(f) {
+          setFoldCollapsed(f, !expand);
+        });
+        btn.setAttribute('aria-expanded', expand ? 'true' : 'false');
+        btn.title = expand ? 'Collapse files' : 'Expand files';
+        return;
+      }
+      var fold = root.querySelector(
+        fileReadsModeOn() ? '.fold' : '.file-reads-flat .fold, .fold'
+      );
+      if (!fold && root.querySelector('.file-reads-flat')) {
+        fold = root.querySelector('.file-reads-flat .fold');
+      }
       toggleFold(fold);
     });
   });
 
+  // Keep tool_result chevron in sync when individual file rows are toggled
+  document.querySelectorAll('details.inline-file-read').forEach(function(d) {
+    d.addEventListener('toggle', function() {
+      syncFileReadHeaderBtn(d.closest('.bubble'));
+    });
+  });
+  document.querySelectorAll('.bubble[data-file-reads="true"]').forEach(syncFileReadHeaderBtn);
+
   function foldsInActiveTab() {
     var active = document.querySelector('.tab-panel.active') || document;
     return active.querySelectorAll('.fold');
+  }
+
+  function fileReadsInActiveTab() {
+    var active = document.querySelector('.tab-panel.active') || document;
+    return active.querySelectorAll('details.inline-file-read');
   }
 
   var expandAll = document.getElementById('expand-all');
@@ -299,6 +356,8 @@
   if (expandAll) {
     expandAll.addEventListener('click', function() {
       foldsInActiveTab().forEach(function(f) { setFoldCollapsed(f, false); });
+      setDetailsOpen(fileReadsInActiveTab(), true);
+      document.querySelectorAll('.bubble[data-file-reads="true"]').forEach(syncFileReadHeaderBtn);
     });
   }
   if (collapseAll) {
@@ -306,6 +365,8 @@
       var anchor = firstVisibleBlock();
       preserveAnchorScroll(anchor, function() {
         foldsInActiveTab().forEach(function(f) { setFoldCollapsed(f, true); });
+        setDetailsOpen(fileReadsInActiveTab(), false);
+        document.querySelectorAll('.bubble[data-file-reads="true"]').forEach(syncFileReadHeaderBtn);
       });
     });
   }
@@ -593,6 +654,29 @@
       try { localStorage.setItem(MD_KEY, mdToggle.checked ? '1' : '0'); } catch (e) {}
       setMarkdownMode(on);
     });
+  }
+
+  // ── File-cards toggle (split shell file reads in tool_result) ──
+  var fileReadsToggle = document.getElementById('file-reads-toggle');
+  function setFileReadsMode(on) {
+    document.body.classList.toggle('file-reads-on', !!on);
+  }
+  if (fileReadsToggle) {
+    var fileReadsPrefer = true;
+    try {
+      var frStored = localStorage.getItem(FILE_READS_KEY);
+      if (frStored === '0') fileReadsPrefer = false;
+      if (frStored === '1') fileReadsPrefer = true;
+    } catch (e) {}
+    fileReadsToggle.checked = fileReadsPrefer;
+    setFileReadsMode(fileReadsPrefer);
+    fileReadsToggle.addEventListener('change', function() {
+      try { localStorage.setItem(FILE_READS_KEY, fileReadsToggle.checked ? '1' : '0'); } catch (e) {}
+      setFileReadsMode(fileReadsToggle.checked);
+    });
+  } else {
+    // No control on this page — default to split view when file cards exist
+    setFileReadsMode(true);
   }
 
 })();

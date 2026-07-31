@@ -6,25 +6,13 @@ import ast
 import json
 import re
 
+from .file_reads import SHELL_OUTPUT_META_RE as _SHELL_OUTPUT_META_RE
 from .util import decode_html_entities
 
 _FULL_FENCE_RE = re.compile(r"^\s*(`{3,}|~{3,})[^\n]*\n[\s\S]*\n\1\s*$")
 _FENCE_LINE_RE = re.compile(r"(?:^|\n)\s*(?:`{3,}|~{3,})(?:[A-Za-z0-9_+-]+)?\s*(?:\n|$)")
 _FENCE_OPENER_RE = re.compile(r"^(\s*)(`{3,}|~{3,})(.*)$")
-# Codex / shell tool wrappers often prefix captured stdout. Treat those blobs as
-# preformatted even when the payload embeds README fences or other Markdown.
-_SHELL_OUTPUT_META_RE = re.compile(
-    r"(?is)\A(?:[ \t]*(?:"
-    r"Exit code\s*:.*|"
-    r"Wall time\s*:.*|"
-    r"Total output lines\s*:.*|"
-    r"Output\s*:|"
-    r"Stdout\s*:|"
-    r"Stderr\s*:|"
-    r"Command (?:output|failed|succeeded)\b.*|"
-    r"Process exited with (?:code|status)\s+\d+.*"
-    r")[ \t]*\n)+"
-)
+# _SHELL_OUTPUT_META_RE: Codex / shell tool wrappers often prefix captured stdout.
 
 _LANGUAGE_RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("php", (r"<\?php\b", r"\bnamespace\s+[\w\\]+;", r"\$\w+\s*=", r"->\w+\s*\(")),
