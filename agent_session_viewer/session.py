@@ -28,7 +28,7 @@ LOGGER = logging.getLogger(__name__)
 
 # Grok/Codex inject large system/developer/project-instruction blobs as chat
 # turns; the view lifts those into a collapsed System panel. Claude does not
-# persist the same injected base instructions in the transcript — its system
+# persist the same injected base instructions in the transcript - its system
 # turns (hooks, slash commands, reminders) stay inline in the chat.
 _SYSTEM_PANEL_AGENTS = frozenset({"grok", "codex"})
 
@@ -46,6 +46,72 @@ def is_system_panel_turn(turn: Turn | dict) -> bool:
     if role == "user" and text.startswith("<user_info>"):
         return True
     return False
+
+
+def _normalize_prompt_text(value: object) -> str:
+    """Collapse whitespace and strip a leading shell ``$ `` prefix for matching."""
+    text = str(value or "").strip()
+    if text.startswith("$ "):
+        text = text[2:].lstrip()
+    return " ".join(text.split())
+
+
+def attach_prompt_history_anchors(
+    history: list[dict] | None,
+    turns: list[Turn] | list[dict] | None,
+) -> list[dict]:
+    """Attach ``turn_anchor`` ids so prompt-history rows can deep-link into chat.
+
+    Prefers text matches against plain user turns, then fills remaining non-bash
+    rows in chronological order.
+    """
+    if not history:
+        return []
+    turns = turns or []
+    user_indices: list[int] = []
+    for i, turn in enumerate(turns):
+        role = str(turn.get("role") or "").strip().lower()
+        if role != "user":
+            continue
+        if is_system_panel_turn(turn):
+            continue
+        user_indices.append(i)
+
+    used: set[int] = set()
+    linked: list[dict] = []
+    for row in history:
+        item = dict(row)
+        display = _normalize_prompt_text(item.get("display"))
+        is_bash = bool(item.get("is_bash")) or str(item.get("display") or "").startswith("$ ")
+        anchor: str | None = None
+
+        if display:
+            for idx in user_indices:
+                if idx in used:
+                    continue
+                turn_text = _normalize_prompt_text(turns[idx].get("text"))
+                if not turn_text:
+                    continue
+                if (
+                    display == turn_text
+                    or turn_text.startswith(display)
+                    or display.startswith(turn_text[:200])
+                ):
+                    anchor = f"turn-{idx}"
+                    used.add(idx)
+                    break
+
+        if anchor is None and not is_bash:
+            for idx in user_indices:
+                if idx not in used:
+                    anchor = f"turn-{idx}"
+                    used.add(idx)
+                    break
+
+        if anchor:
+            item["turn_anchor"] = anchor
+        linked.append(item)
+    return linked
 
 
 def system_turn_title(turn: Turn | dict) -> str:
@@ -194,6 +260,15 @@ def load_session(agent: str, path: Path) -> SessionData:
     session_path = session.get("path") or path
     rebind_turn_media_links(session.get("turns"), agent=session_agent, session=session_path)
     rebind_turn_media_links(session.get("updates"), agent=session_agent, session=session_path)
+    # Deep-link prompt-history rows to the matching user turns in chat.
+    resources = session.get("resources")
+    if isinstance(resources, dict) and resources.get("prompt_history"):
+        resources = dict(resources)
+        resources["prompt_history"] = attach_prompt_history_anchors(
+            resources.get("prompt_history"),
+            session.get("turns"),
+        )
+        session["resources"] = resources
     return session
 
 
@@ -271,29 +346,29 @@ def summary_to_markdown(
 
     if agent == "grok":
         lines = [
-            f"**Model:** {summary.get('model') or '—'}  ",
-            f"**CWD:** `{summary.get('cwd') or '—'}`  ",
-            f"**Agent:** {summary.get('agent_name') or '—'}  ",
-            f"**Reasoning effort:** {summary.get('reasoning_effort') or '—'}  ",
+            f"**Model:** {summary.get('model') or '-'}  ",
+            f"**CWD:** `{summary.get('cwd') or '-'}`  ",
+            f"**Agent:** {summary.get('agent_name') or '-'}  ",
+            f"**Reasoning effort:** {summary.get('reasoning_effort') or '-'}  ",
             f"**Session id:** `{summary.get('id')}`  ",
         ]
     elif agent == "codex":
         lines = [
-            f"**Model:** {summary.get('model') or '—'}  ",
-            f"**CWD:** `{summary.get('cwd') or '—'}`  ",
-            f"**Originator:** {summary.get('agent_name') or '—'}  ",
-            f"**Reasoning effort:** {summary.get('reasoning_effort') or '—'}  ",
-            f"**Sandbox:** {summary.get('sandbox_profile') or '—'}  ",
+            f"**Model:** {summary.get('model') or '-'}  ",
+            f"**CWD:** `{summary.get('cwd') or '-'}`  ",
+            f"**Originator:** {summary.get('agent_name') or '-'}  ",
+            f"**Reasoning effort:** {summary.get('reasoning_effort') or '-'}  ",
+            f"**Sandbox:** {summary.get('sandbox_profile') or '-'}  ",
             f"**Session id:** `{summary.get('id')}`  ",
         ]
     elif agent == "claude":
         lines = [
-            f"**Model:** {summary.get('model') or '—'}  ",
-            f"**CWD:** `{summary.get('cwd') or '—'}`  ",
-            f"**Permission mode:** {summary.get('sandbox_profile') or '—'}  ",
-            f"**Reasoning effort:** {summary.get('reasoning_effort') or '—'}  ",
-            f"**Branch:** {summary.get('head_branch') or '—'}  ",
-            f"**CLI version:** {summary.get('cli_version') or '—'}  ",
+            f"**Model:** {summary.get('model') or '-'}  ",
+            f"**CWD:** `{summary.get('cwd') or '-'}`  ",
+            f"**Permission mode:** {summary.get('sandbox_profile') or '-'}  ",
+            f"**Reasoning effort:** {summary.get('reasoning_effort') or '-'}  ",
+            f"**Branch:** {summary.get('head_branch') or '-'}  ",
+            f"**CLI version:** {summary.get('cli_version') or '-'}  ",
             f"**Session id:** `{summary.get('id')}`  ",
         ]
     else:

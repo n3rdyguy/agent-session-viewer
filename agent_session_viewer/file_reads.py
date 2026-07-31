@@ -25,7 +25,7 @@ SHELL_OUTPUT_META_RE = re.compile(
     r")[ \t]*\n)+"
 )
 
-# Line-anchored meta keys for stripping (must NOT use DOTALL — `.*` stays on one line).
+# Line-anchored meta keys for stripping (must NOT use DOTALL - `.*` stays on one line).
 _SHELL_META_LINE_RE = re.compile(
     r"(?i)^[ \t]*(?:"
     r"Exit code\s*:.*|"
@@ -84,7 +84,7 @@ _SED_RANGE_RE = re.compile(
 _HEAD_RE = re.compile(r"(?is)^\s*(?:head(?:\.exe)?)\s+(?:-n\s+|-)?(?P<n>\d+)\s+(?P<path>.+?)\s*$")
 _TAIL_RE = re.compile(r"(?is)^\s*(?:tail(?:\.exe)?)\s+(?:-n\s+)?(?P<n>\d+)\s+(?P<path>.+?)\s*$")
 _CAT_RE = re.compile(r"(?is)^\s*(?:cat(?:\.exe)?|bat(?:\.exe)?|type)\s+(?P<path>.+?)\s*$")
-# Get-Content / gc — simple forms only
+# Get-Content / gc - simple forms only
 _PS_GET_CONTENT_RE = re.compile(
     r"(?is)^\s*(?:Get-Content|gc)\s+(?P<path>(?:'[^']+'|\"[^\"]+\"|[^\s|]+))"
     r"(?P<rest>.*?)\s*$"
@@ -325,7 +325,7 @@ def split_top_level_commands(command: str) -> list[str] | None:
         if ch == "|" and i + 1 < n and s[i + 1] == "|":
             return None
         if ch == "|":
-            # Pipeline — not a pure sequential file-read batch
+            # Pipeline - not a pure sequential file-read batch
             return None
         if ch == "&":
             return None
@@ -535,7 +535,7 @@ def format_file_read_label(entry: FileReadEntry) -> str:
         start = entry.get("start")
         end = entry.get("end")
         if start is not None and end is not None:
-            return f"{path} · lines {start}–{end}"
+            return f"{path} · lines {start}-{end}"
     if kind == "tail":
         n = entry.get("end") or entry.get("expected_lines")
         if n is not None:
@@ -549,7 +549,7 @@ def _body_lines(body: str) -> list[str]:
         return []
     # Preserve content fidelity: splitlines keeps no line endings; join with \n later
     lines = body.splitlines()
-    # If body ended with newline, splitlines already drops the final empty segment —
+    # If body ended with newline, splitlines already drops the final empty segment -
     # which matches "line count" as printed by tools that count physical lines.
     return lines
 
@@ -586,7 +586,7 @@ def allocate_chunk_sizes(plan: list[FileReadEntry], line_count: int) -> list[int
     """
     Decide how many tool_result body lines belong to each plan entry.
 
-    Uses only the command's line budgets and the captured stdout length —
+    Uses only the command's line budgets and the captured stdout length -
     never reads workspace files.
     """
     if not plan:
@@ -635,7 +635,7 @@ def build_file_artifacts(
     """
     Build nested file artifacts from a pure file-read plan and tool_result stdout.
 
-    Never reads the workspace filesystem — content comes only from ``body``.
+    Never reads the workspace filesystem - content comes only from ``body``.
     """
     if not plan:
         return []
@@ -781,7 +781,7 @@ def native_read_file_artifact(
     """
     Build one file card for structured read tools (Grok ``read_file``, Claude ``Read``).
 
-    Content is the tool_result body only — never re-reads the workspace.
+    Content is the tool_result body only - never re-reads the workspace.
     """
     name = (tool_name or "").strip().lower()
     if "." in name:

@@ -268,7 +268,7 @@ def format_markdown_content(text: str, assume_markdown: bool = False) -> str:
     if not stripped:
         return source
 
-    # Already a single complete fenced block — leave it alone.
+    # Already a single complete fenced block - leave it alone.
     if _FULL_FENCE_RE.match(stripped):
         return source
 
