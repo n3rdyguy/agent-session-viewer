@@ -868,6 +868,9 @@ def get_codex_conversation(
                     cmd = extract_shell_command(str(name), raw_args)
                     if not cmd and ptype == "local_shell_call":
                         cmd = extract_shell_command("shell_command", raw_args)
+                    if not cmd and str(name).lower() == "exec" and isinstance(raw_args, str):
+                        # Retry with explicit exec handling (JS shell_command wrapper)
+                        cmd = extract_shell_command("exec", raw_args)
                     if call_id and cmd:
                         shell_commands_by_call[call_id] = cmd
                     args = raw_args if isinstance(raw_args, str) else pretty_json(raw_args)
@@ -892,17 +895,17 @@ def get_codex_conversation(
                     file_artifacts = None
                     file_read_prefix = None
                     cmd = shell_commands_by_call.get(call_id) if call_id else None
-                    if cmd:
-                        artifacts, prefix = file_artifacts_for_tool_result(
-                            tool_name="shell_command",
-                            arguments=None,
-                            command=cmd,
-                            output=out,
-                        )
-                        if artifacts:
-                            # Keep full stdout on the turn for flat (toggle-off) view.
-                            file_artifacts = list(artifacts)
-                            file_read_prefix = prefix if prefix is not None else ""
+                    # Marker-based splits need only stdout; command helps pure sed/cat batches.
+                    artifacts, prefix = file_artifacts_for_tool_result(
+                        tool_name="shell_command",
+                        arguments=None,
+                        command=cmd,
+                        output=out,
+                    )
+                    if artifacts:
+                        # Keep full stdout on the turn for flat (toggle-off) view.
+                        file_artifacts = list(artifacts)
+                        file_read_prefix = prefix if prefix is not None else ""
                     if not (text or "").strip() and not imgs and not file_artifacts:
                         text = "(empty tool result)"
                     turns.append(

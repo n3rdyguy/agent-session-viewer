@@ -6,4 +6,6 @@
 {"timestamp":"2026-07-30T08:00:05Z","type":"response_item","payload":{"type":"function_call_output","call_id":"call-multi-short","output":"Exit code: 0\nOutput:\nshort-a\nshort-b\n"}}
 {"timestamp":"2026-07-30T08:00:06Z","type":"response_item","payload":{"type":"function_call","name":"shell_command","call_id":"call-cat","arguments":"{\"command\":\"cat README.md\"}"}}
 {"timestamp":"2026-07-30T08:00:07Z","type":"response_item","payload":{"type":"function_call_output","call_id":"call-cat","output":"Exit code: 0\nOutput:\nhello cat\n"}}
-{"timestamp":"2026-07-30T08:00:08Z","type":"event_msg","payload":{"type":"agent_message","message":"Done.","phase":"final"}}
+{"timestamp":"2026-07-30T08:00:08Z","type":"response_item","payload":{"type":"custom_tool_call","name":"exec","call_id":"call-exec-file-markers","input":"const r = await tools.shell_command({command:\"$files = @('a.py','b.py'); foreach ($f in $files) { Write-Output \\\"FILE $f\\\"; Get-Content $f }\",\"workdir\":\"C:\\\\fixture\",\"timeout_ms\":10000}); text(r)"}}
+{"timestamp":"2026-07-30T08:00:09Z","type":"response_item","payload":{"type":"custom_tool_call_output","call_id":"call-exec-file-markers","output":[{"type":"input_text","text":"Script completed\nWall time 1.0 seconds\nOutput:\n"},{"type":"input_text","text":"Exit code: 0\nOutput:\nFILE a.py\r\n   1: alpha\r\nFILE b.py\r\n   1: beta\r\n"}]}}
+{"timestamp":"2026-07-30T08:00:10Z","type":"event_msg","payload":{"type":"agent_message","message":"Done.","phase":"final"}}
