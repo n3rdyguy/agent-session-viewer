@@ -19,6 +19,7 @@ from .agents.grok import (
     grok_terminal_logs,
     grok_updates_timeline,
 )
+from .images import rebind_turn_media_links
 from .markdown_output import format_markdown_content
 from .types import SessionData, Turn
 from .util import collect_parse_diagnostics, iter_jsonl
@@ -163,6 +164,12 @@ def load_session(agent: str, path: Path) -> SessionData:
                 (time.perf_counter() - started) * 1000,
             )
     session["diagnostics"] = diagnostics
+    # make_turn runs before agent/session are known to the path linker; rebind
+    # /media links so path previews work for every agent.
+    session_agent = str(session.get("agent") or agent)
+    session_path = session.get("path") or path
+    rebind_turn_media_links(session.get("turns"), agent=session_agent, session=session_path)
+    rebind_turn_media_links(session.get("updates"), agent=session_agent, session=session_path)
     return session
 
 
