@@ -93,7 +93,7 @@
 {% endmacro %}
 
 {# Import this macro "with context" so nested render_images sees agent + path. #}
-{% macro render_bubbles(turns) %}
+{% macro render_bubbles(turns, id_prefix='') %}
 <div class="chat">
   {% for t in turns %}
   {% set raw_text = t.text.replace('<encrypted>', '') if t.role == 'reasoning' else t.text %}
@@ -106,6 +106,7 @@
   {% set is_foldable = body_collapsed %}
   {% set assumes_markdown = role_key in ['system', 'system_reminder', 'developer'] %}
   <div class="bubble {{ t.role.split(' ')[0] }}"
+       {% if id_prefix %}id="{{ id_prefix }}{{ loop.index0 }}"{% endif %}
        data-role={{ (t.role or '')|tojson }}
        data-time={{ (t.time or '')|tojson }}
        data-id={{ (t.id or '')|tojson }}

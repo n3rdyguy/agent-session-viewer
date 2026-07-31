@@ -3,15 +3,61 @@
   const FILE_READS_KEY = 'asv-file-reads';
   const PREVIEW_KEY = 'asv-preview';
   const tabs = document.querySelectorAll('#view-tabs [data-tab]');
+  function activateTab(name) {
+    tabs.forEach(b => b.classList.toggle('active', b.dataset.tab === name));
+    document.querySelectorAll('.tab-panel').forEach(p => {
+      p.classList.toggle('active', p.id === 'tab-' + name);
+    });
+  }
   tabs.forEach(btn => {
     btn.addEventListener('click', () => {
-      tabs.forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
-      const panel = document.getElementById('tab-' + btn.dataset.tab);
-      if (panel) panel.classList.add('active');
+      activateTab(btn.dataset.tab);
     });
   });
+
+  // Keep scroll-margin / sticky bubble headers in sync with the real header height
+  // (wrap on narrow viewports can grow it beyond the CSS default).
+  function syncStickyHeaderOffset() {
+    const header = document.querySelector('body > header');
+    if (!header) return;
+    const gap = 8; // small breathing room below the bar
+    const px = Math.ceil(header.getBoundingClientRect().height) + gap;
+    document.documentElement.style.setProperty('--sticky-site-header-offset', px + 'px');
+  }
+  syncStickyHeaderOffset();
+  window.addEventListener('resize', syncStickyHeaderOffset);
+
+  // Prompt-history links deep-link into chat bubbles (id="turn-N").
+  function jumpToTurnAnchor(anchorId) {
+    if (!anchorId || !/^turn-\d+$/.test(anchorId)) return false;
+    activateTab('chat');
+    const el = document.getElementById(anchorId);
+    if (!el) return false;
+    syncStickyHeaderOffset();
+    // scroll-margin-top on .bubble accounts for the sticky site header.
+    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    el.classList.add('turn-highlight');
+    clearTimeout(jumpToTurnAnchor._t);
+    jumpToTurnAnchor._t = setTimeout(() => el.classList.remove('turn-highlight'), 2200);
+    return true;
+  }
+  document.querySelectorAll('a.prompt-history-link[href^="#turn-"]').forEach(link => {
+    link.addEventListener('click', (ev) => {
+      const href = link.getAttribute('href') || '';
+      const id = href.charAt(0) === '#' ? href.slice(1) : '';
+      if (jumpToTurnAnchor(id)) {
+        // Keep the hash in the URL for shareable deep links without a hard jump.
+        if (history.replaceState) {
+          history.replaceState(null, '', '#' + id);
+          ev.preventDefault();
+        }
+      }
+    });
+  });
+  if (location.hash && location.hash.indexOf('#turn-') === 0) {
+    // Wait a tick so layout/fonts settle before scrolling.
+    setTimeout(() => jumpToTurnAnchor(location.hash.slice(1)), 0);
+  }
 
   const toast = document.getElementById('copy-toast');
   function showToast(msg) {

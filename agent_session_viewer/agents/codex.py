@@ -644,21 +644,6 @@ def codex_scan_session(path: Path, records: list[dict] | None = None) -> dict:
     if m:
         sid = meta.get("id") or meta.get("session_id") or m.group(1)
     history = codex_prompt_history(str(sid))
-    if history:
-        artifacts.append(
-            {
-                "id": "prompt-history",
-                "title": "Prompt history",
-                "subtitle": f"history.jsonl · {len(history)} prompt(s)",
-                "kind": "markdown",
-                "text": "\n".join(
-                    f"- {row['time']} — {row['display']}"
-                    if row.get("time")
-                    else f"- {row['display']}"
-                    for row in history
-                ),
-            }
-        )
     headline = safe_codex_headline(first_user)
     title = (
         safe_codex_headline((titles.get(str(sid)) or {}).get("thread_name"))
@@ -697,6 +682,7 @@ def codex_scan_session(path: Path, records: list[dict] | None = None) -> dict:
         "reported_completions": [],
         "settings": settings_rows,
         "other_state": [],
+        "prompt_history": history,
     }
 
     return {
