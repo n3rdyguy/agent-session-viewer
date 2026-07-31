@@ -421,7 +421,15 @@ def test_tool_result_file_reads_template_order_and_modes() -> None:
     # tool_result bodies start collapsed; single file card may still be open inside
     assert 'data-body-collapsed="true"' in html
     assert "inline-file-read" in html and " open" in html
-    # Preview toggle lives on the view page (global collapsed-snippet control)
+    # Long plain content still gets Show full / Show less fold controls
+    long = make_turn(role="assistant", id="a1", text=("line\n" * 200))
+    with app.app_context():
+        long_html = str(
+            app.jinja_env.get_template("partials/bubbles.html").module.render_bubbles([long])
+        )
+    assert "fold-toggle" in long_html
+    assert "Show full" in long_html
+    assert "Show less" in long_html
     # Prefix block appears before file cards in the HTML
     assert html.index("file-read-prefix") < html.index("inline-file-reads")
     assert html.index("file-reads-split") < html.index("file-reads-flat")
