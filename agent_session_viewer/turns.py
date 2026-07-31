@@ -19,9 +19,11 @@ def make_turn(
     model: str = "",
     meta: str = "",
     images: list[ImageInfo] | None = None,
+    file_artifacts: list[dict[str, Any]] | None = None,
+    file_read_prefix: str | None = None,
 ) -> Turn:
     imgs = images or []
-    return {
+    turn: Turn = {
         "role": role,
         "time": time,
         "id": id,
@@ -32,6 +34,11 @@ def make_turn(
         # Pre-rendered HTML with clickable image paths (safe/escaped)
         "html": linkify_image_paths_html(decode_html_entities(text), imgs),
     }
+    if file_artifacts:
+        turn["file_artifacts"] = file_artifacts
+        if file_read_prefix is not None:
+            turn["file_read_prefix"] = file_read_prefix
+    return turn
 
 
 def format_tool_args(arguments: Any) -> str:

@@ -13,6 +13,7 @@ from ..discovery import (
     load_codex_session_index,
     safe_codex_headline,
 )
+from ..file_reads import extract_shell_command, file_artifacts_for_tool_result
 from ..images import (
     extract_text,
     extract_text_and_images,
@@ -210,7 +211,9 @@ def codex_prompt_history(session_id: str, limit: int = 200) -> list[dict[str, An
         rows.append(
             {
                 "display": display,
-                "time": human_time(obj.get("ts") if obj.get("ts") is not None else obj.get("timestamp")),
+                "time": human_time(
+                    obj.get("ts") if obj.get("ts") is not None else obj.get("timestamp")
+                ),
             }
         )
         if len(rows) >= limit:
@@ -247,9 +250,7 @@ def extract_update_plan_todos(payload: dict[str, Any]) -> list[dict[str, Any]] |
         for blob in (inp, args):
             if isinstance(blob, str) and "update_plan" in blob:
                 candidates.append(blob)
-            elif isinstance(blob, dict) and (
-                "plan" in blob or "todos" in blob or "items" in blob
-            ):
+            elif isinstance(blob, dict) and ("plan" in blob or "todos" in blob or "items" in blob):
                 # Defensive: some runtimes may store a structured plan under exec input.
                 candidates.append(blob)
 
@@ -651,7 +652,9 @@ def codex_scan_session(path: Path, records: list[dict] | None = None) -> dict:
                 "subtitle": f"history.jsonl · {len(history)} prompt(s)",
                 "kind": "markdown",
                 "text": "\n".join(
-                    f"- {row['time']} — {row['display']}" if row.get("time") else f"- {row['display']}"
+                    f"- {row['time']} — {row['display']}"
+                    if row.get("time")
+                    else f"- {row['display']}"
                     for row in history
                 ),
             }
@@ -724,6 +727,8 @@ def get_codex_conversation(
     """
     turns: list[dict] = []
     idx = 0
+    # call_id → shell command string for pairing tool_result file-read artifacts
+    shell_commands_by_call: dict[str, str] = {}
 
     def content_pair(raw: Any, extra_images: Any = None) -> tuple[str, list[dict]]:
         return extract_text_and_images(
@@ -843,11 +848,29 @@ def get_codex_conversation(
                     continue
 
                 if ptype in ("function_call", "custom_tool_call", "local_shell_call"):
-                    name = payload.get("name") or "tool"
-                    call_id = payload.get("call_id") or payload.get("id") or ""
-                    args = payload.get("arguments") or payload.get("input") or ""
-                    if not isinstance(args, str):
-                        args = pretty_json(args)
+                    name = payload.get("name") or (
+                        "shell_command" if ptype == "local_shell_call" else "tool"
+                    )
+                    call_id = str(payload.get("call_id") or payload.get("id") or "")
+                    raw_args = (
+                        payload.get("arguments")
+                        or payload.get("input")
+                        or payload.get("command")
+                        or ""
+                    )
+                    # local_shell_call sometimes puts command at payload.command
+                    if (
+                        isinstance(raw_args, str)
+                        and not raw_args.strip()
+                        and payload.get("command")
+                    ):
+                        raw_args = {"command": payload.get("command")}
+                    cmd = extract_shell_command(str(name), raw_args)
+                    if not cmd and ptype == "local_shell_call":
+                        cmd = extract_shell_command("shell_command", raw_args)
+                    if call_id and cmd:
+                        shell_commands_by_call[call_id] = cmd
+                    args = raw_args if isinstance(raw_args, str) else pretty_json(raw_args)
                     body = f"{name}\nid: {call_id}\n{args}".strip()
                     _, imgs = content_pair(body)
                     turns.append(
@@ -863,16 +886,34 @@ def get_codex_conversation(
                     continue
 
                 if ptype in ("function_call_output", "custom_tool_call_output"):
-                    call_id = payload.get("call_id") or payload.get("id") or ""
+                    call_id = str(payload.get("call_id") or payload.get("id") or "")
                     out = tool_output_text(payload.get("output"))
                     text, imgs = content_pair(out)
+                    file_artifacts = None
+                    file_read_prefix = None
+                    cmd = shell_commands_by_call.get(call_id) if call_id else None
+                    if cmd:
+                        artifacts, prefix = file_artifacts_for_tool_result(
+                            tool_name="shell_command",
+                            arguments=None,
+                            command=cmd,
+                            output=out,
+                        )
+                        if artifacts:
+                            # Keep full stdout on the turn for flat (toggle-off) view.
+                            file_artifacts = list(artifacts)
+                            file_read_prefix = prefix if prefix is not None else ""
+                    if not (text or "").strip() and not imgs and not file_artifacts:
+                        text = "(empty tool result)"
                     turns.append(
                         make_turn(
                             role="tool_result",
                             time=display_time(ts_raw),
                             id=call_id or seq,
-                            text=text or "(empty tool result)",
+                            text=text,
                             images=imgs,
+                            file_artifacts=file_artifacts,
+                            file_read_prefix=file_read_prefix,
                         )
                     )
                     continue
