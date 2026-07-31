@@ -158,7 +158,8 @@ def test_codex_discovery_is_bounded_and_index_is_cached(
     second = discovery.discover_codex()
 
     assert first[0]["title"] == "Cached title"
-    assert first[0]["messages"] is None
+    # Records are counted across the whole file, but decoding stays bounded.
+    assert first[0]["messages"] == 1_001
     assert second == first
     assert first_decoded == discovery._DISCOVERY_HEAD_RECORDS
     assert decoded == first_decoded
