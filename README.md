@@ -17,13 +17,52 @@ Everything stays on your machine. The app only reads session files; it does not 
 
 ---
 
+## Quick start
+
+```bash
+# 1. Install uv (macOS / Linux; see Installation for Windows and alternatives)
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# 2. From the project directory
+uv sync
+uv run agent-session-viewer
+```
+
+Open **http://127.0.0.1:5050**. Nothing to configure: the viewer reads Grok, Claude, and
+Codex sessions from their default home directories, and only reads them.
+
+The front page groups sessions by project. Click a project header to expand it, then a
+session to open it - or use **Expand** to open every group at once. Type in the search box
+to filter instantly, press Enter for a server-side search, and use **Sort** to order by
+updated, created, or name. Pin the projects you live in and they stay on top.
+
+---
+
 ## Features
+
+### Session list (front page)
+
+- Sessions grouped into collapsible **per-project** sections derived from each session's
+  working directory; sessions without one land in a single "(no project)" group
+- **Expand** toggle: groups start collapsed; opening or closing an individual group is
+  remembered as an override, and flipping the toggle clears the overrides
+- **Pin** any project to float it above the rest (pinned groups keep the active sort)
+- Two-letter **agent badges** on each project header (`CL` / `CO` / `GR`) for the agents
+  that have sessions in that project, in the same colors as the session badges
+- **Sort** by updated, created, or name, ascending or descending
+- Instant client-side filtering as you type, over the same fields as the server search;
+  Enter still submits the form for a server-side search that survives a reload
+- **Prompts** toggle: show the first user prompt under each session row
+- Relative times ("2h ago") with the full timestamp in the tooltip, plus message count and
+  model per row
+- All list preferences (expand, per-group overrides, pins, sort, prompts) are stored in
+  `localStorage`; with JavaScript disabled the list still renders, searches, and navigates
 
 ### All agents
 
 - Unified session list across Grok, Claude, and Codex
 - Filter by agent (All / Grok / Claude / Codex)
-- Search title, ID, path, model, and working directory
+- Search title, ID, path, model, working directory, and first-prompt headline
 - Chat-style conversation view with role-colored bubbles
 - **Preview** toggle: chat and events start collapsed; long content shows a short faded
   snippet (fade only when the body overflows). Preference stored in `localStorage`
@@ -46,8 +85,9 @@ Everything stays on your machine. The app only reads session files; it does not 
 - Resilient JSONL reading: damaged or non-object records are skipped, later records remain
   visible, and the session view reports bounded parse diagnostics
 - Process-local discovery caching: unchanged session cards are reused by list, filter, and
-  search requests; Claude card scans use bounded memory and Codex card scans read only a
-  small metadata/headline window
+  search requests; Claude card scans use bounded memory and Codex card scans decode only a
+  small metadata/headline window. Message counts on the list are the cheap full-file record
+  count (exact chat counts need a full decode and are deferred to the session view)
 
 ### Grok-focused (rich session view)
 
@@ -220,6 +260,7 @@ agent_session_viewer/
   file_reads.py     # Shell file-read splitting into per-file cards
   images.py         # Image/content extraction and safe path handling
   markdown_output.py
+  grouping.py       # Per-project grouping for the session list
   session.py        # Shared load/export shape
   turns.py          # Canonical conversation turns
   types.py          # Shared session, turn, card, image, and diagnostic shapes
@@ -354,7 +395,7 @@ degrade to empty when missing or damaged.
 
 | Path | Purpose |
 |------|---------|
-| `/` | Session list, search, agent filters |
+| `/` | Session list grouped by project, search, agent filters |
 | `/view?agent=&path=` | Session view: summary, todos/prompt history, artifacts, system instructions (Grok/Codex), chat, and events |
 | `/export?agent=&path=` | Download conversation as Markdown |
 | `/raw?agent=&path=` | Download the raw file derived from an authorized session |
@@ -418,6 +459,9 @@ The fixture-based tests cover:
   `structuredPatch`, chat counts that exclude tool-transport records, inline subagent
   tagging, list-title precedence, and the subagent authorization shape
 - Search/filter URL round-tripping for reserved characters and Unicode
+- Per-project grouping (path spellings that merge, the "(no project)" bucket, recency
+  ordering) and the rendered list controls: collapsed-by-default groups, sort options,
+  pins, and per-agent badges
 - Python 3.10 (the supported lower bound) and the preferred development version on both
   Windows and Linux in CI
 
