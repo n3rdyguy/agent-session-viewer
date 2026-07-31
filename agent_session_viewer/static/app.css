@@ -169,6 +169,81 @@
       background: transparent; border-bottom: 1px solid var(--border);
     }
 
+    /* File-read split vs flat tool_result (body.file-reads-on toggled in app.js) */
+    body:not(.file-reads-on) .file-reads-split { display: none !important; }
+    body.file-reads-on .bubble[data-file-reads] .file-reads-flat { display: none !important; }
+    .file-read-prefix {
+      margin: 0 0 0.45rem;
+      padding: 0.35rem 0.55rem;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #0c1214;
+      color: var(--muted);
+      font-size: 0.8rem;
+    }
+    .file-read-prefix .bubble-text {
+      font-family: ui-monospace, Menlo, Consolas, monospace;
+      font-size: 0.78rem;
+      white-space: pre-wrap;
+    }
+
+    /* File-read cards inside tool_result: one headline, full body when open */
+    .inline-file-reads {
+      display: flex; flex-direction: column; gap: 0.35rem;
+      margin: 0.1rem 0 0.45rem;
+    }
+    .inline-file-read {
+      border: 1px solid var(--tool-result-border, #2a4a48);
+      border-radius: 8px;
+      background: #0f1618;
+      overflow: hidden;
+    }
+    .inline-file-read > summary {
+      display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem 0.65rem;
+      padding: 0.4rem 0.7rem;
+      cursor: pointer; list-style: none; user-select: none;
+      background: #152022;
+      color: var(--muted);
+      font-family: ui-monospace, Menlo, Consolas, monospace;
+      font-size: 0.8rem;
+    }
+    .inline-file-read > summary::-webkit-details-marker { display: none; }
+    .inline-file-read > summary::before {
+      content: "▸";
+      display: inline-block;
+      width: 0.9em;
+      color: var(--muted);
+      transition: transform 0.12s ease;
+      flex-shrink: 0;
+    }
+    .inline-file-read[open] > summary::before {
+      transform: rotate(90deg);
+    }
+    .inline-file-read > summary:hover { color: var(--accent); }
+    .inline-file-read[open] > summary {
+      border-bottom: 1px solid var(--border);
+      color: var(--text);
+    }
+    .inline-file-label { font-weight: 600; color: inherit; }
+    .inline-file-read > summary .sub {
+      color: var(--muted);
+      font-size: 0.75rem;
+    }
+    .inline-file-body.artifact-doc {
+      border: none; border-radius: 0; background: transparent;
+    }
+    .inline-file-body {
+      padding: 0.55rem 0.75rem 0.7rem;
+    }
+    .inline-file-body .bubble-text {
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-family: ui-monospace, Menlo, Consolas, monospace;
+      font-size: 0.8rem;
+      line-height: 1.45;
+      max-height: none;
+    }
+
     .summary-grid {
       display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
       gap: 0.55rem 1rem; font-size: 0.85rem;

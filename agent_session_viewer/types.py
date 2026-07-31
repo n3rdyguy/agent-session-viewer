@@ -24,6 +24,10 @@ class Turn(TypedDict, total=False):
     meta: str
     images: list[ImageInfo]
     html: str
+    # Nested file-read cards inside tool_result (from shell file-pull commands)
+    file_artifacts: list[dict[str, Any]]
+    # Non-file tool_result text that belongs above the file cards (e.g. Exit code)
+    file_read_prefix: str
 
 
 class ParseDiagnostic(TypedDict):

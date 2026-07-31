@@ -128,8 +128,32 @@ def turns_to_markdown(turns: list[Turn], title: str, agent: str, path: str, extr
             "system_reminder",
             "developer",
         }
-        lines.append(format_markdown_content(t["text"], assume_markdown=assumes_markdown))
-        lines.append("")
+        file_artifacts = t.get("file_artifacts") or []
+        if file_artifacts:
+            split_arts = [a for a in file_artifacts if a.get("split") and a.get("text")]
+            # Prefer prefix (top non-file meta) over full text to avoid duplicating
+            # file bodies that are exported as subsections below.
+            prefix = t.get("file_read_prefix")
+            if prefix is None:
+                prefix = t.get("text") or ""
+            if str(prefix).strip():
+                lines.append(
+                    format_markdown_content(str(prefix), assume_markdown=assumes_markdown)
+                )
+                lines.append("")
+            for a in split_arts:
+                label = a.get("label") or a.get("path") or "file"
+                lines.append(f"#### {label}")
+                lines.append("")
+                path = str(a.get("path") or "")
+                art_md = path.lower().endswith((".md", ".markdown", ".mdown", ".mkd"))
+                lines.append(
+                    format_markdown_content(str(a.get("text") or ""), assume_markdown=art_md)
+                )
+                lines.append("")
+        else:
+            lines.append(format_markdown_content(t["text"], assume_markdown=assumes_markdown))
+            lines.append("")
         lines.append("---")
         lines.append("")
     return "\n".join(lines)
