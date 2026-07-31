@@ -4,7 +4,6 @@
 {% block content %}
 
 <div class="view-header">
-  <a href="{{ url_for('index', agent=agent) }}" style="color:var(--accent); font-size:0.9rem;">← Back to list</a>
   <h2 class="view-title" title="{{ title }}">
     {% if summary and summary.aborted %}<span class="badge aborted">aborted</span>{% endif %}
     <span class="view-title-text">{{ title }}</span>

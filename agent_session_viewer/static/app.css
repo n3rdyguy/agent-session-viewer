@@ -15,9 +15,10 @@
       --reason-bg: #1a1a2e;
       --reason-border: #3d3d6b;
       --system-bg: #1a1d24;
-      /* Sticky site header height (+ gap). Used for nested sticky bubble headers
-         and for scroll-into-view offsets (prompt-history deep links). */
-      --sticky-site-header-offset: 3.35rem;
+      /* Sticky site header height (flush, no gap). Used for nested sticky bubble
+         headers and for scroll-into-view offsets (prompt-history deep links).
+         JS overwrites this from the measured header height on load/resize. */
+      --sticky-site-header-offset: 3.1rem;
     }
     * { box-sizing: border-box; }
     body {
@@ -463,30 +464,40 @@
 
     .chat { display: flex; flex-direction: column; gap: 1.1rem; }
     .bubble {
-      max-width: 92%; padding: 0; border-radius: 14px;
+      --bubble-radius: 14px;
+      --bubble-header-bg: var(--card);
+      max-width: 92%; padding: 0; border-radius: var(--bubble-radius);
       border: 1px solid var(--border); position: relative;
       /* Do not set overflow:hidden/clip - it breaks position:sticky headers */
     }
     .bubble-body { padding: 0.75rem 1.15rem 0.9rem; }
-    .bubble.user { align-self: flex-end; background: var(--user-bg); border-bottom-right-radius: 4px; }
+    .bubble.user {
+      align-self: flex-end; background: var(--user-bg); --bubble-header-bg: var(--user-bg);
+      border-bottom-right-radius: 4px;
+    }
     .bubble.assistant, .bubble.agent_message {
-      align-self: flex-start; background: var(--assistant-bg); border-bottom-left-radius: 4px;
+      align-self: flex-start; background: var(--assistant-bg); --bubble-header-bg: var(--assistant-bg);
+      border-bottom-left-radius: 4px;
     }
     .bubble.reasoning {
       align-self: stretch; max-width: 100%; background: var(--reason-bg);
-      border-color: var(--reason-border); border-radius: 10px;
+      --bubble-header-bg: var(--reason-bg); --bubble-radius: 10px;
+      border-color: var(--reason-border); border-radius: var(--bubble-radius);
     }
     .bubble.system, .bubble.system_reminder {
       align-self: stretch; max-width: 100%; background: var(--system-bg);
-      border-radius: 10px; font-size: 0.85rem; opacity: 0.92;
+      --bubble-header-bg: var(--system-bg); --bubble-radius: 10px;
+      border-radius: var(--bubble-radius); font-size: 0.85rem; opacity: 0.92;
     }
     .bubble.tool_call, .bubble.event {
       align-self: stretch; max-width: 100%; background: var(--tool-bg);
-      border-color: var(--tool-border); border-radius: 10px; font-size: 0.88rem;
+      --bubble-header-bg: var(--tool-bg); --bubble-radius: 10px;
+      border-color: var(--tool-border); border-radius: var(--bubble-radius); font-size: 0.88rem;
     }
     .bubble.tool_result {
       align-self: stretch; max-width: 100%; background: var(--tool-result-bg);
-      border-color: var(--tool-result-border); border-radius: 10px; font-size: 0.88rem;
+      --bubble-header-bg: var(--tool-result-bg); --bubble-radius: 10px;
+      border-color: var(--tool-result-border); border-radius: var(--bubble-radius); font-size: 0.88rem;
     }
     /* tool_result starts collapsed; body preview vs full controlled by Preview toggle */
     .bubble[data-body-collapsed="true"] > .bubble-body {
@@ -525,8 +536,21 @@
       top: var(--sticky-site-header-offset);
       z-index: 8;
       padding: 0.55rem 1.15rem;
+      background: var(--bubble-header-bg);
+      /* Match the card’s top radius at rest so corners aren’t square inside the bubble */
+      border-top-left-radius: var(--bubble-radius, 14px);
+      border-top-right-radius: var(--bubble-radius, 14px);
       border-bottom: 1px solid rgba(42, 47, 58, 0.85);
       box-shadow: 0 1px 0 rgba(0,0,0,0.15);
+    }
+    /* When stuck under the site header: square top edges + opaque seal above so
+       scrolled content can’t peek through the rounded-corner wedges. */
+    .bubble-header.is-stuck {
+      border-top-left-radius: 0;
+      border-top-right-radius: 0;
+      box-shadow:
+        0 -12px 0 0 var(--bubble-header-bg),
+        0 1px 0 rgba(0,0,0,0.15);
     }
     .bubble-header-main {
       display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap; min-width: 0;
@@ -534,12 +558,6 @@
     .bubble-header-actions {
       display: flex; align-items: center; gap: 0.35rem; margin-left: auto; flex-shrink: 0;
     }
-    .bubble.user .bubble-header { background: var(--user-bg); }
-    .bubble.assistant .bubble-header, .bubble.agent_message .bubble-header { background: var(--assistant-bg); }
-    .bubble.reasoning .bubble-header { background: var(--reason-bg); }
-    .bubble.system .bubble-header, .bubble.system_reminder .bubble-header { background: var(--system-bg); }
-    .bubble.tool_call .bubble-header, .bubble.event .bubble-header { background: var(--tool-bg); }
-    .bubble.tool_result .bubble-header { background: var(--tool-result-bg); }
     .bubble-header .role { font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; }
     .bubble-header .msgid {
       font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.72rem;

@@ -19,16 +19,45 @@
   });
 
   // Keep scroll-margin / sticky bubble headers in sync with the real header height
-  // (wrap on narrow viewports can grow it beyond the CSS default).
+  // (wrap on narrow viewports can grow it beyond the CSS default). Stick flush
+  // under the site bar — no extra gap (content would show through otherwise).
+  function stickySiteHeaderOffsetPx() {
+    const raw = getComputedStyle(document.documentElement)
+      .getPropertyValue('--sticky-site-header-offset').trim();
+    const px = parseFloat(raw);
+    return Number.isFinite(px) ? px : 0;
+  }
+
   function syncStickyHeaderOffset() {
     const header = document.querySelector('body > header');
     if (!header) return;
-    const gap = 8; // small breathing room below the bar
-    const px = Math.ceil(header.getBoundingClientRect().height) + gap;
+    const px = Math.ceil(header.getBoundingClientRect().height);
     document.documentElement.style.setProperty('--sticky-site-header-offset', px + 'px');
+    updateStuckBubbleHeaders();
   }
+
+  // Toggle .is-stuck so sticky bubble headers can square off under the site bar
+  // and seal corner peeks (rounded radius would otherwise show scrolled content).
+  function updateStuckBubbleHeaders() {
+    const top = stickySiteHeaderOffsetPx();
+    document.querySelectorAll('.bubble-header').forEach(function(h) {
+      const bubble = h.closest('.bubble');
+      if (!bubble) {
+        h.classList.remove('is-stuck');
+        return;
+      }
+      const hr = h.getBoundingClientRect();
+      const br = bubble.getBoundingClientRect();
+      // Pinned when the header is at the sticky offset and the bubble still
+      // extends below it (otherwise the header is scrolling away with the card).
+      const stuck = hr.top <= top + 1 && br.bottom > hr.bottom + 1;
+      h.classList.toggle('is-stuck', stuck);
+    });
+  }
+
   syncStickyHeaderOffset();
   window.addEventListener('resize', syncStickyHeaderOffset);
+  window.addEventListener('scroll', updateStuckBubbleHeaders, { passive: true });
 
   // Prompt-history links deep-link into chat bubbles (id="turn-N").
   function jumpToTurnAnchor(anchorId) {

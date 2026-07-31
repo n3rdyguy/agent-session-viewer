@@ -258,6 +258,20 @@ Open **http://127.0.0.1:5050** in any modern browser. No build step and no Node.
 
 The server binds to `127.0.0.1` only (local loopback).
 
+### Windows 10 + WSL
+
+Some Windows 10 / WSL installations do not forward WSL loopback ports to Windows. In
+that case, bind the server to all WSL interfaces:
+
+```bash
+uv run agent-session-viewer --host 0.0.0.0
+```
+
+Flask will print a WSL address such as `http://172.27.212.98:5050`; open that address
+from your Windows browser. The WSL IP address can change when WSL restarts, so use the
+address printed each time you start the server. Binding to `0.0.0.0` makes the server
+reachable beyond WSL loopback; do not use it on an untrusted network.
+
 ### Environment variables
 
 See [`.env.example`](.env.example). Copy it to `.env` in the directory where you start the
