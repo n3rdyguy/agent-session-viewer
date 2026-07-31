@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 from typing import Any
 
+from .. import config
 from ..discovery import (
     codex_headline_was_aborted,
     load_codex_session_index,
@@ -28,6 +30,256 @@ from ..util import (
     report_record_failure,
     safe_int,
 )
+
+# Bare object keys in Codex's `tools.update_plan({plan:[...]})` exec scripts.
+_JS_BARE_KEY = re.compile(r"([{\[,]\s*)([A-Za-z_][A-Za-z0-9_]*)\s*:")
+_UPDATE_PLAN_CALL = re.compile(r"(?:tools\.)?update_plan\s*\(")
+
+
+def _balanced_paren_slice(text: str, open_paren_index: int) -> str | None:
+    """Return the inside of the (...) that starts at ``open_paren_index``."""
+    if open_paren_index < 0 or open_paren_index >= len(text) or text[open_paren_index] != "(":
+        return None
+    depth = 0
+    in_string = False
+    quote = ""
+    escape = False
+    start = open_paren_index + 1
+    for i in range(open_paren_index, len(text)):
+        ch = text[i]
+        if in_string:
+            if escape:
+                escape = False
+            elif ch == "\\":
+                escape = True
+            elif ch == quote:
+                in_string = False
+            continue
+        if ch in ('"', "'"):
+            in_string = True
+            quote = ch
+            continue
+        if ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth -= 1
+            if depth == 0:
+                return text[start:i]
+    return None
+
+
+def _parse_js_object_literal(text: str) -> Any | None:
+    """Parse a JSON-ish JS object literal (double-quoted strings, bare keys)."""
+    candidate = text.strip()
+    if not candidate:
+        return None
+    # Quote bare identifiers used as keys: {plan:[...]} → {"plan":[...]}
+    quoted = _JS_BARE_KEY.sub(r'\1"\2":', candidate)
+    try:
+        return json.loads(quoted)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return None
+
+
+def _coerce_plan_payload(data: Any) -> list[dict[str, Any]] | None:
+    """Normalize update_plan args into a list of plan step dicts."""
+    if isinstance(data, list):
+        items = data
+    elif isinstance(data, dict):
+        items = data.get("plan")
+        if items is None:
+            items = data.get("todos")
+        if items is None:
+            items = data.get("items")
+        if items is None and any(
+            isinstance(data.get(k), str) for k in ("step", "content", "text", "description")
+        ):
+            items = [data]
+    else:
+        return None
+    if not isinstance(items, list) or not items:
+        return None
+    out: list[dict[str, Any]] = []
+    for item in items:
+        if isinstance(item, str) and item.strip():
+            out.append({"step": item.strip(), "status": "pending"})
+            continue
+        if not isinstance(item, dict):
+            continue
+        out.append(item)
+    return out or None
+
+
+def plan_items_to_todos(items: Any, *, explanation: str = "") -> list[dict[str, Any]]:
+    """Map Codex ``update_plan`` steps onto the shared todo shape."""
+    todos: list[dict[str, Any]] = []
+    if not isinstance(items, list):
+        return todos
+    note = str(explanation or "").strip()
+    if len(note) > 140:
+        note = note[:139].rstrip() + "…"
+    for index, item in enumerate(items, 1):
+        if isinstance(item, str):
+            content = item.strip()
+            status = "pending"
+            item_id = str(index)
+        elif isinstance(item, dict):
+            content = (
+                item.get("step")
+                or item.get("content")
+                or item.get("text")
+                or item.get("description")
+                or item.get("subject")
+                or ""
+            )
+            status = item.get("status") or "unknown"
+            item_id = str(item.get("id") or index)
+        else:
+            continue
+        if not str(content).strip() and not str(status).strip():
+            continue
+        todos.append(
+            {
+                "id": item_id,
+                "content": str(content),
+                "status": str(status),
+                # Codex plans have no priority; surface the latest explanation once.
+                "priority": note if index == 1 and note else "",
+            }
+        )
+    # Preserve plan order (checklist sequence), not status-sorted.
+    return todos
+
+
+def parse_update_plan_blob(blob: Any) -> list[dict[str, Any]] | None:
+    """
+    Parse an ``update_plan`` argument payload in either recorded shape:
+
+    - JSON string / dict from classic ``function_call`` ``arguments``
+    - JS ``tools.update_plan({...})`` text from newer ``custom_tool_call`` ``exec`` input
+    """
+    if blob is None:
+        return None
+    if isinstance(blob, (dict, list)):
+        return _coerce_plan_payload(blob)
+    if not isinstance(blob, str):
+        return None
+    text = blob.strip()
+    if not text:
+        return None
+
+    # Classic JSON arguments: {"plan":[...], "explanation":"..."}
+    if text[0] in "{[":
+        try:
+            return _coerce_plan_payload(json.loads(text))
+        except (TypeError, ValueError, json.JSONDecodeError):
+            pass
+
+    # Newer exec scripts: const r = await tools.update_plan({plan:[...]});
+    match = _UPDATE_PLAN_CALL.search(text)
+    if match:
+        open_paren = text.find("(", match.start())
+        inner = _balanced_paren_slice(text, open_paren)
+        if inner is not None:
+            parsed = _parse_js_object_literal(inner)
+            if parsed is not None:
+                return _coerce_plan_payload(parsed)
+            # Last resort: inner may already be JSON
+            try:
+                return _coerce_plan_payload(json.loads(inner))
+            except (TypeError, ValueError, json.JSONDecodeError):
+                return None
+    return None
+
+
+def codex_prompt_history(session_id: str, limit: int = 200) -> list[dict[str, Any]]:
+    """Prompts recorded for this session in ``CODEX_HOME/history.jsonl``."""
+    if not session_id:
+        return []
+    path = config.CODEX_HOME / "history.jsonl"
+    if not path.is_file():
+        return []
+    rows: list[dict[str, Any]] = []
+    for obj in iter_jsonl(path):
+        sid = str(obj.get("session_id") or obj.get("sessionId") or "")
+        if sid != session_id:
+            continue
+        display = obj.get("text") or obj.get("display") or obj.get("prompt") or obj.get("message")
+        if not isinstance(display, str) or not display.strip():
+            continue
+        rows.append(
+            {
+                "display": display,
+                "time": human_time(obj.get("ts") if obj.get("ts") is not None else obj.get("timestamp")),
+            }
+        )
+        if len(rows) >= limit:
+            break
+    return rows
+
+
+def extract_update_plan_todos(payload: dict[str, Any]) -> list[dict[str, Any]] | None:
+    """
+    If a response_item payload is an ``update_plan`` call (any format), return todos.
+
+    Supported:
+    - ``function_call`` / ``custom_tool_call`` named ``update_plan``
+    - ``exec`` / ``js`` / ``run`` custom tools whose input calls ``tools.update_plan``
+    """
+    if not isinstance(payload, dict):
+        return None
+    ptype = str(payload.get("type") or "")
+    if ptype not in ("function_call", "custom_tool_call", "local_shell_call"):
+        return None
+
+    name = str(payload.get("name") or "").strip()
+    args = payload.get("arguments")
+    inp = payload.get("input")
+    # Prefer the field Codex actually used for this call type.
+    candidates: list[Any] = []
+    if name == "update_plan":
+        if args is not None:
+            candidates.append(args)
+        if inp is not None:
+            candidates.append(inp)
+    else:
+        # Exec-style: only consider payloads that mention update_plan.
+        for blob in (inp, args):
+            if isinstance(blob, str) and "update_plan" in blob:
+                candidates.append(blob)
+            elif isinstance(blob, dict) and (
+                "plan" in blob or "todos" in blob or "items" in blob
+            ):
+                # Defensive: some runtimes may store a structured plan under exec input.
+                candidates.append(blob)
+
+    explanation = ""
+    for blob in candidates:
+        items = parse_update_plan_blob(blob)
+        if not items:
+            continue
+        # Pull explanation when available (JSON form).
+        if isinstance(blob, dict):
+            explanation = str(blob.get("explanation") or "")
+        elif isinstance(blob, str) and blob.strip().startswith("{"):
+            try:
+                data = json.loads(blob)
+                if isinstance(data, dict):
+                    explanation = str(data.get("explanation") or "")
+            except (TypeError, ValueError, json.JSONDecodeError):
+                explanation = ""
+        elif isinstance(blob, str) and "explanation" in blob:
+            # JS form: try to recover explanation from the object literal.
+            match = _UPDATE_PLAN_CALL.search(blob)
+            if match:
+                inner = _balanced_paren_slice(blob, blob.find("(", match.start()))
+                parsed = _parse_js_object_literal(inner) if inner is not None else None
+                if isinstance(parsed, dict):
+                    explanation = str(parsed.get("explanation") or "")
+        todos = plan_items_to_todos(items, explanation=explanation)
+        if todos:
+            return todos
+    return None
 
 
 def codex_scan_session(path: Path, records: list[dict] | None = None) -> dict:
@@ -75,6 +327,7 @@ def codex_scan_session(path: Path, records: list[dict] | None = None) -> dict:
     patches: list[dict] = []
     settings_rows: list[dict] = []
     events: list[dict] = []  # lightweight timeline for "updates" tab
+    todos: list[dict] = []  # latest update_plan checklist (last non-empty wins)
 
     for obj in records if records is not None else iter_jsonl(path):
         counts["lines"] += 1
@@ -128,6 +381,10 @@ def codex_scan_session(path: Path, records: list[dict] | None = None) -> dict:
                 counts["reasoning"] += 1
             elif ptype in ("function_call", "custom_tool_call", "local_shell_call"):
                 counts["tool_call"] += 1
+                # Codex checklist: classic function_call update_plan + newer exec wrapper.
+                plan_todos = extract_update_plan_todos(payload)
+                if plan_todos:
+                    todos = plan_todos
             elif ptype in ("function_call_output", "custom_tool_call_output"):
                 counts["tool_result"] += 1
             elif ptype == "message" and str(payload.get("role") or "").lower() == "user":
@@ -385,6 +642,20 @@ def codex_scan_session(path: Path, records: list[dict] | None = None) -> dict:
     )
     if m:
         sid = meta.get("id") or meta.get("session_id") or m.group(1)
+    history = codex_prompt_history(str(sid))
+    if history:
+        artifacts.append(
+            {
+                "id": "prompt-history",
+                "title": "Prompt history",
+                "subtitle": f"history.jsonl · {len(history)} prompt(s)",
+                "kind": "markdown",
+                "text": "\n".join(
+                    f"- {row['time']} — {row['display']}" if row.get("time") else f"- {row['display']}"
+                    for row in history
+                ),
+            }
+        )
     headline = safe_codex_headline(first_user)
     title = (
         safe_codex_headline((titles.get(str(sid)) or {}).get("thread_name"))
@@ -418,7 +689,7 @@ def codex_scan_session(path: Path, records: list[dict] | None = None) -> dict:
     }
 
     resources = {
-        "todos": [],
+        "todos": todos,
         "scheduler_tasks": [],
         "reported_completions": [],
         "settings": settings_rows,
