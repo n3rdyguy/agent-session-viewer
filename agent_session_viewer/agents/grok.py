@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -18,6 +19,210 @@ from ..util import (
     report_record_failure,
     safe_int,
 )
+
+_STATUS_RANK = {"in_progress": 0, "pending": 1, "completed": 2, "cancelled": 3}
+
+
+def _todo_item_fields(item: dict[str, Any], *, default_id: str) -> dict[str, str]:
+    content = (
+        item.get("content")
+        or item.get("step")
+        or item.get("text")
+        or item.get("description")
+        or item.get("subject")
+        or item.get("activeForm")
+        or ""
+    )
+    return {
+        "id": str(item.get("id") or default_id),
+        "content": str(content),
+        "status": str(item.get("status") or "unknown"),
+        "priority": str(item.get("priority") or ""),
+    }
+
+
+def _todos_from_mapping(items: dict[str, Any]) -> list[dict[str, Any]]:
+    todos: list[dict[str, Any]] = []
+    for tid, item in items.items():
+        if isinstance(item, str) and item.strip():
+            todos.append(
+                {
+                    "id": str(tid),
+                    "content": item.strip(),
+                    "status": "pending",
+                    "priority": "",
+                }
+            )
+            continue
+        if not isinstance(item, dict):
+            continue
+        todos.append(_todo_item_fields(item, default_id=str(tid)))
+    return todos
+
+
+def _todos_from_list(items: list[Any]) -> list[dict[str, Any]]:
+    todos: list[dict[str, Any]] = []
+    for index, item in enumerate(items, 1):
+        if isinstance(item, str) and item.strip():
+            todos.append(
+                {
+                    "id": str(index),
+                    "content": item.strip(),
+                    "status": "pending",
+                    "priority": "",
+                }
+            )
+            continue
+        if not isinstance(item, dict):
+            continue
+        todos.append(_todo_item_fields(item, default_id=str(index)))
+    return todos
+
+
+def normalize_todo_blob(blob: Any) -> list[dict[str, Any]]:
+    """
+    Normalize Grok todo storage shapes onto the shared todo list.
+
+    Supports:
+    - ``{"todos": {id: {content,status,priority}}}`` (current resources_state)
+    - ``{"todos": [{id,content,status}, ...]}`` (list form / tool args)
+    - bare dict-of-items or bare list-of-items
+    - legacy ``Todo`` / unprefixed keys handled by the caller
+    """
+    if blob is None:
+        return []
+    if isinstance(blob, list):
+        return _todos_from_list(blob)
+    if not isinstance(blob, dict):
+        return []
+    if "todos" in blob:
+        items = blob.get("todos")
+        if isinstance(items, dict):
+            return _todos_from_mapping(items)
+        if isinstance(items, list):
+            return _todos_from_list(items)
+        return []
+    # Bare id -> item map (or a single todo-shaped dict).
+    if any(isinstance(v, dict) and ("content" in v or "status" in v) for v in blob.values()):
+        return _todos_from_mapping(blob)
+    if any(k in blob for k in ("content", "step", "status")):
+        return _todos_from_list([blob])
+    return []
+
+
+def apply_todo_write(
+    existing: dict[str, dict[str, str]],
+    args: Any,
+) -> dict[str, dict[str, str]]:
+    """
+    Apply one ``todo_write`` tool payload.
+
+    ``merge: true`` updates/creates by id (status-only patches keep prior content).
+    ``merge: false``/omitted replaces the whole checklist when items carry content.
+    """
+    data = args
+    if isinstance(args, str):
+        try:
+            data = json.loads(args)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return existing
+    if not isinstance(data, dict):
+        return existing
+    raw_items = data.get("todos")
+    if raw_items is None:
+        raw_items = data.get("items")
+    if not isinstance(raw_items, list) or not raw_items:
+        return existing
+    merge = bool(data.get("merge"))
+    state = dict(existing) if merge else {}
+    for index, item in enumerate(raw_items, 1):
+        if not isinstance(item, dict):
+            continue
+        tid = str(item.get("id") or index)
+        prev = state.get(tid) if merge else None
+        prev = prev if isinstance(prev, dict) else {}
+        content = (
+            item.get("content")
+            if item.get("content") not in (None, "")
+            else prev.get("content") or item.get("step") or item.get("text") or ""
+        )
+        status = item.get("status") if item.get("status") not in (None, "") else prev.get("status")
+        priority = (
+            item.get("priority")
+            if item.get("priority") not in (None, "")
+            else prev.get("priority") or ""
+        )
+        state[tid] = {
+            "id": tid,
+            "content": str(content or ""),
+            "status": str(status or "unknown"),
+            "priority": str(priority or ""),
+        }
+    return state
+
+
+def todos_from_chat_history(path: Path) -> list[dict[str, Any]]:
+    """Replay ``todo_write`` tool calls from chat_history when resources_state is empty."""
+    history = path / "chat_history.jsonl" if path.is_dir() else path
+    if not history.is_file():
+        return []
+    state: dict[str, dict[str, str]] = {}
+    for obj in iter_jsonl(history):
+        tool_calls = obj.get("tool_calls") if isinstance(obj.get("tool_calls"), list) else []
+        for tc in tool_calls:
+            if not isinstance(tc, dict):
+                continue
+            name = str(tc.get("name") or "").lower()
+            if name not in ("todo_write", "todowrite", "todo"):
+                continue
+            args = tc.get("arguments") if "arguments" in tc else tc.get("input")
+            state = apply_todo_write(state, args)
+    if not state:
+        return []
+    todos = list(state.values())
+    todos.sort(key=lambda t: (_STATUS_RANK.get(t["status"], 9), t["id"]))
+    return todos
+
+
+def grok_prompt_history(
+    path: Path,
+    session_id: str,
+    limit: int = 200,
+) -> list[dict[str, Any]]:
+    """
+    Prompts for this session from the project-level ``prompt_history.jsonl``.
+
+    Grok stores history next to session folders:
+    ``~/.grok/sessions/<encoded-cwd>/prompt_history.jsonl``.
+    """
+    if not session_id:
+        return []
+    session_dir = path if path.is_dir() else path.parent
+    candidates = (
+        session_dir / "prompt_history.jsonl",
+        session_dir.parent / "prompt_history.jsonl",
+    )
+    history_path = next((p for p in candidates if p.is_file()), None)
+    if history_path is None:
+        return []
+    rows: list[dict[str, Any]] = []
+    for obj in iter_jsonl(history_path):
+        sid = str(obj.get("session_id") or obj.get("sessionId") or "")
+        if sid != session_id:
+            continue
+        display = obj.get("prompt") or obj.get("display") or obj.get("text") or ""
+        if not isinstance(display, str) or not display.strip():
+            continue
+        row: dict[str, Any] = {
+            "display": display,
+            "time": human_time(obj.get("timestamp") or obj.get("ts")),
+        }
+        if obj.get("is_bash") is True:
+            row["display"] = f"$ {display}" if not display.startswith("$ ") else display
+        rows.append(row)
+        if len(rows) >= limit:
+            break
+    return rows
 
 
 def grok_token_usage(path: Path) -> dict:
@@ -127,25 +332,26 @@ def grok_resources(path: Path) -> dict:
     params = data.get("params") if isinstance(data.get("params"), dict) else {}
     state = data.get("state") if isinstance(data.get("state"), dict) else {}
 
+    # Prefer resources_state (authoritative snapshot). Fall back to replaying
+    # todo_write tool calls from chat_history for older / incomplete sessions.
     todos: list[dict] = []
-    todo_blob = state.get("grok_build.Todo") or state.get("Todo") or {}
-    if isinstance(todo_blob, dict):
-        items = todo_blob.get("todos") if isinstance(todo_blob.get("todos"), dict) else todo_blob
-        if isinstance(items, dict):
-            for tid, item in items.items():
-                if not isinstance(item, dict):
-                    continue
-                todos.append(
-                    {
-                        "id": str(tid),
-                        "content": item.get("content") or "",
-                        "status": item.get("status") or "unknown",
-                        "priority": item.get("priority") or "",
-                    }
-                )
-            # Keep insertion order from file; status sort secondary
-            status_rank = {"in_progress": 0, "pending": 1, "completed": 2, "cancelled": 3}
-            todos.sort(key=lambda t: (status_rank.get(t["status"], 9), t["id"]))
+    for key in ("grok_build.Todo", "Todo", "todo", "todos"):
+        if key not in state:
+            continue
+        todos = normalize_todo_blob(state.get(key))
+        if todos:
+            break
+    if not todos:
+        # Some builds store the checklist under params rather than state.
+        for key in ("grok_build.Todo", "Todo"):
+            if key in params:
+                todos = normalize_todo_blob(params.get(key))
+                if todos:
+                    break
+    if not todos:
+        todos = todos_from_chat_history(path)
+    if todos:
+        todos.sort(key=lambda t: (_STATUS_RANK.get(str(t.get("status") or ""), 9), str(t.get("id") or "")))
 
     scheduler = state.get("grok_build.Scheduler") or {}
     tasks = []
@@ -184,7 +390,14 @@ def grok_resources(path: Path) -> dict:
 
     other_state = []
     artifacts = []
-    skip = {"grok_build.Todo", "Todo", "grok_build.Scheduler", "grok_build.ReportedTaskCompletions"}
+    skip = {
+        "grok_build.Todo",
+        "Todo",
+        "todo",
+        "todos",
+        "grok_build.Scheduler",
+        "grok_build.ReportedTaskCompletions",
+    }
     for k, v in state.items():
         if k in skip:
             continue
@@ -212,6 +425,26 @@ def grok_resources(path: Path) -> dict:
             )
         else:
             other_state.append({"key": label, "value": pretty_json(v, 400)})
+
+    # Prompt history (project-level prompt_history.jsonl filtered by session id)
+    meta = load_json(path / "summary.json") if path.is_dir() else None
+    meta = meta if isinstance(meta, dict) else {}
+    info = meta.get("info") if isinstance(meta.get("info"), dict) else {}
+    session_id = str(info.get("id") or (path.name if path.is_dir() else path.stem) or "")
+    history = grok_prompt_history(path, session_id)
+    if history:
+        artifacts.append(
+            {
+                "id": "prompt-history",
+                "title": "Prompt history",
+                "subtitle": f"prompt_history.jsonl · {len(history)} prompt(s)",
+                "kind": "markdown",
+                "text": "\n".join(
+                    f"- {row['time']} — {row['display']}" if row.get("time") else f"- {row['display']}"
+                    for row in history
+                ),
+            }
+        )
 
     return {
         "todos": todos,
