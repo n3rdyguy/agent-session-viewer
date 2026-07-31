@@ -150,7 +150,7 @@
       <div class="file-reads-split">
         {% if (t.file_read_prefix or '')|trim %}
         <div class="file-read-prefix">
-          {{ render_md_block(t.file_read_prefix, '', '', false) }}
+          {{ render_foldable(t.file_read_prefix, '', false) }}
         </div>
         {% endif %}
         <div class="inline-file-reads">
@@ -171,6 +171,7 @@
                  data-id={{ ((t.id or '') ~ ':file:' ~ loop.index0)|tojson }}
                  data-model=""
                  data-meta="file_read">
+              {# Full file body when the card is open (no nested Show full). #}
               {{ render_md_block(art_text, '', 'inline-file-md', art_is_md) }}
             </div>
             {% endif %}
@@ -180,15 +181,15 @@
       </div>
       {# Flat view: original tool_result stdout (toggle off). #}
       <div class="file-reads-flat">
-        {{ render_md_block(t.text, t.html or '', '', assumes_markdown) }}
+        {{ render_foldable(t.text, t.html or '', assumes_markdown) }}
       </div>
       {% elif t.role == 'reasoning' %}
-        {{ render_md_block(raw_text, '', '', false) }}
+        {{ render_foldable(raw_text, '') }}
         {% if '<encrypted>' in t.text %}
           <span class="encrypted-tag">&lt;encrypted&gt;</span>
         {% endif %}
       {% else %}
-        {{ render_md_block(t.text, t.html or '', '', assumes_markdown) }}
+        {{ render_foldable(t.text, t.html or '', assumes_markdown) }}
       {% endif %}
     </div>
   </div>
