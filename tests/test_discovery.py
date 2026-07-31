@@ -7,6 +7,7 @@ import pytest
 from agent_session_viewer import discovery
 from agent_session_viewer.agents import codex
 from agent_session_viewer.app import app
+from agent_session_viewer.grouping import group_by_project
 
 
 @pytest.mark.parametrize(
@@ -220,24 +221,26 @@ def test_codex_summary_skips_unsafe_user_wrapper_before_headline(
 
 
 def test_session_list_places_aborted_badge_before_title() -> None:
+    sessions = [
+        {
+            "agent": "codex",
+            "id": "codex-test",
+            "path": "rollout-test.jsonl",
+            "title": "Safe title",
+            "headline": "A useful headline",
+            "aborted": True,
+            "updated": "",
+            "created": "",
+            "messages": 3,
+            "model": "gpt-test",
+            "cwd": "C:/project",
+        }
+    ]
     with app.test_request_context("/"):
         rendered = app.jinja_env.get_template("list.html").render(
             title="Sessions",
-            sessions=[
-                {
-                    "agent": "codex",
-                    "id": "codex-test",
-                    "path": "rollout-test.jsonl",
-                    "title": "Safe title",
-                    "headline": "A useful headline",
-                    "aborted": True,
-                    "updated": "",
-                    "created": "",
-                    "messages": 3,
-                    "model": "gpt-test",
-                    "cwd": "C:/project",
-                }
-            ],
+            sessions=sessions,
+            projects=group_by_project(sessions),
             agent="codex",
             q="",
             grok_path="",
@@ -248,8 +251,36 @@ def test_session_list_places_aborted_badge_before_title() -> None:
     assert rendered.index('<span class="badge aborted">aborted</span>') < rendered.index(
         '<strong title="Safe title">Safe title</strong>'
     )
-    assert "session-headline" not in rendered
-    assert "A useful headline</div>" not in rendered
+    # The first-prompt line ships in the markup but stays hidden until the
+    # Prompts toggle adds body.prompts-on (list.js + app.css contract).
+    assert '<span class="session-headline">A useful headline</span>' in rendered
+    assert "prompts-on" not in rendered.split("<body", 1)[1].split(">", 1)[0]
+
+
+def test_all_sessions_sorts_mixed_timestamp_types(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        discovery,
+        "discover_grok",
+        lambda: [{"agent": "grok", "id": "g", "path": "g", "updated": 1785405600}],
+    )
+    monkeypatch.setattr(
+        discovery,
+        "discover_claude",
+        lambda: [{"agent": "claude", "id": "c", "path": "c", "updated": "2026-07-31T10:00:00Z"}],
+    )
+    monkeypatch.setattr(
+        discovery,
+        "discover_codex",
+        lambda: [{"agent": "codex", "id": "x", "path": "x", "created": "2026-07-29T10:00:00Z"}],
+    )
+
+    ordered = [s["id"] for s in discovery.all_sessions(None)]
+
+    # 2026-07-31 ISO > unix 1785405600 (2026-07-30T10:00Z) > 2026-07-29 ISO; the
+    # old string sort raised TypeError on the int/str mix.
+    assert ordered == ["c", "g", "x"]
 
 
 def test_session_list_decodes_html_entities_once(
@@ -299,6 +330,10 @@ def _write_claude_records(path: Path, records: list[dict]) -> None:
         ("  spaced   out  ", "spaced out"),
         ("<system-reminder>hidden</system-reminder>", ""),
         ("\n\nSecond line wins", "Second line wins"),
+        ("Set mode to \x1b[1mdontAsk\x1b[22m", "Set mode to dontAsk"),
+        ("[tool_result]", ""),
+        ("[tool_result]\nReal prompt below", "Real prompt below"),
+        ("[bug] fix the parser", "[bug] fix the parser"),
         ("", ""),
         (None, ""),
     ],
@@ -320,6 +355,33 @@ def test_safe_claude_headline(value: object, expected: str) -> None:
             ],
             "Generated title",
         ),
+        # Slash-command-only sessions have no prompt; the command names them.
+        (
+            [
+                {
+                    "type": "system",
+                    "subtype": "local_command",
+                    "content": "<command-name>/memory</command-name>\n"
+                    "<command-message>memory</command-message>\n"
+                    "<command-args></command-args>",
+                }
+            ],
+            "/memory",
+        ),
+        (
+            [
+                {
+                    "type": "user",
+                    "message": {
+                        "role": "user",
+                        "content": "<command-name>/model</command-name>\n"
+                        "<command-message>model</command-message>\n"
+                        "<command-args>opus</command-args>",
+                    },
+                }
+            ],
+            "/model opus",
+        ),
     ],
 )
 def test_claude_card_title_precedence(
@@ -334,6 +396,26 @@ def test_claude_card_title_precedence(
     discovery.clear_discovery_cache()
 
     assert discovery.discover_claude()[0]["title"] == expected
+
+
+def test_claude_card_title_falls_back_to_the_full_session_id(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """No prompt, no titles, no command: show the whole id, not a 18-char stub."""
+    home = tmp_path / "claude"
+    sid = "05db666c-de2d-45a9-a99a-a96215c39226"
+    _write_claude_records(
+        home / "projects" / "project" / f"{sid}.jsonl",
+        [{"type": "file-history-snapshot"}],
+    )
+    monkeypatch.setattr(discovery, "CLAUDE_HOME", home)
+    discovery.clear_discovery_cache()
+
+    title = discovery.discover_claude()[0]["title"]
+
+    assert title == sid
+    assert "…" not in title
 
 
 def test_claude_card_prefers_recorded_cwd_over_encoded_folder_name(
@@ -405,3 +487,48 @@ def test_claude_title_is_found_outside_the_bounded_edge_windows(
 
     assert card["title"] == "Buried title"
     assert card["messages"] == 81
+
+
+def test_claude_model_is_found_outside_the_bounded_edge_windows(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Long sessions often end in user/tool records; the last assistant line wins."""
+    home = tmp_path / "claude"
+    head = [
+        {
+            "type": "user",
+            "timestamp": "2026-07-30T08:00:00Z",
+            "message": {"role": "user", "content": [{"type": "text", "text": "head"}]},
+        }
+    ] * 40
+    tail = [
+        {
+            "type": "user",
+            "timestamp": "2026-07-30T10:00:00Z",
+            "message": {"role": "user", "content": [{"type": "text", "text": "tail"}]},
+        }
+    ] * 40
+    records = [
+        *head,
+        {
+            "type": "assistant",
+            "timestamp": "2026-07-30T09:00:00Z",
+            "message": {"role": "assistant", "model": "claude-buried-5"},
+        },
+        {
+            "type": "assistant",
+            "timestamp": "2026-07-30T09:00:01Z",
+            "message": {"role": "assistant", "model": "<synthetic>"},
+        },
+        *tail,
+    ]
+    _write_claude_records(home / "projects" / "project" / "session.jsonl", records)
+    monkeypatch.setattr(discovery, "CLAUDE_HOME", home)
+    discovery.clear_discovery_cache()
+
+    card = discovery.discover_claude()[0]
+
+    assert card["model"] == "claude-buried-5"
+    # The mid-file marker decode must not regress the tail timestamp.
+    assert card["updated"] == "2026-07-30T10:00:00Z"

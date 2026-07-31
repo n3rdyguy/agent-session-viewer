@@ -12,12 +12,6 @@
 <body class="preview-on file-reads-on">
   <header>
     <h1><a href="{{ url_for('index') }}">Agent Session Viewer</a></h1>
-    <nav style="display:flex; gap:1.1rem;">
-      <a href="{{ url_for('index') }}">All</a>
-      <a href="{{ url_for('index', agent='grok') }}">Grok</a>
-      <a href="{{ url_for('index', agent='claude') }}">Claude</a>
-      <a href="{{ url_for('index', agent='codex') }}">Codex</a>
-    </nav>
   </header>
   <div class="container">
     {% block content %}{% endblock %}

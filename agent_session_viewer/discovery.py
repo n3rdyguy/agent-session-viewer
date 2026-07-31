@@ -16,15 +16,21 @@ from urllib.parse import unquote
 from .config import CLAUDE_HOME, CODEX_HOME, GROK_HOME
 from .images import extract_text
 from .types import SessionCard
-from .util import decode_jsonl_record, iter_jsonl, load_json
+from .util import decode_jsonl_record, epoch_seconds, iter_jsonl, load_json
 
 LOGGER = logging.getLogger(__name__)
 _CODEX_HEADLINE_PUNCTUATION = frozenset(" .,:;!?'-_()/&+")
 _TURN_ABORTED_RE = re.compile(r"\bturn_aborted\b", re.IGNORECASE)
+_ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
+_CONTROL_CHARS_RE = re.compile(r"[\x00-\x08\x0e-\x1f\x7f]")
+_BRACKET_MARKER_RE = re.compile(r"^\[[\w -]+\]$")  # placeholder lines like [tool_result]
 _DISCOVERY_HEAD_RECORDS = 128
 _CLAUDE_EDGE_RECORDS = 8
 _CLAUDE_HEADLINE_CHARS = 120
 _CLAUDE_TITLE_MARKERS = ('"ai-title"', '"custom-title"', '"last-prompt"')
+_CLAUDE_MODEL_MARKER = '"assistant"'
+_CLAUDE_SCAN_MARKERS = (*_CLAUDE_TITLE_MARKERS, _CLAUDE_MODEL_MARKER)
+_CLAUDE_SYNTHETIC_MODEL = '"<synthetic>"'
 
 CacheKey = tuple[str, str, int, int]
 _DISCOVERY_CACHE: dict[CacheKey, dict[str, Any]] = {}
@@ -110,12 +116,33 @@ def safe_claude_headline(value: object) -> str:
     """Return a short single-line Claude headline, rejecting agent markup blocks."""
     if not isinstance(value, str):
         return ""
-    for part in value.splitlines():
+    cleaned = _ANSI_ESCAPE_RE.sub("", value)
+    cleaned = _CONTROL_CHARS_RE.sub("", cleaned)
+    for part in cleaned.splitlines():
         line = " ".join(part.split())
         if not line or line.startswith("<") or not any(char.isalnum() for char in line):
             continue
+        if _BRACKET_MARKER_RE.match(line):
+            continue
         return line[:_CLAUDE_HEADLINE_CHARS]
     return ""
+
+
+_CLAUDE_COMMAND_NAME_RE = re.compile(r"<command-name>\s*([^<]*?)\s*</command-name>")
+_CLAUDE_COMMAND_ARGS_RE = re.compile(r"<command-args>\s*(.*?)\s*</command-args>", re.DOTALL)
+
+
+def claude_command_title(text: str) -> str:
+    """Label for local-command sessions: the slash command (plus args) that ran."""
+    if "<command-name>" not in text:
+        return ""
+    cleaned = _CONTROL_CHARS_RE.sub("", _ANSI_ESCAPE_RE.sub("", text))
+    match = _CLAUDE_COMMAND_NAME_RE.search(cleaned)
+    if not match:
+        return ""
+    args = _CLAUDE_COMMAND_ARGS_RE.search(cleaned)
+    label = " ".join(f"{match.group(1)} {args.group(1) if args else ''}".split())
+    return label[:_CLAUDE_HEADLINE_CHARS]
 
 
 def codex_headline_was_aborted(value: object) -> bool:
@@ -222,10 +249,12 @@ def _scan_claude_card(path: Path) -> dict[str, Any]:
     first: list[tuple[int, str]] = []
     last: deque[tuple[int, str]] = deque(maxlen=_CLAUDE_EDGE_RECORDS)
     # Title records are small, untimestamped, and rewritten throughout a session, so
-    # the newest one usually sits outside both edge windows. Remember the last line
-    # matching each marker instead of widening the window: one slot per marker keeps
-    # memory bounded and adds at most one decode each.
-    title_lines: dict[str, tuple[int, str]] = {}
+    # the newest one usually sits outside both edge windows. The same applies to the
+    # model: long sessions often end in user/tool records, pushing the last assistant
+    # record out of the tail window. Remember the last line matching each marker
+    # instead of widening the window: one slot per marker keeps memory bounded and
+    # adds at most one decode each.
+    marker_lines: dict[str, tuple[int, str]] = {}
     nonblank_count = 0
     try:
         with path.open(encoding="utf-8", errors="replace") as fh:
@@ -238,9 +267,12 @@ def _scan_claude_card(path: Path) -> dict[str, Any]:
                     first.append(item)
                 else:
                     last.append(item)
-                for marker in _CLAUDE_TITLE_MARKERS:
-                    if marker in line:
-                        title_lines[marker] = item
+                for marker in _CLAUDE_SCAN_MARKERS:
+                    if marker not in line:
+                        continue
+                    if marker == _CLAUDE_MODEL_MARKER and _CLAUDE_SYNTHETIC_MODEL in line:
+                        continue
+                    marker_lines[marker] = item
     except OSError as exc:
         LOGGER.warning("Could not scan Claude session %s: %s", path, type(exc).__name__)
         return {}
@@ -248,9 +280,9 @@ def _scan_claude_card(path: Path) -> dict[str, Any]:
     created = updated = model = None
     cwd = None
     ai_title = custom_title = last_prompt = ""
-    headline = ""
+    headline = command_title = ""
     seen_lines: set[int] = set()
-    for line_number, line in [*first, *last, *title_lines.values()]:
+    for line_number, line in [*first, *last, *marker_lines.values()]:
         if line_number in seen_lines:
             continue
         seen_lines.add(line_number)
@@ -260,7 +292,10 @@ def _scan_claude_card(path: Path) -> dict[str, Any]:
         ts = obj.get("timestamp")
         if ts:
             created = created or ts
-            updated = ts
+            # Marker lines decode after the tail window and may sit mid-file, so
+            # their older timestamps must not regress the last-activity value.
+            if updated is None or epoch_seconds(ts) >= epoch_seconds(updated):
+                updated = ts
         # Records carry the real working directory; the encoded folder name is lossy.
         cwd = obj.get("cwd") or cwd
         record_type = obj.get("type")
@@ -273,15 +308,24 @@ def _scan_claude_card(path: Path) -> dict[str, Any]:
         elif record_type in ("user", "assistant"):
             message = obj.get("message") if isinstance(obj.get("message"), dict) else {}
             if record_type == "assistant":
-                model = message.get("model") or model
+                candidate = str(message.get("model") or "")
+                if candidate and not candidate.startswith("<"):
+                    model = candidate
             elif not headline:
-                headline = safe_claude_headline(extract_text(message.get("content")))
+                text = extract_text(message.get("content"))
+                headline = safe_claude_headline(text)
+                if not command_title:
+                    command_title = claude_command_title(text)
+        elif record_type == "system" and not command_title:
+            command_title = claude_command_title(str(obj.get("content") or ""))
     return {
         "created": created,
         "updated": updated,
         "model": model,
         "cwd": cwd,
         "title": ai_title or custom_title or safe_claude_headline(last_prompt),
+        # Sessions that only ran slash commands have no prompt to name them by.
+        "command": command_title,
         "headline": headline,
         # Exact chat counts need a full scan and are deferred to /view; the cheap
         # full-file record count stays the card value.
@@ -320,7 +364,10 @@ def discover_claude() -> list[SessionCard]:
                     "id": sid,
                     "path": str(f),
                     "cwd": card.get("cwd") or cwd_hint,
-                    "title": card.get("title") or card.get("headline") or sid[:18] + "…",
+                    "title": card.get("title")
+                    or card.get("headline")
+                    or card.get("command")
+                    or sid,
                     "headline": card.get("headline") or "",
                     "created": card.get("created"),
                     "updated": card.get("updated"),
@@ -485,6 +532,11 @@ def discover_codex() -> list[SessionCard]:
     return sessions
 
 
+def session_sort_key(s: SessionCard) -> float:
+    """Epoch seconds of a card's last activity; mixing agents' timestamp types is safe."""
+    return epoch_seconds(s.get("updated") or s.get("created"))
+
+
 def all_sessions(agent: str | None = None) -> list[SessionCard]:
     started = time.perf_counter()
     items = []
@@ -495,9 +547,6 @@ def all_sessions(agent: str | None = None) -> list[SessionCard]:
     if agent in (None, "codex", "all"):
         items.extend(discover_codex())
 
-    def key(s: SessionCard) -> object:
-        return s.get("updated") or s.get("created") or ""
-
-    items.sort(key=key, reverse=True)
+    items.sort(key=session_sort_key, reverse=True)
     _log_timing("session discovery", started)
     return items

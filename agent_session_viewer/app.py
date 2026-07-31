@@ -21,6 +21,7 @@ from .authorization import (
 )
 from .config import CLAUDE_HOME, CODEX_HOME, GROK_HOME
 from .discovery import all_sessions
+from .grouping import group_by_project
 from .markdown_output import format_markdown_content
 from .session import (
     load_session,
@@ -28,11 +29,13 @@ from .session import (
     system_artifacts_to_markdown,
     turns_to_markdown,
 )
-from .util import decode_html_entities, decode_view_data
+from .util import decode_html_entities, decode_view_data, human_time, rel_time
 
 app = Flask(__name__)
 app.jinja_env.filters["markdown_content"] = format_markdown_content
 app.jinja_env.filters["decode_html_entities"] = decode_html_entities
+app.jinja_env.filters["human_time"] = human_time
+app.jinja_env.filters["rel_time"] = rel_time
 
 
 @app.after_request
@@ -43,7 +46,7 @@ def add_security_headers(response: Response) -> Response:
         "base-uri 'none'; "
         "connect-src 'none'; "
         "font-src 'self'; "
-        "form-action 'none'; "
+        "form-action 'self'; "
         "frame-ancestors 'none'; "
         "img-src 'self' data:; "
         "object-src 'none'; "
@@ -81,6 +84,7 @@ def index():
         "list.html",
         title="Sessions",
         sessions=sessions,
+        projects=group_by_project(sessions),
         agent=agent,
         q=q,
         grok_path=str(GROK_HOME / "sessions"),
