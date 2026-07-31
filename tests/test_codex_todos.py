@@ -159,9 +159,7 @@ def test_empty_plan_does_not_wipe_previous(tmp_path: Path) -> None:
                 "payload": {
                     "type": "function_call",
                     "name": "update_plan",
-                    "arguments": json.dumps(
-                        {"plan": [{"step": "Keep me", "status": "pending"}]}
-                    ),
+                    "arguments": json.dumps({"plan": [{"step": "Keep me", "status": "pending"}]}),
                 },
             },
             {

@@ -248,7 +248,9 @@ def collect_image_blocks(block: dict) -> list[dict]:
         nested = block.get("image_url")
         if isinstance(nested, dict) and nested.get("url") and not images:
             images.extend(
-                collect_image_blocks({"type": "image", "url": nested.get("url"), "alt": block.get("alt")})
+                collect_image_blocks(
+                    {"type": "image", "url": nested.get("url"), "alt": block.get("alt")}
+                )
             )
         path = block.get("path") or block.get("file_path") or block.get("filename")
         if path:
