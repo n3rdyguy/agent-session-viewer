@@ -50,6 +50,7 @@
     <summary class="project-summary">
       <span class="project-name">{{ p.name }}</span>
       {% if p.cwd %}<span class="project-path" title="{{ p.cwd }}">{{ p.cwd }}</span>{% endif %}
+      {% for a in p.agents %}<span class="badge mini {{ a }}" title="{{ a }}">{{ a[:2] }}</span>{% endfor %}
       <span class="project-count">{{ p.count }}</span>
       <button type="button" class="pin-btn" title="Pin project" aria-pressed="false">
         {# Inline SVG (Bootstrap Icons "pin", MIT) so the glyph follows currentColor. #}

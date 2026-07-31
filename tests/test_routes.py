@@ -189,6 +189,11 @@ def test_index_groups_sessions_by_project(client, monkeypatch: pytest.MonkeyPatc
     assert 'data-title="newest session"' in html
     # Every project summary carries a pin toggle.
     assert html.count('class="pin-btn"') == 3
+    # Each summary shows a two-letter badge per agent detected in the project.
+    assert '<span class="badge mini claude" title="claude">cl</span>' in html
+    assert '<span class="badge mini codex" title="codex">co</span>' in html
+    assert '<span class="badge mini grok" title="grok">gr</span>' in html
+    assert html.count("badge mini") == 3  # one per single-agent group
     assert 'data-updated="1785405600.0"' in html  # 2026-07-30T10:00:00Z
     assert 'data-created="1785405600.0"' in html  # falls back to updated
 

@@ -17,6 +17,7 @@ class ProjectGroup(TypedDict):
     sessions: list[SessionCard]
     latest: float
     count: int
+    agents: list[str]  # distinct agents, newest session first
 
 
 def normalize_cwd(cwd: object) -> str:
@@ -53,10 +54,14 @@ def group_by_project(sessions: list[SessionCard]) -> list[ProjectGroup]:
                 "sessions": [],
                 "latest": 0.0,
                 "count": 0,
+                "agents": [],
             }
         group["sessions"].append(card)
     for group in groups.values():
         group["sessions"].sort(key=session_sort_key, reverse=True)
         group["latest"] = session_sort_key(group["sessions"][0])
         group["count"] = len(group["sessions"])
+        group["agents"] = list(
+            dict.fromkeys(a for s in group["sessions"] if (a := str(s.get("agent") or "")))
+        )
     return sorted(groups.values(), key=lambda g: g["latest"], reverse=True)

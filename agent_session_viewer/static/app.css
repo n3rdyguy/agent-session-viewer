@@ -124,6 +124,10 @@
       display: inline-block; padding: 0.18rem 0.55rem; border-radius: 5px;
       font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; margin-right: 0.5rem;
     }
+    .badge.mini {
+      padding: 0.12rem 0.3rem; font-size: 0.6rem; margin-right: 0;
+      flex: 0 0 auto; align-self: center;
+    }
     .badge.grok   { background: #7c3aed33; color: #c4b5fd; }
     .badge.claude { background: #d9770633; color: #fbbf24; }
     .badge.codex  { background: #05966933; color: #6ee7b7; }
