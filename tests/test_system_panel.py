@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 
 from agent_session_viewer.session import (
+    attach_prompt_history_anchors,
     is_system_panel_turn,
     load_session,
     split_system_panel_turns,
@@ -153,3 +154,21 @@ def test_system_turn_title_prefers_meta() -> None:
         system_turn_title(make_turn(role="user (project_instructions)", text="x"))
         == "project instructions"
     )
+
+
+def test_attach_prompt_history_anchors_matches_user_turns() -> None:
+    turns = [
+        make_turn(role="assistant", text="hi"),
+        make_turn(role="user", text="First prompt"),
+        make_turn(role="assistant", text="ok"),
+        make_turn(role="user", text="Second prompt with more detail"),
+    ]
+    history = [
+        {"display": "First prompt", "time": "t1"},
+        {"display": "Second prompt", "time": "t2"},
+        {"display": "$ ls", "time": "t3"},  # bash - no sequential fallback
+    ]
+    linked = attach_prompt_history_anchors(history, turns)
+    assert linked[0]["turn_anchor"] == "turn-1"
+    assert linked[1]["turn_anchor"] == "turn-3"
+    assert "turn_anchor" not in linked[2]

@@ -62,7 +62,7 @@ def _normalize_data_image_url(raw: str) -> str | None:
         if not payload:
             return None
         return f"{header},{payload}"
-    # Non-base64 (e.g. svg+xml;charset=utf-8,<svg…>) — keep payload, strip wrappers.
+    # Non-base64 (e.g. svg+xml;charset=utf-8,<svg…>) - keep payload, strip wrappers.
     payload = payload.strip().rstrip(".,;:)")
     if not payload:
         return None

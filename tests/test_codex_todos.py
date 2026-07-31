@@ -256,7 +256,7 @@ def test_prompt_history_is_filtered_by_session(
     assert rows[0]["time"]
 
 
-def test_prompt_history_artifact_attached_to_scan(
+def test_prompt_history_attached_to_resources(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     codex_home = tmp_path / "codex"
@@ -282,7 +282,7 @@ def test_prompt_history_artifact_attached_to_scan(
         ],
     )
 
-    artifacts = codex.codex_scan_session(rollout)["artifacts"]
-    history = next(a for a in artifacts if a["id"] == "prompt-history")
-    assert history["title"] == "Prompt history"
-    assert "hello plan" in history["text"]
+    scan = codex.codex_scan_session(rollout)
+    history = scan["resources"]["prompt_history"]
+    assert [r["display"] for r in history] == ["hello plan"]
+    assert not any(a.get("id") == "prompt-history" for a in scan.get("artifacts") or [])

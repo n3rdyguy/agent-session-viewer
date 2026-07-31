@@ -29,7 +29,7 @@ def test_parse_single_sed() -> None:
     assert plan[0]["start"] == 1
     assert plan[0]["end"] == 240
     assert plan[0]["expected_lines"] == 240
-    assert format_file_read_label(plan[0]) == "agent_session_viewer/app.py · lines 1–240"
+    assert format_file_read_label(plan[0]) == "agent_session_viewer/app.py · lines 1-240"
 
 
 def test_parse_multi_sed_chain() -> None:
@@ -126,7 +126,7 @@ def test_mismatch_best_effort_still_has_content() -> None:
     assert len(arts) == 2
     assert all(a["split"] for a in arts)
     assert arts[0]["text"]
-    assert "lines 1–10" in arts[0]["label"]
+    assert "lines 1-10" in arts[0]["label"]
     joined = (arts[0]["text"] or "") + (arts[1]["text"] or "")
     assert "only" in joined
     assert "lines" in joined
@@ -196,7 +196,7 @@ def test_native_read_file_and_claude_read() -> None:
     )
     assert claude is not None
     assert claude["path"] == "parser.py"
-    assert claude["label"] == "parser.py · lines 1–2"
+    assert claude["label"] == "parser.py · lines 1-2"
 
     # Claude Code often uses "N\\t" line prefixes (tab), not pipe
     claude_tab = native_read_file_artifact(
@@ -205,7 +205,7 @@ def test_native_read_file_and_claude_read() -> None:
         '1\t"""doc"""\n2\t\n3\timport argparse\n',
     )
     assert claude_tab is not None
-    assert claude_tab["label"].endswith("· lines 1–3")
+    assert claude_tab["label"].endswith("· lines 1-3")
     assert claude_tab["start"] == 1 and claude_tab["end"] == 3
 
     arts, prefix = file_artifacts_for_tool_result(
@@ -257,7 +257,7 @@ def test_split_file_marker_output() -> None:
     assert preamble == ""
     assert len(arts) == 2
     assert arts[0]["path"] == "agent_session_viewer/app.py"
-    assert arts[0]["label"] == "agent_session_viewer/app.py · lines 1–2"
+    assert arts[0]["label"] == "agent_session_viewer/app.py · lines 1-2"
     assert "line one" in (arts[0]["text"] or "")
     assert arts[1]["path"] == "agent_session_viewer/config.py"
     assert arts[1]["start"] == 10
@@ -309,13 +309,13 @@ def test_markdown_export_includes_file_artifacts() -> None:
             file_artifacts=[
                 {
                     "path": "a.py",
-                    "label": "a.py · lines 1–1",
+                    "label": "a.py · lines 1-1",
                     "text": "print(1)\n",
                     "split": True,
                 },
                 {
                     "path": "b.py",
-                    "label": "b.py · lines 1–1",
+                    "label": "b.py · lines 1-1",
                     "text": "print(2)\n",
                     "split": True,
                 },
@@ -324,9 +324,9 @@ def test_markdown_export_includes_file_artifacts() -> None:
     ]
     md = turns_to_markdown(turns, "T", "codex", "x.jsonl")
     assert "Exit code: 0" in md
-    assert "#### a.py · lines 1–1" in md
+    assert "#### a.py · lines 1-1" in md
     assert "print(1)" in md
-    assert "#### b.py · lines 1–1" in md
+    assert "#### b.py · lines 1-1" in md
     # Full concatenated body should not appear twice as a dump before sections
     assert md.count("print(1)") == 1
 
@@ -401,7 +401,7 @@ def test_tool_result_file_reads_template_order_and_modes() -> None:
         file_artifacts=[
             {
                 "path": "a.py",
-                "label": "a.py · lines 1–2",
+                "label": "a.py · lines 1-2",
                 "text": "line1\nline2\n",
                 "split": True,
             }
@@ -418,6 +418,19 @@ def test_tool_result_file_reads_template_order_and_modes() -> None:
     assert "artifact-doc-head" not in html
     assert "data-file-reads" in html
     assert "fold-header-btn" in html
+    # tool_result bodies start collapsed; single file card may still be open inside
+    assert 'data-body-collapsed="true"' in html
+    assert "inline-file-read" in html and " open" in html
+    # Long plain content uses bubble-level collapse (header chevron), not Show full
+    long = make_turn(role="assistant", id="a1", text=("line\n" * 200))
+    with app.app_context():
+        long_html = str(
+            app.jinja_env.get_template("partials/bubbles.html").module.render_bubbles([long])
+        )
+    assert 'data-body-collapsed="true"' in long_html
+    assert "fold-header-btn" in long_html
+    assert "fold-toggle" not in long_html
+    assert "Show full" not in long_html
     # Prefix block appears before file cards in the HTML
     assert html.index("file-read-prefix") < html.index("inline-file-reads")
     assert html.index("file-reads-split") < html.index("file-reads-flat")

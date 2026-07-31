@@ -435,21 +435,6 @@ def grok_resources(path: Path) -> dict:
     info = meta.get("info") if isinstance(meta.get("info"), dict) else {}
     session_id = str(info.get("id") or (path.name if path.is_dir() else path.stem) or "")
     history = grok_prompt_history(path, session_id)
-    if history:
-        artifacts.append(
-            {
-                "id": "prompt-history",
-                "title": "Prompt history",
-                "subtitle": f"prompt_history.jsonl · {len(history)} prompt(s)",
-                "kind": "markdown",
-                "text": "\n".join(
-                    f"- {row['time']} — {row['display']}"
-                    if row.get("time")
-                    else f"- {row['display']}"
-                    for row in history
-                ),
-            }
-        )
 
     return {
         "todos": todos,
@@ -458,6 +443,7 @@ def grok_resources(path: Path) -> dict:
         "settings": settings,
         "other_state": other_state,
         "artifacts": artifacts,
+        "prompt_history": history,
     }
 
 
@@ -996,7 +982,7 @@ def get_grok_conversation(path: Path) -> list[dict]:
                 )
                 continue
 
-            # Unknown types — still show something useful
+            # Unknown types - still show something useful
             rid = obj.get("id") or obj.get("tool_call_id") or seq
             text, images = content_pair(
                 obj.get("content") or obj.get("message") or obj.get("text"),

@@ -1,16 +1,66 @@
 (function() {
   const MD_KEY = 'asv-markdown';
   const FILE_READS_KEY = 'asv-file-reads';
+  const PREVIEW_KEY = 'asv-preview';
   const tabs = document.querySelectorAll('#view-tabs [data-tab]');
+  function activateTab(name) {
+    tabs.forEach(b => b.classList.toggle('active', b.dataset.tab === name));
+    document.querySelectorAll('.tab-panel').forEach(p => {
+      p.classList.toggle('active', p.id === 'tab-' + name);
+    });
+    // Hidden tab panels (display:none) report zero height on first load, so
+    // preview fade (.is-clipped) must be remeasured after a tab is shown.
+    schedulePreviewClipUpdate();
+  }
   tabs.forEach(btn => {
     btn.addEventListener('click', () => {
-      tabs.forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
-      const panel = document.getElementById('tab-' + btn.dataset.tab);
-      if (panel) panel.classList.add('active');
+      activateTab(btn.dataset.tab);
     });
   });
+
+  // Keep scroll-margin / sticky bubble headers in sync with the real header height
+  // (wrap on narrow viewports can grow it beyond the CSS default).
+  function syncStickyHeaderOffset() {
+    const header = document.querySelector('body > header');
+    if (!header) return;
+    const gap = 8; // small breathing room below the bar
+    const px = Math.ceil(header.getBoundingClientRect().height) + gap;
+    document.documentElement.style.setProperty('--sticky-site-header-offset', px + 'px');
+  }
+  syncStickyHeaderOffset();
+  window.addEventListener('resize', syncStickyHeaderOffset);
+
+  // Prompt-history links deep-link into chat bubbles (id="turn-N").
+  function jumpToTurnAnchor(anchorId) {
+    if (!anchorId || !/^turn-\d+$/.test(anchorId)) return false;
+    activateTab('chat');
+    const el = document.getElementById(anchorId);
+    if (!el) return false;
+    syncStickyHeaderOffset();
+    // scroll-margin-top on .bubble accounts for the sticky site header.
+    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    el.classList.add('turn-highlight');
+    clearTimeout(jumpToTurnAnchor._t);
+    jumpToTurnAnchor._t = setTimeout(() => el.classList.remove('turn-highlight'), 2200);
+    return true;
+  }
+  document.querySelectorAll('a.prompt-history-link[href^="#turn-"]').forEach(link => {
+    link.addEventListener('click', (ev) => {
+      const href = link.getAttribute('href') || '';
+      const id = href.charAt(0) === '#' ? href.slice(1) : '';
+      if (jumpToTurnAnchor(id)) {
+        // Keep the hash in the URL for shareable deep links without a hard jump.
+        if (history.replaceState) {
+          history.replaceState(null, '', '#' + id);
+          ev.preventDefault();
+        }
+      }
+    });
+  });
+  if (location.hash && location.hash.indexOf('#turn-') === 0) {
+    // Wait a tick so layout/fonts settle before scrolling.
+    setTimeout(() => jumpToTurnAnchor(location.hash.slice(1)), 0);
+  }
 
   const toast = document.getElementById('copy-toast');
   function showToast(msg) {
@@ -189,13 +239,13 @@
       .catch(() => new Promise((r) => setTimeout(r, 120)).then(tryCopy))
       .catch(() => {
         copyImageUrl(resolvedSrc)
-          .then(() => showToast('Bitmap copy failed — URL copied instead'))
-          .catch(() => showToast('Copy failed — try right-click → Copy image'));
+          .then(() => showToast('Bitmap copy failed - URL copied instead'))
+          .catch(() => showToast('Copy failed - try right-click → Copy image'));
       });
   });
 
 
-  // ── Fold / expand-all / copy (always — do not gate on marked CDN) ──
+  // ── Fold / expand-all / copy (always - do not gate on marked CDN) ──
   function cardRootForFold(fold) {
     return fold ? fold.closest('.bubble, .artifact-doc') : null;
   }
@@ -208,6 +258,8 @@
   function setFoldCollapsed(fold, collapsed) {
     if (!fold) return;
     fold.setAttribute('data-collapsed', collapsed ? 'true' : 'false');
+    var foldBody = fold.querySelector('.fold-body');
+    if (foldBody && !collapsed) foldBody.classList.remove('is-clipped');
     var expanded = collapsed ? 'false' : 'true';
     var btn = fold.querySelector('.fold-toggle');
     if (btn) {
@@ -222,13 +274,14 @@
       headerBtn.setAttribute('aria-expanded', expanded);
       headerBtn.title = collapsed ? 'Expand' : 'Collapse';
     }
+    schedulePreviewClipUpdate();
   }
 
   function toggleFold(fold) {
     if (!fold) return;
     var collapsed = fold.getAttribute('data-collapsed') !== 'false';
     if (collapsed) {
-      // Expanding: content grows below — no scroll fix needed.
+      // Expanding: content grows below - no scroll fix needed.
       setFoldCollapsed(fold, false);
     } else {
       // Collapsing: keep this card from yanking the page.
@@ -290,10 +343,39 @@
     return root ? root.querySelectorAll('details.inline-file-read') : [];
   }
 
+  function bubbleBodyCollapsed(root) {
+    return root && root.getAttribute('data-body-collapsed') === 'true';
+  }
+
+  function setBubbleBodyCollapsed(root, collapsed) {
+    if (!root || !root.hasAttribute('data-body-collapsed')) return;
+    root.setAttribute('data-body-collapsed', collapsed ? 'true' : 'false');
+    var body = root.querySelector(':scope > .bubble-body');
+    if (body && !collapsed) body.classList.remove('is-clipped');
+    var btn = root.querySelector(':scope > .bubble-header .fold-header-btn');
+    if (btn) {
+      btn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+      var hasFiles = fileReadsIn(root).length > 0;
+      if (collapsed) {
+        btn.title = 'Expand';
+      } else {
+        btn.title = hasFiles && fileReadsModeOn() ? 'Collapse' : 'Collapse';
+      }
+    }
+    schedulePreviewClipUpdate();
+  }
+
   function syncFileReadHeaderBtn(root) {
     if (!root) return;
     var btn = root.querySelector(':scope > .bubble-header .fold-header-btn');
     if (!btn) return;
+    // Body-level collapse wins over per-file open state
+    if (root.hasAttribute('data-body-collapsed')) {
+      var bodyClosed = bubbleBodyCollapsed(root);
+      btn.setAttribute('aria-expanded', bodyClosed ? 'false' : 'true');
+      btn.title = bodyClosed ? 'Expand' : 'Collapse';
+      return;
+    }
     var files = fileReadsIn(root);
     if (!files.length) return;
     var anyOpen = false;
@@ -310,17 +392,26 @@
     btn.addEventListener('click', function() {
       var root = btn.closest('.bubble, .artifact-doc');
       if (!root) return;
+
+      // tool_result: whole body starts collapsed; chevron toggles the bubble body.
+      // File cards inside may already be open (single-file default) - that is fine.
+      if (root.hasAttribute('data-body-collapsed')) {
+        var expand = bubbleBodyCollapsed(root);
+        setBubbleBodyCollapsed(root, !expand);
+        return;
+      }
+
       var files = fileReadsIn(root);
       // When File cards are on, chevron opens all file rows (+ prefix folds).
       // When off, behave like a normal fold on the flat tool_result body.
       if (files.length && fileReadsModeOn()) {
-        var expand = btn.getAttribute('aria-expanded') !== 'true';
-        setDetailsOpen(files, expand);
+        var openFiles = btn.getAttribute('aria-expanded') !== 'true';
+        setDetailsOpen(files, openFiles);
         root.querySelectorAll('.file-reads-split .fold').forEach(function(f) {
-          setFoldCollapsed(f, !expand);
+          setFoldCollapsed(f, !openFiles);
         });
-        btn.setAttribute('aria-expanded', expand ? 'true' : 'false');
-        btn.title = expand ? 'Collapse files' : 'Expand files';
+        btn.setAttribute('aria-expanded', openFiles ? 'true' : 'false');
+        btn.title = openFiles ? 'Collapse files' : 'Expand files';
         return;
       }
       var fold = root.querySelector(
@@ -340,6 +431,9 @@
     });
   });
   document.querySelectorAll('.bubble[data-file-reads="true"]').forEach(syncFileReadHeaderBtn);
+  document.querySelectorAll('.bubble[data-body-collapsed]').forEach(function(root) {
+    syncFileReadHeaderBtn(root);
+  });
 
   function foldsInActiveTab() {
     var active = document.querySelector('.tab-panel.active') || document;
@@ -351,12 +445,20 @@
     return active.querySelectorAll('details.inline-file-read');
   }
 
+  function bodyCollapsedBubblesInActiveTab() {
+    var active = document.querySelector('.tab-panel.active') || document;
+    return active.querySelectorAll('.bubble[data-body-collapsed]');
+  }
+
   var expandAll = document.getElementById('expand-all');
   var collapseAll = document.getElementById('collapse-all');
   if (expandAll) {
     expandAll.addEventListener('click', function() {
       foldsInActiveTab().forEach(function(f) { setFoldCollapsed(f, false); });
       setDetailsOpen(fileReadsInActiveTab(), true);
+      bodyCollapsedBubblesInActiveTab().forEach(function(b) {
+        setBubbleBodyCollapsed(b, false);
+      });
       document.querySelectorAll('.bubble[data-file-reads="true"]').forEach(syncFileReadHeaderBtn);
     });
   }
@@ -366,6 +468,9 @@
       preserveAnchorScroll(anchor, function() {
         foldsInActiveTab().forEach(function(f) { setFoldCollapsed(f, true); });
         setDetailsOpen(fileReadsInActiveTab(), false);
+        bodyCollapsedBubblesInActiveTab().forEach(function(b) {
+          setBubbleBodyCollapsed(b, true);
+        });
         document.querySelectorAll('.bubble[data-file-reads="true"]').forEach(syncFileReadHeaderBtn);
       });
     });
@@ -596,6 +701,7 @@
         rich.hidden = true;
       }
     });
+    schedulePreviewClipUpdate();
   }
 
   if (mdToggle) {
@@ -660,6 +766,7 @@
   var fileReadsToggle = document.getElementById('file-reads-toggle');
   function setFileReadsMode(on) {
     document.body.classList.toggle('file-reads-on', !!on);
+    schedulePreviewClipUpdate();
   }
   if (fileReadsToggle) {
     var fileReadsPrefer = true;
@@ -675,8 +782,63 @@
       setFileReadsMode(fileReadsToggle.checked);
     });
   } else {
-    // No control on this page — default to split view when file cards exist
+    // No control on this page - default to split view when file cards exist
     setFileReadsMode(true);
   }
+
+  // ── Preview toggle (collapsed bubble/fold snippet for all roles) ──
+  var previewToggle = document.getElementById('preview-toggle');
+  function setPreviewMode(on) {
+    document.body.classList.toggle('preview-on', !!on);
+    schedulePreviewClipUpdate();
+  }
+  if (previewToggle) {
+    var previewPrefer = true;
+    try {
+      var pvStored = localStorage.getItem(PREVIEW_KEY);
+      if (pvStored === '0') previewPrefer = false;
+      if (pvStored === '1') previewPrefer = true;
+    } catch (e) {}
+    previewToggle.checked = previewPrefer;
+    setPreviewMode(previewPrefer);
+    previewToggle.addEventListener('change', function() {
+      try { localStorage.setItem(PREVIEW_KEY, previewToggle.checked ? '1' : '0'); } catch (e) {}
+      setPreviewMode(previewToggle.checked);
+    });
+  } else {
+    setPreviewMode(true);
+  }
+
+  // Fade the bottom of collapsed previews only when content actually overflows
+  // the max-height cap (short messages that fit stay fully opaque).
+  var previewClipRaf = 0;
+  function updatePreviewClipState() {
+    previewClipRaf = 0;
+    var previewOn = document.body.classList.contains('preview-on');
+    document.querySelectorAll('.bubble-body.is-clipped, .fold-body.is-clipped').forEach(function(el) {
+      if (!previewOn) el.classList.remove('is-clipped');
+    });
+    if (!previewOn) return;
+
+    document.querySelectorAll(
+      '.bubble[data-body-collapsed="true"] > .bubble-body'
+    ).forEach(function(el) {
+      el.classList.toggle('is-clipped', el.scrollHeight > el.clientHeight + 1);
+    });
+    document.querySelectorAll(
+      '.fold[data-collapsed="true"] > .fold-body'
+    ).forEach(function(el) {
+      el.classList.toggle('is-clipped', el.scrollHeight > el.clientHeight + 1);
+    });
+  }
+  function schedulePreviewClipUpdate() {
+    if (previewClipRaf) return;
+    previewClipRaf = window.requestAnimationFrame(function() {
+      // Second frame: wait for layout after mode toggles / markdown swap.
+      previewClipRaf = window.requestAnimationFrame(updatePreviewClipState);
+    });
+  }
+  window.addEventListener('resize', schedulePreviewClipUpdate);
+  schedulePreviewClipUpdate();
 
 })();
