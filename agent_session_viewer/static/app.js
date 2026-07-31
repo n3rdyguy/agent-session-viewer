@@ -236,13 +236,13 @@
       .catch(() => new Promise((r) => setTimeout(r, 120)).then(tryCopy))
       .catch(() => {
         copyImageUrl(resolvedSrc)
-          .then(() => showToast('Bitmap copy failed — URL copied instead'))
-          .catch(() => showToast('Copy failed — try right-click → Copy image'));
+          .then(() => showToast('Bitmap copy failed - URL copied instead'))
+          .catch(() => showToast('Copy failed - try right-click → Copy image'));
       });
   });
 
 
-  // ── Fold / expand-all / copy (always — do not gate on marked CDN) ──
+  // ── Fold / expand-all / copy (always - do not gate on marked CDN) ──
   function cardRootForFold(fold) {
     return fold ? fold.closest('.bubble, .artifact-doc') : null;
   }
@@ -278,7 +278,7 @@
     if (!fold) return;
     var collapsed = fold.getAttribute('data-collapsed') !== 'false';
     if (collapsed) {
-      // Expanding: content grows below — no scroll fix needed.
+      // Expanding: content grows below - no scroll fix needed.
       setFoldCollapsed(fold, false);
     } else {
       // Collapsing: keep this card from yanking the page.
@@ -391,7 +391,7 @@
       if (!root) return;
 
       // tool_result: whole body starts collapsed; chevron toggles the bubble body.
-      // File cards inside may already be open (single-file default) — that is fine.
+      // File cards inside may already be open (single-file default) - that is fine.
       if (root.hasAttribute('data-body-collapsed')) {
         var expand = bubbleBodyCollapsed(root);
         setBubbleBodyCollapsed(root, !expand);
@@ -779,7 +779,7 @@
       setFileReadsMode(fileReadsToggle.checked);
     });
   } else {
-    // No control on this page — default to split view when file cards exist
+    // No control on this page - default to split view when file cards exist
     setFileReadsMode(true);
   }
 

@@ -28,7 +28,7 @@ LOGGER = logging.getLogger(__name__)
 
 # Grok/Codex inject large system/developer/project-instruction blobs as chat
 # turns; the view lifts those into a collapsed System panel. Claude does not
-# persist the same injected base instructions in the transcript — its system
+# persist the same injected base instructions in the transcript - its system
 # turns (hooks, slash commands, reminders) stay inline in the chat.
 _SYSTEM_PANEL_AGENTS = frozenset({"grok", "codex"})
 
@@ -346,29 +346,29 @@ def summary_to_markdown(
 
     if agent == "grok":
         lines = [
-            f"**Model:** {summary.get('model') or '—'}  ",
-            f"**CWD:** `{summary.get('cwd') or '—'}`  ",
-            f"**Agent:** {summary.get('agent_name') or '—'}  ",
-            f"**Reasoning effort:** {summary.get('reasoning_effort') or '—'}  ",
+            f"**Model:** {summary.get('model') or '-'}  ",
+            f"**CWD:** `{summary.get('cwd') or '-'}`  ",
+            f"**Agent:** {summary.get('agent_name') or '-'}  ",
+            f"**Reasoning effort:** {summary.get('reasoning_effort') or '-'}  ",
             f"**Session id:** `{summary.get('id')}`  ",
         ]
     elif agent == "codex":
         lines = [
-            f"**Model:** {summary.get('model') or '—'}  ",
-            f"**CWD:** `{summary.get('cwd') or '—'}`  ",
-            f"**Originator:** {summary.get('agent_name') or '—'}  ",
-            f"**Reasoning effort:** {summary.get('reasoning_effort') or '—'}  ",
-            f"**Sandbox:** {summary.get('sandbox_profile') or '—'}  ",
+            f"**Model:** {summary.get('model') or '-'}  ",
+            f"**CWD:** `{summary.get('cwd') or '-'}`  ",
+            f"**Originator:** {summary.get('agent_name') or '-'}  ",
+            f"**Reasoning effort:** {summary.get('reasoning_effort') or '-'}  ",
+            f"**Sandbox:** {summary.get('sandbox_profile') or '-'}  ",
             f"**Session id:** `{summary.get('id')}`  ",
         ]
     elif agent == "claude":
         lines = [
-            f"**Model:** {summary.get('model') or '—'}  ",
-            f"**CWD:** `{summary.get('cwd') or '—'}`  ",
-            f"**Permission mode:** {summary.get('sandbox_profile') or '—'}  ",
-            f"**Reasoning effort:** {summary.get('reasoning_effort') or '—'}  ",
-            f"**Branch:** {summary.get('head_branch') or '—'}  ",
-            f"**CLI version:** {summary.get('cli_version') or '—'}  ",
+            f"**Model:** {summary.get('model') or '-'}  ",
+            f"**CWD:** `{summary.get('cwd') or '-'}`  ",
+            f"**Permission mode:** {summary.get('sandbox_profile') or '-'}  ",
+            f"**Reasoning effort:** {summary.get('reasoning_effort') or '-'}  ",
+            f"**Branch:** {summary.get('head_branch') or '-'}  ",
+            f"**CLI version:** {summary.get('cli_version') or '-'}  ",
             f"**Session id:** `{summary.get('id')}`  ",
         ]
     else:

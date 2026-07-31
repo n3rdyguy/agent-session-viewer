@@ -137,7 +137,7 @@ def truncate(s: str, n: int = 140) -> str:
 
 def format_tokens(n: int | float | None) -> str:
     if n is None:
-        return "—"
+        return "-"
     try:
         n = int(n)
     except (OverflowError, TypeError, ValueError):
@@ -164,12 +164,12 @@ def empty_token_usage() -> dict:
         "context_window": None,
         "context_pct": None,
         "available": False,
-        "input_fmt": "—",
-        "output_fmt": "—",
-        "total_fmt": "—",
-        "cached_fmt": "—",
-        "reasoning_fmt": "—",
-        "uncached_fmt": "—",
+        "input_fmt": "-",
+        "output_fmt": "-",
+        "total_fmt": "-",
+        "cached_fmt": "-",
+        "reasoning_fmt": "-",
+        "uncached_fmt": "-",
         "source": "",
         "bar": {"uncached_pct": 0, "cached_pct": 0, "out_pct": 0, "reason_pct": 0},
     }

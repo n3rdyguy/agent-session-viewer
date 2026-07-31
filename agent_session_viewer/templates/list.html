@@ -31,7 +31,7 @@
       </div>
       <div class="meta">
         {{ s.updated or s.created or s.id }}
-        · {{ s.messages or '—' }} msgs
+        · {{ s.messages or '-' }} msgs
         {% if s.model %} · {{ s.model }}{% endif %}
         <br>{{ s.cwd }}
       </div>

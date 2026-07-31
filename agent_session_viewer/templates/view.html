@@ -46,7 +46,7 @@
       {% for diagnostic in diagnostics %}
       <li>
         {{ diagnostic.path|decode_html_entities }}{% if diagnostic.line %}:{{ diagnostic.line }}{% endif %}
-        — {{ diagnostic.category }}: {{ diagnostic.message }}
+        - {{ diagnostic.category }}: {{ diagnostic.message }}
       </li>
       {% endfor %}
     </ul>
@@ -59,13 +59,13 @@
   <h3>Session summary</h3>
   <div class="summary-grid">
     <div><div class="label">ID</div><div class="value">{{ summary.id }}</div></div>
-    <div><div class="label">Model</div><div class="value">{{ summary.model or '—' }}</div></div>
-    <div><div class="label">Agent</div><div class="value">{{ summary.agent_name or '—' }}</div></div>
-    <div><div class="label">Reasoning</div><div class="value">{{ summary.reasoning_effort or '—' }}</div></div>
-    <div><div class="label">Sandbox</div><div class="value">{{ summary.sandbox_profile or '—' }}</div></div>
-    <div><div class="label">Created</div><div class="value">{{ summary.created or '—' }}</div></div>
-    <div><div class="label">Updated</div><div class="value">{{ summary.updated or '—' }}</div></div>
-    <div><div class="label">Messages</div><div class="value">{{ summary.num_chat_messages or '—' }} chat / {{ summary.num_messages or '—' }} total</div></div>
+    <div><div class="label">Model</div><div class="value">{{ summary.model or '-' }}</div></div>
+    <div><div class="label">Agent</div><div class="value">{{ summary.agent_name or '-' }}</div></div>
+    <div><div class="label">Reasoning</div><div class="value">{{ summary.reasoning_effort or '-' }}</div></div>
+    <div><div class="label">Sandbox</div><div class="value">{{ summary.sandbox_profile or '-' }}</div></div>
+    <div><div class="label">Created</div><div class="value">{{ summary.created or '-' }}</div></div>
+    <div><div class="label">Updated</div><div class="value">{{ summary.updated or '-' }}</div></div>
+    <div><div class="label">Messages</div><div class="value">{{ summary.num_chat_messages or '-' }} chat / {{ summary.num_messages or '-' }} total</div></div>
     {% if summary.request_id %}
     <div><div class="label">Request</div><div class="value">{{ summary.request_id }}</div></div>
     {% endif %}
@@ -192,23 +192,26 @@
   <p class="panel-section-label"{% if resources.todos %} style="margin-top:0.85rem;"{% endif %}>
     Prompt history ({{ prompt_history|length }})
   </p>
-  <ul class="prompt-history-list">
+  <ol class="prompt-history-list">
     {% for row in prompt_history %}
     <li>
       {% if row.turn_anchor %}
-      <a class="prompt-history-link" href="#{{ row.turn_anchor }}" title="Jump to this turn in chat">
-        {% if row.time %}<span class="prompt-history-time">{{ row.time }}</span><span class="prompt-history-sep"> — </span>{% endif %}
+      <a class="prompt-history-link" href="#{{ row.turn_anchor }}"
+         title="{{ row.display }} (jump to turn)">
+        <span class="prompt-history-index" aria-hidden="true">{{ loop.index }}</span>
+        {% if row.time %}<span class="prompt-history-time">{{ row.time }}</span>{% else %}<span class="prompt-history-time prompt-history-time-empty"></span>{% endif %}
         <span class="prompt-history-text">{{ row.display }}</span>
       </a>
       {% else %}
-      <span class="prompt-history-unlinked">
-        {% if row.time %}<span class="prompt-history-time">{{ row.time }}</span><span class="prompt-history-sep"> — </span>{% endif %}
+      <span class="prompt-history-unlinked" title="{{ row.display }}">
+        <span class="prompt-history-index" aria-hidden="true">{{ loop.index }}</span>
+        {% if row.time %}<span class="prompt-history-time">{{ row.time }}</span>{% else %}<span class="prompt-history-time prompt-history-time-empty"></span>{% endif %}
         <span class="prompt-history-text">{{ row.display }}</span>
       </span>
       {% endif %}
     </li>
     {% endfor %}
-  </ul>
+  </ol>
   {% endif %}
 </div>
 {% endif %}
@@ -282,7 +285,7 @@
       {% set artifact_kind = (a.kind or '')|lower %}
       {% set artifact_title = (a.title or '')|lower %}
       {% set artifact_is_markdown = artifact_kind in ['markdown', 'md', 'mdown', 'mkd', 'text/markdown'] or artifact_title.endswith(('.md', '.markdown', '.mdown', '.mkd')) %}
-      {# Nested details: title only when collapsed — no fold clip / minimal preview. #}
+      {# Nested details: title only when collapsed - no fold clip / minimal preview. #}
       <details class="collapsible-artifact-doc">
         <summary>
           <span class="collapsible-artifact-title">{{ a.title or 'document' }}</span>
@@ -333,7 +336,7 @@
         · {{ h.event or 'edit' }}
         · +{{ h.added or 0 }}/-{{ h.removed or 0 }}
         {% if h.time %} · {{ h.time }}{% endif %}
-        <div class="sub">{{ h.file_path }}{% if h.start %} · lines {{ h.start }}–{{ h.end }}{% endif %}
+        <div class="sub">{{ h.file_path }}{% if h.start %} · lines {{ h.start }}-{{ h.end }}{% endif %}
         {% if h.prompt_index is not none %} · prompt {{ h.prompt_index }}{% endif %}
         {% if h.source %} · {{ h.source }}{% endif %}</div>
       </li>
@@ -420,7 +423,7 @@
             </div>
           </div>
           <div class="artifact-doc-body">
-            {# Full body only after expand — no fold clip / minimal preview. #}
+            {# Full body only after expand - no fold clip / minimal preview. #}
             {{ render_md_block(a.text or '', '', '', true) }}
           </div>
         </div>
@@ -459,7 +462,7 @@
   {% if updates %}
     <p style="color:var(--muted); font-size:0.85rem; margin:0 0 1rem;">
       {% if agent == 'codex' %}
-      Task / patch / image events from the Codex rollout (not the full chat — see Chat history).
+      Task / patch / image events from the Codex rollout (not the full chat - see Chat history).
       {% else %}
       Aggregated from <code>updates.jsonl</code> (stream chunks collapsed; tool ids preserved).
       {% endif %}

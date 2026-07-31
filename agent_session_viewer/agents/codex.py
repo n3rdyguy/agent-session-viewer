@@ -537,7 +537,7 @@ def codex_scan_session(path: Path, records: list[dict] | None = None) -> dict:
                         id=payload.get("call_id") or "",
                         text=(
                             f"image_generation_end · {payload.get('status')}\n"
-                            f"saved: {payload.get('saved_path') or '—'}\n"
+                            f"saved: {payload.get('saved_path') or '-'}\n"
                             f"{str(payload.get('revised_prompt') or '')[:400]}"
                         ),
                         meta="image",

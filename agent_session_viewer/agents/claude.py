@@ -495,7 +495,7 @@ def claude_scan_session(
             headline = safe_claude_headline(message.get("content"))
 
         # Records whose only content is a tool_result are transport, and isMeta
-        # records are injected reminders — neither is conversation.
+        # records are injected reminders - neither is conversation.
         if has_text and not obj.get("isMeta"):
             if role == "assistant":
                 counts["assistant"] += 1
