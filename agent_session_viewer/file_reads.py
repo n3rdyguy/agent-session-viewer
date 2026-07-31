@@ -35,7 +35,9 @@ _SHELL_META_LINE_RE = re.compile(
     r"Stdout\s*:|"
     r"Stderr\s*:|"
     r"Command (?:output|failed|succeeded)\b.*|"
-    r"Process exited with (?:code|status)\s+\d+.*"
+    r"Process exited with (?:code|status)\s+\d+.*|"
+    r"Script completed.*|"
+    r"Warning:\s*truncated output.*"
     r")[ \t]*$"
 )
 
@@ -52,7 +54,23 @@ _SHELL_TOOL_NAMES = frozenset(
         "powershell",
         "pwsh",
         "cmd",
+        # Codex JS sandbox wrapper that embeds tools.shell_command({...})
+        "exec",
     }
+)
+
+# PowerShell / agent dumps that print an explicit file boundary before content.
+# Example: Write-Output "FILE path/to/file"; Get-Content ...
+_FILE_MARKER_RE = re.compile(r"(?m)^FILE[ \t]+(.+?)\s*$")
+
+# Codex exec scripts: const r = await tools.shell_command({command:"...", ...}); text(r)
+_EXEC_SHELL_COMMAND_RE = re.compile(
+    r"tools\.shell_command\s*\(\s*\{",
+    re.IGNORECASE,
+)
+_COMMAND_FIELD_RE = re.compile(
+    r"""['"]?command['"]?\s*:\s*(?P<q>["'])(?P<cmd>(?:\\.|(?!\1).)*)(?P=q)""",
+    re.IGNORECASE | re.DOTALL,
 )
 
 # sed -n '1,240p' path  |  sed -n 1,240p path  |  sed.exe -n "10,20p" path
@@ -126,33 +144,103 @@ def _is_shell_tool_name(tool_name: str | None) -> bool:
         name = name.rsplit(".", 1)[-1]
     if name in _SHELL_TOOL_NAMES:
         return True
-    return any(token in name for token in ("shell", "terminal", "bash", "powershell", "pwsh"))
+    return any(
+        token in name for token in ("shell", "terminal", "bash", "powershell", "pwsh", "exec")
+    )
+
+
+def _unescape_js_string(value: str, quote: str) -> str:
+    """Unescape a JS/JSON-ish string body captured between quotes."""
+    out: list[str] = []
+    i = 0
+    while i < len(value):
+        ch = value[i]
+        if ch != "\\" or i + 1 >= len(value):
+            out.append(ch)
+            i += 1
+            continue
+        nxt = value[i + 1]
+        if nxt == "n":
+            out.append("\n")
+        elif nxt == "r":
+            out.append("\r")
+        elif nxt == "t":
+            out.append("\t")
+        elif nxt in ("\\", quote, '"', "'"):
+            out.append(nxt)
+        elif nxt == "u" and i + 5 < len(value):
+            hex_part = value[i + 2 : i + 6]
+            try:
+                out.append(chr(int(hex_part, 16)))
+                i += 6
+                continue
+            except ValueError:
+                out.append(nxt)
+        else:
+            out.append(nxt)
+        i += 2
+    return "".join(out)
+
+
+def extract_command_from_exec_script(script: str) -> str | None:
+    """
+    Pull the inner shell ``command`` from a Codex ``exec`` JS wrapper.
+
+    Handles forms like::
+
+        const r = await tools.shell_command({command:"Get-Content a", workdir:"..."}); text(r)
+    """
+    if not script or "shell_command" not in script:
+        return None
+    if not _EXEC_SHELL_COMMAND_RE.search(script):
+        return None
+    match = _COMMAND_FIELD_RE.search(script)
+    if not match:
+        return None
+    return _unescape_js_string(match.group("cmd"), match.group("q")).strip() or None
 
 
 def extract_shell_command(tool_name: str | None, arguments: Any) -> str | None:
     """Return the shell command string from a tool call name + arguments, if any."""
-    if not _is_shell_tool_name(tool_name):
-        return None
+    name = (tool_name or "").strip().lower()
+    if "." in name:
+        name = name.rsplit(".", 1)[-1]
 
     args = arguments
     if isinstance(args, str):
         stripped = args.strip()
         if not stripped:
             return None
+        # Codex exec: JS source, not JSON
+        if name == "exec" or "tools.shell_command" in stripped:
+            nested = extract_command_from_exec_script(stripped)
+            if nested:
+                return nested
         try:
             args = json.loads(stripped)
         except json.JSONDecodeError:
-            return stripped
+            if _is_shell_tool_name(tool_name):
+                return stripped
+            return None
 
     if isinstance(args, dict):
         for key in ("command", "cmd", "script", "input"):
             val = args.get(key)
             if isinstance(val, str) and val.strip():
+                # Nested exec script may still wrap shell_command
+                if "tools.shell_command" in val:
+                    nested = extract_command_from_exec_script(val)
+                    if nested:
+                        return nested
                 return val
             if isinstance(val, list):
                 parts = [str(p) for p in val if p is not None and str(p) != ""]
                 if parts:
                     return " ".join(parts)
+        return None
+
+    if not _is_shell_tool_name(tool_name):
+        return None
     return None
 
 
@@ -545,6 +633,64 @@ def build_file_artifacts(
     return [_artifact_from_entry(entry, "", split=False) for entry in plan]
 
 
+def split_file_marker_output(body: str) -> tuple[str, list[FileArtifact]] | None:
+    """
+    Split stdout that uses explicit ``FILE <path>`` boundary markers.
+
+    Common in PowerShell dumps::
+
+        FILE agent_session_viewer/app.py
+           1: ...
+        FILE agent_session_viewer/config.py
+           1: ...
+
+    Returns ``(preamble, artifacts)`` or ``None`` when markers are absent.
+    """
+    if not body or "FILE " not in body:
+        return None
+    matches = list(_FILE_MARKER_RE.finditer(body))
+    if not matches:
+        return None
+
+    artifacts: list[FileArtifact] = []
+    for index, match in enumerate(matches):
+        path = match.group(1).strip()
+        if not path:
+            return None
+        content_start = match.end()
+        content_end = matches[index + 1].start() if index + 1 < len(matches) else len(body)
+        text = body[content_start:content_end]
+        if text.startswith("\r\n"):
+            text = text[2:]
+        elif text.startswith("\n"):
+            text = text[1:]
+        # Drop trailing newline before the next FILE marker for cleaner cards
+        if index + 1 < len(matches):
+            text = text.rstrip("\r\n") + ("\n" if text.endswith(("\n", "\r\n")) else "")
+            if text.endswith("\r\n\r\n") or text.endswith("\n\n"):
+                text = text.rstrip("\r\n") + "\n"
+        entry: FileReadEntry = {"path": path, "range_kind": "full"}
+        # Infer line range from leading "   12: " style numbering when present
+        numbered = re.findall(r"(?m)^\s*(\d+)\s*:", text)
+        if numbered:
+            try:
+                start_n = int(numbered[0])
+                end_n = int(numbered[-1])
+                if 1 <= start_n <= end_n:
+                    entry["start"] = start_n
+                    entry["end"] = end_n
+                    entry["range_kind"] = "slice"
+                    entry["expected_lines"] = end_n - start_n + 1
+            except ValueError:
+                pass
+        artifacts.append(_artifact_from_entry(entry, text, split=True))
+
+    if not artifacts:
+        return None
+    preamble = body[: matches[0].start()]
+    return preamble, artifacts
+
+
 def file_artifacts_for_tool_result(
     *,
     tool_name: str | None,
@@ -558,12 +704,32 @@ def file_artifacts_for_tool_result(
     Returns ``(artifacts, prefix)`` when stdout was partitioned into file cards:
     - ``artifacts``: per-file bodies taken from the tool_result output
     - ``prefix``: non-file output that appeared *before* the file bodies
-      (typically shell meta: Exit code / Wall time / Output:)
+      (shell meta and any preamble before the first file)
 
-    Returns ``([], None)`` when the command is not a pure file-read batch or
-    the body cannot be partitioned. Callers should keep the full ``output`` as
-    the turn text for flat (toggle-off) display.
+    Supports:
+    1. Explicit ``FILE path`` markers in stdout (PowerShell multi-file dumps)
+    2. Pure file-read shell commands (sed/cat/Get-Content/…)
+
+    Also unwraps Codex ``exec`` scripts that embed ``tools.shell_command``.
+    Returns ``([], None)`` when content cannot be partitioned. Callers should
+    keep the full ``output`` as the turn text for flat (toggle-off) display.
     """
+    header, body = strip_shell_output_meta(output)
+
+    # 1) Output-driven: FILE markers (works even without a parseable command)
+    marked = split_file_marker_output(body)
+    if marked is not None:
+        preamble, artifacts = marked
+        if artifacts and all(a.get("split") for a in artifacts):
+            prefix_parts = []
+            if header.strip():
+                prefix_parts.append(header.rstrip())
+            if preamble.strip():
+                prefix_parts.append(preamble.rstrip())
+            prefix = ("\n".join(prefix_parts) + "\n") if prefix_parts else ""
+            return artifacts, prefix
+
+    # 2) Command-driven pure file-read batches
     cmd = command
     if cmd is None:
         cmd = extract_shell_command(tool_name, arguments)
@@ -574,7 +740,6 @@ def file_artifacts_for_tool_result(
     if not plan:
         return [], None
 
-    header, body = strip_shell_output_meta(output)
     artifacts = build_file_artifacts(plan, body)
     if not artifacts:
         return [], None

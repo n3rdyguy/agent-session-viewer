@@ -7,10 +7,12 @@ from pathlib import Path
 from agent_session_viewer.agents.codex import get_codex_conversation
 from agent_session_viewer.file_reads import (
     build_file_artifacts,
+    extract_command_from_exec_script,
     extract_shell_command,
     file_artifacts_for_tool_result,
     format_file_read_label,
     parse_file_read_plan,
+    split_file_marker_output,
     strip_shell_output_meta,
 )
 from agent_session_viewer.session import turns_to_markdown
@@ -168,6 +170,67 @@ def test_extract_shell_command_from_json() -> None:
     assert extract_shell_command("read_file", '{"path":"x.py"}') is None
 
 
+def test_extract_command_from_codex_exec_script() -> None:
+    script = (
+        'const r = await tools.shell_command({command:"Get-Content a.py; Get-Content b.py",'
+        '"workdir":"C:\\\\tmp","timeout_ms":10000}); text(r)'
+    )
+    assert extract_command_from_exec_script(script) == "Get-Content a.py; Get-Content b.py"
+    assert extract_shell_command("exec", script) == "Get-Content a.py; Get-Content b.py"
+
+    escaped = (
+        r'const r = await tools.shell_command({command:"rg -n \"foo\" a.py; Get-Content a.py",'
+        r'"workdir":"C:\\tmp"}); text(r)'
+    )
+    cmd = extract_shell_command("exec", escaped)
+    assert cmd is not None
+    assert 'rg -n "foo" a.py' in cmd
+    assert "Get-Content a.py" in cmd
+
+
+def test_split_file_marker_output() -> None:
+    body = (
+        "FILE agent_session_viewer/app.py\n"
+        "   1: line one\n"
+        "   2: line two\n"
+        "FILE agent_session_viewer/config.py\n"
+        "  10: cfg\n"
+        "  11: more\n"
+    )
+    result = split_file_marker_output(body)
+    assert result is not None
+    preamble, arts = result
+    assert preamble == ""
+    assert len(arts) == 2
+    assert arts[0]["path"] == "agent_session_viewer/app.py"
+    assert arts[0]["label"] == "agent_session_viewer/app.py · lines 1–2"
+    assert "line one" in (arts[0]["text"] or "")
+    assert arts[1]["path"] == "agent_session_viewer/config.py"
+    assert arts[1]["start"] == 10
+    assert arts[1]["end"] == 11
+
+
+def test_file_marker_artifacts_from_tool_result_without_command() -> None:
+    out = (
+        "Script completed\nWall time 1.0 seconds\nOutput:\n"
+        "Exit code: 0\nOutput:\n"
+        "FILE a.py\n"
+        "   1: hello\n"
+        "FILE b.py\n"
+        "   1: world\n"
+    )
+    arts, prefix = file_artifacts_for_tool_result(
+        tool_name="exec", arguments=None, command=None, output=out
+    )
+    assert len(arts) == 2
+    assert arts[0]["path"] == "a.py"
+    assert "hello" in (arts[0]["text"] or "")
+    assert "world" in (arts[1]["text"] or "")
+    assert prefix is not None
+    assert "Exit code" in prefix or "Script completed" in prefix
+    assert "hello" not in prefix
+
+
 def test_file_artifacts_for_tool_result_returns_prefix() -> None:
     cmd = "sed -n '1,1p' a; sed -n '1,1p' b"
     out = "Exit code: 0\nOutput:\nA\nB\n"
@@ -241,6 +304,14 @@ def test_codex_fixture_file_reads() -> None:
     assert single["file_artifacts"][0]["split"] is True
     assert "hello cat" in single["file_artifacts"][0]["text"]
     assert "hello cat" in single["text"]
+    # Codex exec + FILE markers
+    exec_files = next(t for t in results if t["id"] == "call-exec-file-markers")
+    assert exec_files.get("file_artifacts")
+    assert len(exec_files["file_artifacts"]) == 2
+    assert exec_files["file_artifacts"][0]["path"] == "a.py"
+    assert "alpha" in exec_files["file_artifacts"][0]["text"]
+    assert "beta" in exec_files["file_artifacts"][1]["text"]
+    assert "FILE a.py" not in (exec_files.get("file_read_prefix") or "")
 
 
 def test_tool_result_file_reads_template_order_and_modes() -> None:
