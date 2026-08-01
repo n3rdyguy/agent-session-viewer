@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Settings page at `/settings`, reachable from a gear icon on the right of the header on
+  every page. It collects the preferences that were previously scattered across per-page
+  toggles, adds new ones, and shows read-only facts about the install.
+  - **Appearance:** a light theme, plus Auto to follow the operating system. The stylesheet
+    is now fully tokenized - every colour is a CSS custom property, with light values in a
+    single `[data-theme="light"]` block. `theme-boot.js` applies the stored theme in
+    `<head>` before first paint, so there is no flash of the wrong theme.
+  - **Session list:** default agent filter, default sort field and direction, relative vs
+    absolute timestamps on session rows, expand-project-groups, and show-first-prompt.
+  - **Session view:** render Markdown, file cards, and preview-collapsed-bubbles.
+  - **Stored data:** counts for pinned projects and per-project expand overrides, with
+    buttons to clear either, and a reset-all-preferences button.
+  - **This install:** version, which `.env` was loaded, `ASV_DEBUG` / `ASV_TIMING_DEBUG`
+    state, and each agent's env var, session roots and session count. A root the agent
+    always has is flagged `missing` when absent; a root it creates lazily is labelled
+    "not created yet" instead, so Codex's `archived_sessions` does not look like a fault
+    before anything has been archived. `AgentSpec` distinguishes the two via
+    `session_subdirs` and `optional_subdirs`; both are searched identically.
+
+  Every preference is stored in `localStorage` and applied client-side. The page has no
+  write route and does not change server configuration, so the app stays read-only and the
+  documented threat model is unchanged. Agent homes are still configured by environment
+  variable or `.env` and shown here only for reference.
+
 ### Changed
 
 - Replaced the per-agent `if/elif` dispatch chains with an agent registry. Each supported

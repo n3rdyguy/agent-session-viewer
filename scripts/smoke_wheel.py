@@ -19,6 +19,9 @@ PACKAGE_ASSETS = {
     "agent_session_viewer/cli.py",
     "agent_session_viewer/static/app.css",
     "agent_session_viewer/static/app.js",
+    "agent_session_viewer/static/prefs.js",
+    "agent_session_viewer/static/settings.js",
+    "agent_session_viewer/static/theme-boot.js",
     "agent_session_viewer/static/apple-touch-icon.png",
     "agent_session_viewer/static/favicon-16.png",
     "agent_session_viewer/static/favicon-32.png",
@@ -33,12 +36,16 @@ PACKAGE_ASSETS = {
     "agent_session_viewer/templates/base.html",
     "agent_session_viewer/templates/list.html",
     "agent_session_viewer/templates/partials/bubbles.html",
+    "agent_session_viewer/templates/settings.html",
     "agent_session_viewer/templates/view.html",
 }
 FORBIDDEN_WHEEL_PREFIXES = ("app.py", "main.py", "templates/", "static/")
 STATIC_URLS = (
     "/static/app.css",
     "/static/app.js",
+    "/static/prefs.js",
+    "/static/settings.js",
+    "/static/theme-boot.js",
     "/static/apple-touch-icon.png",
     "/static/favicon-16.png",
     "/static/favicon-32.png",
