@@ -275,6 +275,22 @@ def test_html_responses_have_security_headers(client) -> None:
     assert "connect-src 'none'" in csp
     assert "frame-ancestors 'none'" in csp
     assert "object-src 'none'" in csp
+    assert "style-src 'self'" in csp
+    # No inline style attributes remain in the templates; keep it that way.
+    assert "'unsafe-inline'" not in csp
+    assert "style=" not in response.get_data(as_text=True)
+
+
+def test_view_markup_has_no_inline_styles(client, agent_homes: dict[str, Path]) -> None:
+    """style-src 'self' blocks style attributes, so the templates must not emit any."""
+    session = _install_claude_fixture(agent_homes)
+
+    html = client.get("/view", query_string={"agent": "claude", "path": str(session)}).get_data(
+        as_text=True
+    )
+
+    assert "data-pct=" in html, "token bar should ship percentages as data attributes"
+    assert "style=" not in html
 
 
 def test_export_characterization(client, agent_homes: dict[str, Path]) -> None:

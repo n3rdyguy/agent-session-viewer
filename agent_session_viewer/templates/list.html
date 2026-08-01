@@ -2,7 +2,7 @@
 {% block title %}Sessions{% endblock %}
 {% block content %}
 <div class="toolbar">
-  <form method="get" style="display:flex; flex:1; gap:0.5rem; min-width:220px;">
+  <form method="get" class="search-form">
     {% if agent %}<input type="hidden" name="agent" value="{{ agent }}">{% endif %}
     <input class="search-box" type="search" name="q" value="{{ q or '' }}"
            placeholder="Search title, ID, path…">
@@ -89,7 +89,7 @@
   <div class="empty">
     <h2>No sessions found</h2>
     {% if q %}<p>Try a different search term.</p>{% endif %}
-    <p style="margin-top:1.5rem; font-size:0.9rem;">
+    <p class="empty-paths">
       Looking in:<br>
       Grok → {{ grok_path }}<br>
       Claude → {{ claude_path }}<br>

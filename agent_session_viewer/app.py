@@ -52,7 +52,7 @@ def add_security_headers(response: Response) -> Response:
         "img-src 'self' data:; "
         "object-src 'none'; "
         "script-src 'self'; "
-        "style-src 'self' 'unsafe-inline'"
+        "style-src 'self'"
     )
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["Referrer-Policy"] = "no-referrer"

@@ -1,4 +1,14 @@
 (function() {
+  // Token-usage bar widths. The CSP has no style-src 'unsafe-inline', so the
+  // template ships percentages as data-pct and they are applied here via CSSOM
+  // (which style-src does not restrict).
+  document.querySelectorAll('[data-pct]').forEach(function(el) {
+    const pct = parseFloat(el.dataset.pct);
+    if (Number.isFinite(pct)) {
+      el.style.width = Math.max(0, Math.min(100, pct)) + '%';
+    }
+  });
+
   const MD_KEY = 'asv-markdown';
   const FILE_READS_KEY = 'asv-file-reads';
   const PREVIEW_KEY = 'asv-preview';
