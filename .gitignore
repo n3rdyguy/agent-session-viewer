@@ -20,6 +20,11 @@ _view*.html
 # playwright-cli snapshot artifacts
 .playwright-cli/
 
+# Tool caches
+.pytest_cache/
+.ruff_cache/
+.uv-cache/
+
 # Local planning / notes (not shipped)
 docs/
 
