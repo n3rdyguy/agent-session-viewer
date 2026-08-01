@@ -123,10 +123,12 @@
     </div>
 
     <div class="token-bar" title="uncached in / cached in / output / reasoning">
-      <span class="seg-in" style="width: {{ tok.bar.uncached_pct }}%"></span>
-      <span class="seg-cached" style="width: {{ tok.bar.cached_pct }}%"></span>
-      <span class="seg-out" style="width: {{ tok.bar.out_pct }}%"></span>
-      <span class="seg-reason" style="width: {{ tok.bar.reason_pct }}%"></span>
+      {# Widths ship as data-pct and are applied by app.js: the CSP has no
+         style-src 'unsafe-inline', so inline style attributes are blocked. #}
+      <span class="seg-in" data-pct="{{ tok.bar.uncached_pct }}"></span>
+      <span class="seg-cached" data-pct="{{ tok.bar.cached_pct }}"></span>
+      <span class="seg-out" data-pct="{{ tok.bar.out_pct }}"></span>
+      <span class="seg-reason" data-pct="{{ tok.bar.reason_pct }}"></span>
     </div>
     <div class="token-legend">
       <span><i class="lg-in"></i>Uncached input</span>
@@ -139,14 +141,14 @@
     <div class="token-context">
       Context window (latest): {{ tok.context_used_fmt }} / {{ tok.context_window_fmt }}
       ({{ tok.context_pct }}%)
-      <div class="bar"><span style="width: {{ tok.context_pct if tok.context_pct < 100 else 100 }}%"></span></div>
+      <div class="bar"><span data-pct="{{ tok.context_pct if tok.context_pct < 100 else 100 }}"></span></div>
     </div>
     {% endif %}
 
     {% if tok.by_model_rows and tok.by_model_rows|length > 0 %}
-    <details style="margin-top:0.75rem;">
+    <details class="panel-details">
       <summary>Per model</summary>
-      <table class="settings-table" style="margin-top:0.5rem;">
+      <table class="settings-table settings-table-inset">
         <thead>
           <tr><th>Model</th><th>In</th><th>Out</th><th>Cached</th><th>Reasoning</th><th>Calls</th></tr>
         </thead>
@@ -181,14 +183,14 @@
     <li>
       <span class="todo-id">{{ t.id }}</span>
       <span class="todo-status {{ t.status }}">{{ t.status }}</span>
-      <span>{{ t.content }}{% if t.priority %} <span style="color:var(--muted)">({{ t.priority }})</span>{% endif %}</span>
+      <span>{{ t.content }}{% if t.priority %} <span class="todo-priority">({{ t.priority }})</span>{% endif %}</span>
     </li>
     {% endfor %}
   </ul>
   {% endif %}
 
   {% if prompt_history %}
-  <p class="panel-section-label"{% if resources.todos %} style="margin-top:0.85rem;"{% endif %}>
+  <p class="panel-section-label{{ ' spaced' if resources.todos else '' }}">
     Prompt history ({{ prompt_history|length }})
   </p>
   <ol class="prompt-history-list">
@@ -231,7 +233,7 @@
   {% endif %}
 
   {% if resources.scheduler_tasks %}
-  <details style="margin-top:0.85rem;">
+  <details class="panel-details-lg">
     <summary>Scheduler tasks ({{ resources.scheduler_tasks|length }})</summary>
     <ul class="artifact-list">
       {% for t in resources.scheduler_tasks %}
@@ -242,7 +244,7 @@
   {% endif %}
 
   {% if resources.settings %}
-  <details style="margin-top:0.85rem;">
+  <details class="panel-details-lg">
     <summary>Tool settings ({{ resources.settings|length }} non-null params)</summary>
     <table class="settings-table">
       <thead><tr><th>Tool</th><th>Key</th><th>Value</th></tr></thead>
@@ -260,7 +262,7 @@
   {% endif %}
 
   {% if resources.other_state %}
-  <details style="margin-top:0.85rem;">
+  <details class="panel-details-lg">
     <summary>Other resource state ({{ resources.other_state|length }})</summary>
     <ul class="artifact-list">
       {% for o in resources.other_state %}
@@ -326,7 +328,7 @@
   {% endif %}
 
   {% if hunks %}
-  <details style="margin-top:0.6rem;">
+  <details class="panel-details-sm">
     <summary>{% if agent == 'codex' %}Patches{% else %}Hunk records{% endif %} ({{ hunks|length }}) · file edits</summary>
     <ul class="artifact-list">
       {% for h in hunks %}
@@ -345,7 +347,7 @@
   {% endif %}
 
   {% if terminal_logs %}
-  <details style="margin-top:0.6rem;">
+  <details class="panel-details-sm">
     <summary>Terminal logs ({{ terminal_logs|length }}) · matched by call id</summary>
     <ul class="artifact-list">
       {% for t in terminal_logs %}
@@ -359,7 +361,7 @@
   {% endif %}
 
   {% if recaps %}
-  <details style="margin-top:0.6rem;">
+  <details class="panel-details-sm">
     <summary>Recap requests ({{ recaps|length }})</summary>
     <ul class="artifact-list">
       {% for r in recaps %}
@@ -459,7 +461,7 @@
 {% if updates is not none %}
 <div id="tab-updates" class="tab-panel">
   {% if updates %}
-    <p style="color:var(--muted); font-size:0.85rem; margin:0 0 1rem;">
+    <p class="tab-hint">
       {% if agent == 'codex' %}
       Task / patch / image events from the Codex rollout (not the full chat - see Chat history).
       {% else %}

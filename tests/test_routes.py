@@ -105,6 +105,19 @@ def test_index_uses_temporary_agent_homes(client, agent_homes: dict[str, Path]) 
     assert b"session.jsonl" in response.data
 
 
+def test_count_line_is_a_live_region(client, agent_homes: dict[str, Path]) -> None:
+    """list.js rewrites the count line while filtering; screen readers need the announcement."""
+    session = agent_homes["claude"] / "projects" / "fixture-project" / "session.jsonl"
+    session.parent.mkdir()
+    _write_claude_session(session)
+
+    html = client.get("/").get_data(as_text=True)
+
+    match = re.search(r"<p[^>]*id=\"count-line\"[^>]*>", html)
+    assert match is not None, "count line missing from the session list"
+    assert 'role="status"' in match.group(0)
+
+
 def test_search_query_round_trips_through_agent_filters(client) -> None:
     query = 'A&B #tag="✓"'
     response = client.get("/", query_string={"q": query})
@@ -262,6 +275,22 @@ def test_html_responses_have_security_headers(client) -> None:
     assert "connect-src 'none'" in csp
     assert "frame-ancestors 'none'" in csp
     assert "object-src 'none'" in csp
+    assert "style-src 'self'" in csp
+    # No inline style attributes remain in the templates; keep it that way.
+    assert "'unsafe-inline'" not in csp
+    assert "style=" not in response.get_data(as_text=True)
+
+
+def test_view_markup_has_no_inline_styles(client, agent_homes: dict[str, Path]) -> None:
+    """style-src 'self' blocks style attributes, so the templates must not emit any."""
+    session = _install_claude_fixture(agent_homes)
+
+    html = client.get("/view", query_string={"agent": "claude", "path": str(session)}).get_data(
+        as_text=True
+    )
+
+    assert "data-pct=" in html, "token bar should ship percentages as data attributes"
+    assert "style=" not in html
 
 
 def test_export_characterization(client, agent_homes: dict[str, Path]) -> None:

@@ -143,3 +143,41 @@ def test_dependency_failures_render_plain_text(
     page.goto(url)
 
     _assert_plain_fallback(page)
+
+
+FIXTURES = Path(__file__).parent / "fixtures"
+
+
+def test_token_bar_widths_apply_without_inline_styles(
+    browser: Browser,
+    agent_homes: dict[str, Path],
+) -> None:
+    """Widths moved from style="" to data-pct when style-src dropped 'unsafe-inline'."""
+    session = agent_homes["claude"] / "projects" / "rich" / "session-fixture.jsonl"
+    session.parent.mkdir(parents=True)
+    session.write_text(
+        (FIXTURES / "claude" / "session-fixture.jsonl").read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    page = browser.new_page()
+    violations: list[str] = []
+    page.on("console", lambda message: violations.append(message.text))
+    try:
+        with _live_app() as base_url:
+            query = urlencode({"agent": "claude", "path": str(session)})
+            page.goto(f"{base_url}/view?{query}")
+
+            segment = page.locator(".token-bar .seg-cached")
+            expect(segment).to_be_attached()
+            # data-pct is 72.26 for this fixture; JS must turn that into a real width.
+            width = page.evaluate(
+                "document.querySelector('.token-bar .seg-cached').getBoundingClientRect().width"
+            )
+            # CSSOM writes reflect back into a style attribute, which is fine:
+            # style-src governs markup, not element.style. The served HTML is
+            # checked for inline styles in test_routes.py instead.
+            assert width > 0, "token bar segment has no width - data-pct was not applied"
+    finally:
+        page.close()
+
+    assert not [text for text in violations if "Content Security Policy" in text], violations
