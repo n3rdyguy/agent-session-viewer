@@ -67,6 +67,12 @@ flags are backward compatible with 0.1.0.
 - Detected code in session output is fenced before rendering, so embedded Markdown in
   tool dumps no longer breaks the page.
 
+### Deprecated
+
+- The root `app.py` and `main.py` shims are scheduled for removal in **0.3.0**. They exist
+  only so older source checkouts keep working, and are already absent from the wheel. Use
+  `agent-session-viewer` or `python -m agent_session_viewer` instead.
+
 ### Fixed
 
 - A single malformed JSONL record no longer crashes or truncates a session. Bad records
