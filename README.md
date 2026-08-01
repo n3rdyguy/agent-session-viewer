@@ -297,6 +297,11 @@ uv run python main.py
 
 Open **http://127.0.0.1:5050** in any modern browser. No build step and no Node.
 
+> **Deprecation:** the root `app.py` and `main.py` shims exist only so older source
+> checkouts keep working. They are not shipped in the wheel — only in the source
+> distribution — and are **scheduled for removal in 0.3.0**. Use the console entrypoint
+> or the module form instead.
+
 The server binds to `127.0.0.1` only (local loopback).
 
 ### Windows 10 + WSL

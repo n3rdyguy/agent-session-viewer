@@ -34,6 +34,10 @@ _CLAUDE_SYNTHETIC_MODEL = '"<synthetic>"'
 
 CacheKey = tuple[str, str, int, int]
 _DISCOVERY_CACHE: dict[CacheKey, dict[str, Any]] = {}
+# (agent, resolved path) -> the one cache key currently held for that file. Without it,
+# evicting the previous size/mtime entry means scanning every key on each insert, which
+# makes a cold scan of n sessions quadratic.
+_CACHE_INDEX: dict[tuple[str, str], CacheKey] = {}
 _CACHE_LOCK = threading.RLock()
 
 
@@ -55,6 +59,7 @@ def clear_discovery_cache() -> None:
     """Clear process-local discovery metadata, primarily for tests and diagnostics."""
     with _CACHE_LOCK:
         _DISCOVERY_CACHE.clear()
+        _CACHE_INDEX.clear()
 
 
 def _file_key(agent: str, path: Path) -> CacheKey | None:
@@ -81,10 +86,11 @@ def _cached_card(
         value = loader(path)
         if not isinstance(value, dict):
             return None
-        path_identity = key[1]
-        for old_key in tuple(_DISCOVERY_CACHE):
-            if old_key[0] == agent and old_key[1] == path_identity and old_key != key:
-                del _DISCOVERY_CACHE[old_key]
+        identity = (agent, key[1])
+        previous = _CACHE_INDEX.get(identity)
+        if previous is not None and previous != key:
+            _DISCOVERY_CACHE.pop(previous, None)
+        _CACHE_INDEX[identity] = key
         _DISCOVERY_CACHE[key] = dict(value)
         return dict(value)
 
@@ -94,6 +100,7 @@ def _prune_agent_cache(agent: str, live_paths: set[str]) -> None:
         for key in tuple(_DISCOVERY_CACHE):
             if key[0] == agent and key[1] not in live_paths:
                 del _DISCOVERY_CACHE[key]
+                _CACHE_INDEX.pop((agent, key[1]), None)
 
 
 def safe_codex_headline(value: object) -> str:

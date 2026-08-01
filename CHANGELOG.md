@@ -12,6 +12,13 @@ flags are backward compatible with 0.1.0.
 
 ### Security
 
+- Upgraded the vendored DOMPurify from 3.2.6 to 3.4.12. 3.2.6 was affected by
+  CVE-2026-0540 (a `SAFE_FOR_XML` regex bypass needing no special configuration, fixed in
+  3.3.2) and CVE-2026-41238 (a prototype-pollution route to a custom-element bypass, fixed
+  in 3.4.0). The sanitizer allowlist in `app.js` already excluded the tags both rely on, so
+  neither was known to be exploitable here. DOMPurify now ships both of its dual-license
+  texts, `LICENSE` (Apache-2.0) and `LICENSE-MPL` (MPL-2.0). The vendored marked 15.0.12 is
+  unaffected by any published advisory and is unchanged.
 - Removed `'unsafe-inline'` from the `style-src` Content-Security-Policy directive. All
   inline `style` attributes were replaced with stylesheet classes; the token-usage and
   context-window bar widths now ship as `data-pct` attributes and are applied from
@@ -60,8 +67,17 @@ flags are backward compatible with 0.1.0.
 - Detected code in session output is fenced before rendering, so embedded Markdown in
   tool dumps no longer breaks the page.
 
+### Deprecated
+
+- The root `app.py` and `main.py` shims are scheduled for removal in **0.3.0**. They exist
+  only so older source checkouts keep working, and are already absent from the wheel. Use
+  `agent-session-viewer` or `python -m agent_session_viewer` instead.
+
 ### Fixed
 
+- Discovery no longer scans the whole metadata cache on every insert. Evicting the previous
+  entry for a changed file now goes through an index, removing a quadratic term worth about
+  0.84 s of CPU when first listing 5000 sessions.
 - A single malformed JSONL record no longer crashes or truncates a session. Bad records
   are skipped and reported in a diagnostics panel on the session page.
 - HTML entities in session content are decoded consistently across views.
