@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -146,6 +147,76 @@ def test_dependency_failures_render_plain_text(
 
 
 FIXTURES = Path(__file__).parent / "fixtures"
+
+
+def test_tabs_fold_controls_and_both_copy_modes(
+    browser: Browser,
+    agent_homes: dict[str, Path],
+) -> None:
+    """Phase 7 regression row: tabs, fold controls, and both copy modes actually work."""
+    # bubbles.html only folds bodies longer than 500 characters, so pad past that.
+    session = agent_homes["claude"] / "projects" / "folding" / "session.jsonl"
+    session.parent.mkdir(parents=True)
+    body = HOSTILE_MARKDOWN + "\n\n" + ("Padding sentence to force the fold control. " * 20)
+    session.write_text(
+        json.dumps(
+            {
+                "type": "user",
+                "timestamp": "2026-07-30T08:00:00Z",
+                "message": {"role": "user", "content": body},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    page = browser.new_page()
+    # Record clipboard writes instead of requesting real clipboard permissions, which
+    # headless Chromium grants inconsistently across platforms.
+    page.add_init_script(
+        "window.__copied = [];"
+        "navigator.clipboard.writeText = function (text) {"
+        "  window.__copied.push(text); return Promise.resolve();"
+        "};"
+    )
+    with _live_app() as base_url:
+        query = urlencode({"agent": "claude", "path": str(session)})
+        page.goto(f"{base_url}/view?{query}")
+        _exercise_tabs_folds_and_copy(page)
+    page.close()
+
+
+def _exercise_tabs_folds_and_copy(page: Page) -> None:
+
+    # Tabs: chat is active on load; switching swaps which panel is shown.
+    chat_panel = page.locator("#tab-chat")
+    expect(chat_panel).to_have_class(re.compile(r"\bactive\b"))
+    updates_tab = page.locator('#view-tabs [data-tab="updates"]')
+    if updates_tab.count():
+        updates_tab.click()
+        expect(page.locator("#tab-updates")).to_have_class(re.compile(r"\bactive\b"))
+        expect(chat_panel).not_to_have_class(re.compile(r"\bactive\b"))
+        page.locator('#view-tabs [data-tab="chat"]').click()
+        expect(chat_panel).to_have_class(re.compile(r"\bactive\b"))
+
+    # Fold controls: a long bubble gets the bubble-level collapse button.
+    toggle = page.locator(".fold-header-btn").first
+    expect(toggle).to_be_attached()
+    expect(toggle).to_have_attribute("aria-expanded", "false")
+    toggle.click()
+    expect(toggle).to_have_attribute("aria-expanded", "true")
+    toggle.click()
+    expect(toggle).to_have_attribute("aria-expanded", "false")
+
+    # Both copy modes put text on the clipboard. The menu items are hidden until the
+    # block's "Copy" button opens the menu.
+    for mode in ("markdown", "raw"):
+        page.evaluate("window.__copied = []")
+        page.locator(".copy-btn").first.click()
+        page.locator(f'[data-copy="{mode}"]').first.click()
+        page.wait_for_function("window.__copied.length > 0")
+        copied = page.evaluate("window.__copied[0]")
+        assert copied, f"{mode} copy produced nothing"
+        assert "Safe heading" in copied, f"{mode} copy lost the document body"
 
 
 def test_token_bar_widths_apply_without_inline_styles(
