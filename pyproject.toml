@@ -32,6 +32,7 @@ include = [
     "app.py",
     "main.py",
     "README.md",
+    "CHANGELOG.md",
     "LICENSE*",
     "pyproject.toml",
 ]
