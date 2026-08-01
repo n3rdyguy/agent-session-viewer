@@ -1,6 +1,6 @@
 [project]
 name = "agent-session-viewer"
-version = "0.1.0"
+version = "0.2.0"
 description = "Local web UI for browsing, searching, and exporting Grok, Claude, and Codex agent sessions"
 readme = "README.md"
 requires-python = ">=3.10"
