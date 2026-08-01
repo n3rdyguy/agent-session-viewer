@@ -26,6 +26,7 @@ PACKAGE_ASSETS = {
     "agent_session_viewer/static/favicon.svg",
     "agent_session_viewer/static/vendor/README.md",
     "agent_session_viewer/static/vendor/dompurify/LICENSE",
+    "agent_session_viewer/static/vendor/dompurify/LICENSE-MPL",
     "agent_session_viewer/static/vendor/dompurify/purify.min.js",
     "agent_session_viewer/static/vendor/marked/LICENSE.md",
     "agent_session_viewer/static/vendor/marked/marked.min.js",
@@ -160,7 +161,10 @@ def verify_server(command: list[str], env: dict[str, str], cwd: Path) -> None:
 def main() -> None:
     wheel, sdist = built_artifacts()
     verify_artifact_contents(wheel, sdist)
-    with tempfile.TemporaryDirectory() as temporary:
+    # Windows can refuse to unlink extension modules the venv still holds open
+    # (for example markupsafe's .pyd), which would fail the run during teardown
+    # after every check has already passed.
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temporary:
         # Expand Windows 8.3/redirected temp paths before venv writes launcher metadata.
         directory = Path(os.path.realpath(temporary))
         python, env = isolated_environment(directory, wheel)

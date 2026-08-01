@@ -12,6 +12,13 @@ flags are backward compatible with 0.1.0.
 
 ### Security
 
+- Upgraded the vendored DOMPurify from 3.2.6 to 3.4.12. 3.2.6 was affected by
+  CVE-2026-0540 (a `SAFE_FOR_XML` regex bypass needing no special configuration, fixed in
+  3.3.2) and CVE-2026-41238 (a prototype-pollution route to a custom-element bypass, fixed
+  in 3.4.0). The sanitizer allowlist in `app.js` already excluded the tags both rely on, so
+  neither was known to be exploitable here. DOMPurify now ships both of its dual-license
+  texts, `LICENSE` (Apache-2.0) and `LICENSE-MPL` (MPL-2.0). The vendored marked 15.0.12 is
+  unaffected by any published advisory and is unchanged.
 - Removed `'unsafe-inline'` from the `style-src` Content-Security-Policy directive. All
   inline `style` attributes were replaced with stylesheet classes; the token-usage and
   context-window bar widths now ship as `data-pct` attributes and are applied from
