@@ -66,6 +66,44 @@ def test_cache_hit_modification_and_deletion(
     assert not any(key[0] == "claude" for key in discovery._DISCOVERY_CACHE)
 
 
+def test_cache_index_stays_one_to_one_with_the_cache(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The index makes eviction O(1); it must not leak entries or fall out of sync."""
+    home = tmp_path / "claude"
+    project = home / "projects" / "proj"
+    project.mkdir(parents=True)
+    paths = []
+    for index in range(25):
+        path = project / f"session-{index}.jsonl"
+        path.write_text(
+            json.dumps({"type": "user", "timestamp": "2026-07-30T08:00:00Z"}) + "\n",
+            encoding="utf-8",
+        )
+        paths.append(path)
+    monkeypatch.setattr(discovery, "CLAUDE_HOME", home)
+
+    discovery.discover_claude()
+    assert len(discovery._DISCOVERY_CACHE) == 25
+    assert len(discovery._CACHE_INDEX) == 25
+
+    # Rewriting files must replace entries rather than accumulate stale ones.
+    for path in paths:
+        with path.open("a", encoding="utf-8") as stream:
+            stream.write(json.dumps({"type": "user", "timestamp": "later"}) + "\n")
+    discovery.discover_claude()
+    assert len(discovery._DISCOVERY_CACHE) == 25
+    assert len(discovery._CACHE_INDEX) == 25
+
+    # Deleting files must clear both structures.
+    for path in paths:
+        path.unlink()
+    discovery.discover_claude()
+    assert not discovery._DISCOVERY_CACHE
+    assert not discovery._CACHE_INDEX
+
+
 def test_corrupt_cache_entry_is_replaced(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

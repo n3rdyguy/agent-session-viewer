@@ -75,6 +75,9 @@ flags are backward compatible with 0.1.0.
 
 ### Fixed
 
+- Discovery no longer scans the whole metadata cache on every insert. Evicting the previous
+  entry for a changed file now goes through an index, removing a quadratic term worth about
+  0.84 s of CPU when first listing 5000 sessions.
 - A single malformed JSONL record no longer crashes or truncates a session. Bad records
   are skipped and reported in a diagnostics panel on the session page.
 - HTML entities in session content are decoded consistently across views.
