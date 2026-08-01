@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from agent_session_viewer import discovery
+from agent_session_viewer import config, discovery
 
 
 @pytest.fixture(autouse=True)
@@ -42,7 +42,7 @@ def test_cache_hit_modification_and_deletion(
 ) -> None:
     home = tmp_path / "claude"
     path = _claude_session(home)
-    monkeypatch.setattr(discovery, "CLAUDE_HOME", home)
+    monkeypatch.setattr(config, "CLAUDE_HOME", home)
     original = discovery._scan_claude_card
     calls = 0
 
@@ -82,7 +82,7 @@ def test_cache_index_stays_one_to_one_with_the_cache(
             encoding="utf-8",
         )
         paths.append(path)
-    monkeypatch.setattr(discovery, "CLAUDE_HOME", home)
+    monkeypatch.setattr(config, "CLAUDE_HOME", home)
 
     discovery.discover_claude()
     assert len(discovery._DISCOVERY_CACHE) == 25
@@ -110,7 +110,7 @@ def test_corrupt_cache_entry_is_replaced(
 ) -> None:
     home = tmp_path / "claude"
     path = _claude_session(home)
-    monkeypatch.setattr(discovery, "CLAUDE_HOME", home)
+    monkeypatch.setattr(config, "CLAUDE_HOME", home)
     key = discovery._file_key("claude", path)
     assert key is not None
     discovery._DISCOVERY_CACHE[key] = "damaged"  # type: ignore[assignment]
@@ -125,7 +125,7 @@ def test_concurrent_discovery_populates_one_complete_entry(
 ) -> None:
     home = tmp_path / "claude"
     _claude_session(home, records=20)
-    monkeypatch.setattr(discovery, "CLAUDE_HOME", home)
+    monkeypatch.setattr(config, "CLAUDE_HOME", home)
 
     with ThreadPoolExecutor(max_workers=8) as executor:
         results = list(executor.map(lambda _: discovery.discover_claude(), range(32)))
@@ -140,7 +140,7 @@ def test_claude_large_discovery_retains_only_bounded_edge_records(
 ) -> None:
     home = tmp_path / "claude"
     _claude_session(home, records=10_000)
-    monkeypatch.setattr(discovery, "CLAUDE_HOME", home)
+    monkeypatch.setattr(config, "CLAUDE_HOME", home)
     decoded_lines: list[int] = []
     original = discovery.decode_jsonl_record
 
@@ -181,7 +181,7 @@ def test_codex_discovery_is_bounded_and_index_is_cached(
         json.dumps({"id": "session-id", "thread_name": "Cached title"}) + "\n",
         encoding="utf-8",
     )
-    monkeypatch.setattr(discovery, "CODEX_HOME", home)
+    monkeypatch.setattr(config, "CODEX_HOME", home)
     decoded = 0
     original = discovery.decode_jsonl_record
 

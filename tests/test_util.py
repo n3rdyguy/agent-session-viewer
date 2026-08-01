@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from agent_session_viewer import util
+from agent_session_viewer import config, util
 
 # 2026-07-30T10:00:00Z
 _EPOCH = 1785405600.0
@@ -86,9 +86,9 @@ def agent_roots(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, 
     outside = tmp_path / "grok-other"
     allowed.mkdir()
     outside.mkdir()
-    monkeypatch.setattr(util, "GROK_HOME", allowed)
-    monkeypatch.setattr(util, "CLAUDE_HOME", tmp_path / "claude")
-    monkeypatch.setattr(util, "CODEX_HOME", tmp_path / "codex")
+    monkeypatch.setattr(config, "GROK_HOME", allowed)
+    monkeypatch.setattr(config, "CLAUDE_HOME", tmp_path / "claude")
+    monkeypatch.setattr(config, "CODEX_HOME", tmp_path / "codex")
     return allowed, outside
 
 

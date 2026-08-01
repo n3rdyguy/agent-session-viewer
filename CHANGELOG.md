@@ -5,6 +5,36 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- Replaced the per-agent `if/elif` dispatch chains with an agent registry. Each supported
+  agent is now one `AgentSpec` in `agent_session_viewer/registry.py` describing its home
+  directory, session roots, path-shape authorization, media boundaries, `/raw` candidates,
+  Markdown export header, and the per-agent copy in the session view. The route,
+  discovery, authorization, export, and template layers read that descriptor instead of
+  branching on the agent name.
+- Every agent parser now exposes the same `load_session(path) -> SessionData` entrypoint,
+  wired up in `agent_session_viewer/agents/loaders.py`. Grok's session assembly moved out
+  of `session.py` into `agents/grok.py` alongside Codex's. No base class or protocol was
+  introduced - the shared shape is the existing `SessionData` TypedDict.
+- Agent home directories resolve through `config` when they are read rather than being
+  bound at import, so a single patch point redirects every module.
+
+Apart from the Claude tab labelling fixed below, there is no user-visible change: routes,
+URLs, export format, and rendered output are unchanged. Verified by capturing `/view`,
+`/export`, `/raw`, and `/` for real sessions of all three agents before and after the
+refactor.
+
+### Fixed
+
+- Claude's second tab is now labelled "Events timeline" and describes what it actually
+  contains (permission-mode changes, queue operations, hook summaries, turn durations,
+  file-history snapshots, attachments, and subagent runs). It previously reused Grok's
+  copy and claimed to be aggregated from `updates.jsonl`, a file Claude does not write.
+  The README already documented it as "Events timeline"; the UI now matches.
+
 ## [0.2.0] - 2026-08-01
 
 Security and resilience release. No session data format changed; all routes and CLI

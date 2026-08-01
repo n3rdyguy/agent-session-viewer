@@ -10,9 +10,9 @@
   </form>
   <div class="filters">
     <a href="{{ url_for('index', q=q or '') }}" class="{{ 'active' if not agent else '' }}">All</a>
-    <a href="{{ url_for('index', agent='grok', q=q or '') }}" class="{{ 'active' if agent == 'grok' else '' }}">Grok</a>
-    <a href="{{ url_for('index', agent='claude', q=q or '') }}" class="{{ 'active' if agent == 'claude' else '' }}">Claude</a>
-    <a href="{{ url_for('index', agent='codex', q=q or '') }}" class="{{ 'active' if agent == 'codex' else '' }}">Codex</a>
+    {% for a in agents %}
+    <a href="{{ url_for('index', agent=a.id, q=q or '') }}" class="{{ 'active' if agent == a.id else '' }}">{{ a.label }}</a>
+    {% endfor %}
   </div>
   <label class="md-toggle" title="Expand or collapse all project groups">
     <input type="checkbox" id="expand-toggle" autocomplete="off">
@@ -91,9 +91,8 @@
     {% if q %}<p>Try a different search term.</p>{% endif %}
     <p class="empty-paths">
       Looking in:<br>
-      Grok → {{ grok_path }}<br>
-      Claude → {{ claude_path }}<br>
-      Codex → {{ codex_path }}
+      {% for a in agents %}{{ a.label }} → {{ a.looking_in() }}<br>
+      {% endfor %}
     </p>
   </div>
 {% endif %}

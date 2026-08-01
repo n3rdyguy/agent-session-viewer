@@ -13,8 +13,8 @@ from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import unquote
 
-from .config import CLAUDE_HOME, CODEX_HOME, GROK_HOME
 from .images import extract_text
+from .registry import AGENT_SPECS
 from .types import SessionCard
 from .util import decode_jsonl_record, epoch_seconds, iter_jsonl, load_json
 
@@ -159,7 +159,7 @@ def codex_headline_was_aborted(value: object) -> bool:
 
 def discover_grok() -> list[SessionCard]:
     sessions = []
-    root = GROK_HOME / "sessions"
+    root = AGENT_SPECS["grok"].looking_in()
     if not root.exists():
         _prune_agent_cache("grok", set())
         return sessions
@@ -342,7 +342,7 @@ def _scan_claude_card(path: Path) -> dict[str, Any]:
 
 def discover_claude() -> list[SessionCard]:
     sessions = []
-    root = CLAUDE_HOME / "projects"
+    root = AGENT_SPECS["claude"].looking_in()
     if not root.exists():
         _prune_agent_cache("claude", set())
         return sessions
@@ -389,7 +389,7 @@ def discover_claude() -> list[SessionCard]:
 def load_codex_session_index() -> dict[str, dict[str, Any]]:
     """Map session id → {thread_name, updated_at} from ~/.codex/session_index.jsonl."""
     index: dict[str, dict] = {}
-    path = CODEX_HOME / "session_index.jsonl"
+    path = AGENT_SPECS["codex"].home() / "session_index.jsonl"
     if not path.exists():
         _prune_agent_cache("codex-index", set())
         return index
@@ -506,8 +506,7 @@ def discover_codex() -> list[SessionCard]:
     titles = load_codex_session_index()
     live_paths: set[str] = set()
 
-    for sub in ("sessions", "archived_sessions"):
-        root = CODEX_HOME / sub
+    for root in AGENT_SPECS["codex"].roots():
         if not root.exists():
             continue
         for path in sorted(root.rglob("rollout-*.jsonl")):
@@ -549,15 +548,22 @@ def session_sort_key(s: SessionCard) -> float:
     return epoch_seconds(s.get("updated") or s.get("created"))
 
 
+# Registration table rather than a dispatch chain. It cannot live on the specs
+# themselves: the parsers in agents/ import this module, so registry.py must not
+# reach back into it.
+_DISCOVERERS: dict[str, Callable[[], list[SessionCard]]] = {
+    "grok": discover_grok,
+    "claude": discover_claude,
+    "codex": discover_codex,
+}
+
+
 def all_sessions(agent: str | None = None) -> list[SessionCard]:
     started = time.perf_counter()
     items = []
-    if agent in (None, "grok", "all"):
-        items.extend(discover_grok())
-    if agent in (None, "claude", "all"):
-        items.extend(discover_claude())
-    if agent in (None, "codex", "all"):
-        items.extend(discover_codex())
+    for spec in AGENT_SPECS.values():
+        if agent in (None, "all", spec.id):
+            items.extend(_DISCOVERERS[spec.id]())
 
     items.sort(key=session_sort_key, reverse=True)
     _log_timing("session discovery", started)

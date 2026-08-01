@@ -12,7 +12,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Iterator
 
-from .config import CLAUDE_HOME, CODEX_HOME, GROK_HOME
+from .registry import all_homes
 from .types import ParseDiagnostic
 
 LOGGER = logging.getLogger(__name__)
@@ -322,8 +322,7 @@ def path_allowed(path: Path) -> bool:
         resolved = path.resolve()
     except (OSError, RuntimeError):
         resolved = path
-    roots = [GROK_HOME, CLAUDE_HOME, CODEX_HOME]
-    for root in roots:
+    for root in all_homes():
         try:
             resolved.relative_to(root.resolve())
             return True

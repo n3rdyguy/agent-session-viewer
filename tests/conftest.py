@@ -5,9 +5,20 @@ from pathlib import Path
 
 import pytest
 
-from agent_session_viewer import authorization, discovery, util
+from agent_session_viewer import config
+from agent_session_viewer.registry import AGENT_SPECS
 
 app_module = importlib.import_module("agent_session_viewer.app")
+
+
+def install_agent_homes(monkeypatch: pytest.MonkeyPatch, homes: dict[str, Path]) -> None:
+    """Point every agent home at a temporary directory.
+
+    Patching ``config`` alone is enough: the registry resolves ``spec.home()`` through
+    it on every call, and every other module reads homes through the registry.
+    """
+    for agent, home in homes.items():
+        monkeypatch.setattr(config, AGENT_SPECS[agent].home_attr, home)
 
 
 @pytest.fixture
@@ -16,26 +27,11 @@ def agent_homes(
     monkeypatch: pytest.MonkeyPatch,
 ) -> dict[str, Path]:
     """Create and install empty agent homes so route tests never inspect real data."""
-    homes = {
-        "grok": tmp_path / "grok",
-        "claude": tmp_path / "claude",
-        "codex": tmp_path / "codex",
-    }
-    for home, child in (
-        (homes["grok"], "sessions"),
-        (homes["claude"], "projects"),
-        (homes["codex"], "sessions"),
-        (homes["codex"], "archived_sessions"),
-    ):
-        (home / child).mkdir(parents=True, exist_ok=True)
-
-    for module in (app_module, discovery, util):
-        monkeypatch.setattr(module, "GROK_HOME", homes["grok"])
-        monkeypatch.setattr(module, "CLAUDE_HOME", homes["claude"])
-        monkeypatch.setattr(module, "CODEX_HOME", homes["codex"])
-    monkeypatch.setattr(authorization.config, "GROK_HOME", homes["grok"])
-    monkeypatch.setattr(authorization.config, "CLAUDE_HOME", homes["claude"])
-    monkeypatch.setattr(authorization.config, "CODEX_HOME", homes["codex"])
+    homes = {agent: tmp_path / agent for agent in AGENT_SPECS}
+    install_agent_homes(monkeypatch, homes)
+    for spec in AGENT_SPECS.values():
+        for root in spec.roots():
+            root.mkdir(parents=True, exist_ok=True)
     return homes
 
 

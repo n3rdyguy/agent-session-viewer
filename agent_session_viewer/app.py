@@ -19,10 +19,10 @@ from .authorization import (
     resolve_raw_path,
     resolve_session_path,
 )
-from .config import CLAUDE_HOME, CODEX_HOME, GROK_HOME
 from .discovery import all_sessions
 from .grouping import group_by_project
 from .markdown_output import format_markdown_content
+from .registry import AGENT_SPECS, spec_for
 from .session import (
     load_session,
     summary_to_markdown,
@@ -37,6 +37,12 @@ app.jinja_env.filters["decode_html_entities"] = decode_html_entities
 app.jinja_env.filters["human_time"] = human_time
 app.jinja_env.filters["rel_time"] = rel_time
 app.jinja_env.filters["epoch_seconds"] = epoch_seconds
+
+
+@app.context_processor
+def inject_agents() -> dict[str, object]:
+    """Expose the agent registry to every template (filter links, labels, paths)."""
+    return {"agents": list(AGENT_SPECS.values())}
 
 
 @app.after_request
@@ -88,9 +94,6 @@ def index():
         projects=group_by_project(sessions),
         agent=agent,
         q=q,
-        grok_path=str(GROK_HOME / "sessions"),
-        claude_path=str(CLAUDE_HOME / "projects"),
-        codex_path=str(CODEX_HOME / "sessions"),
     )
 
 
@@ -108,6 +111,7 @@ def view():
     return render_template(
         "view.html",
         agent=agent,
+        spec=spec_for(agent),
         path=str(path),
         title=session["title"],
         turns=session["turns"],
@@ -230,9 +234,8 @@ def run(host: str = "127.0.0.1", port: int = 5050) -> None:
     )
     print("Agent Session Viewer")
     print(f"-> http://{host}:{port}")
-    print(f"Grok   : {GROK_HOME / 'sessions'}")
-    print(f"Claude : {CLAUDE_HOME / 'projects'}")
-    print(f"Codex  : {CODEX_HOME / 'sessions'}")
+    for spec in AGENT_SPECS.values():
+        print(f"{spec.label:<7}: {spec.looking_in()}")
     if debug:
         print("Debug  : on (ASV_DEBUG)")
     app.run(host=host, port=port, debug=debug)
