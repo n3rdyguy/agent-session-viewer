@@ -321,6 +321,103 @@ def test_raw_characterization(client, agent_homes: dict[str, Path]) -> None:
     assert b"Hello from fixture" in response.data
 
 
+def _install_grok_fixture(agent_homes: dict[str, Path]) -> Path:
+    """Lay out the Grok fixture as <sessions>/<project>/<session>/chat_history.jsonl."""
+    session = agent_homes["grok"] / "sessions" / "fixture-project" / "fixture-session"
+    session.mkdir(parents=True)
+    (session / "chat_history.jsonl").write_text(
+        (FIXTURES / "grok" / "chat_history.jsonl").read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    return session
+
+
+def _install_codex_fixture(agent_homes: dict[str, Path]) -> Path:
+    """Codex rollouts are named files anywhere under sessions/."""
+    rollout = agent_homes["codex"] / "sessions" / "rollout-2026-07-30T08-00-00-codex-test.jsonl"
+    rollout.write_text(
+        (FIXTURES / "codex" / "rollout-test.jsonl").read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    return rollout
+
+
+def test_grok_view_export_and_raw_render_a_real_session(
+    client, agent_homes: dict[str, Path]
+) -> None:
+    """Route-level coverage for Grok, which previously only reached these paths via parsers."""
+    session = _install_grok_fixture(agent_homes)
+    query = {"agent": "grok", "path": str(session)}
+
+    view = client.get("/view", query_string=query)
+    assert view.status_code == 200
+    assert "Inspect the parser." in view.get_data(as_text=True)
+
+    export = client.get("/export", query_string=query)
+    assert export.status_code == 200
+    assert export.mimetype == "text/markdown"
+    assert export.headers["Content-Disposition"].startswith("attachment;")
+    assert b"Inspect the parser." in export.data
+
+    raw = client.get("/raw", query_string=query)
+    assert raw.status_code == 200
+    assert raw.mimetype == "text/plain"
+    # Grok raw resolves to the history file inside the session directory.
+    assert raw.data == (session / "chat_history.jsonl").read_bytes()
+
+
+def test_codex_view_export_and_raw_render_a_real_session(
+    client, agent_homes: dict[str, Path]
+) -> None:
+    """Route-level coverage for Codex, which previously only reached these paths via parsers."""
+    rollout = _install_codex_fixture(agent_homes)
+    query = {"agent": "codex", "path": str(rollout)}
+
+    view = client.get("/view", query_string=query)
+    assert view.status_code == 200
+    html = view.get_data(as_text=True)
+    assert "Inspect the parser." in html
+    assert "The parser looks good." in html
+
+    export = client.get("/export", query_string=query)
+    assert export.status_code == 200
+    assert export.mimetype == "text/markdown"
+    assert export.headers["Content-Disposition"].startswith("attachment;")
+    assert b"Inspect the parser." in export.data
+
+    raw = client.get("/raw", query_string=query)
+    assert raw.status_code == 200
+    assert raw.mimetype == "text/plain"
+    assert raw.data == rollout.read_bytes()
+
+
+def test_codex_media_serves_generated_images(client, agent_homes: dict[str, Path]) -> None:
+    """Codex media resolves against generated_images as well as the rollout's own directory."""
+    rollout = _install_codex_fixture(agent_homes)
+    generated = agent_homes["codex"] / "generated_images"
+    generated.mkdir()
+    image = generated / "diagram.png"
+    image.write_bytes(b"\x89PNG\r\n\x1a\nfixture")
+
+    response = client.get(
+        "/media",
+        query_string={"agent": "codex", "session": str(rollout), "path": str(image)},
+    )
+
+    assert response.status_code == 200
+    assert response.mimetype == "image/png"
+    assert response.data.startswith(b"\x89PNG")
+
+    # An image outside both authorized roots stays denied.
+    outside = agent_homes["codex"] / "elsewhere.png"
+    outside.write_bytes(b"\x89PNG\r\n\x1a\nnope")
+    denied = client.get(
+        "/media",
+        query_string={"agent": "codex", "session": str(rollout), "path": str(outside)},
+    )
+    assert denied.status_code == 403
+
+
 def test_media_characterization(client, agent_homes: dict[str, Path]) -> None:
     image = agent_homes["grok"] / "sessions" / "project" / "session" / "image.png"
     image.parent.mkdir(parents=True)
