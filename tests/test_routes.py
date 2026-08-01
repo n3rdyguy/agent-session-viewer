@@ -105,6 +105,19 @@ def test_index_uses_temporary_agent_homes(client, agent_homes: dict[str, Path]) 
     assert b"session.jsonl" in response.data
 
 
+def test_count_line_is_a_live_region(client, agent_homes: dict[str, Path]) -> None:
+    """list.js rewrites the count line while filtering; screen readers need the announcement."""
+    session = agent_homes["claude"] / "projects" / "fixture-project" / "session.jsonl"
+    session.parent.mkdir()
+    _write_claude_session(session)
+
+    html = client.get("/").get_data(as_text=True)
+
+    match = re.search(r"<p[^>]*id=\"count-line\"[^>]*>", html)
+    assert match is not None, "count line missing from the session list"
+    assert 'role="status"' in match.group(0)
+
+
 def test_search_query_round_trips_through_agent_filters(client) -> None:
     query = 'A&B #tag="✓"'
     response = client.get("/", query_string={"q": query})

@@ -28,7 +28,9 @@
 
 {% if projects %}
   <div class="list-meta">
-    <p class="count-line" id="count-line">
+    {# role="status" so client-side filtering in list.js announces the new count;
+       without it rows vanish silently for screen readers. #}
+    <p class="count-line" id="count-line" role="status" aria-atomic="true">
       {{ sessions|length }} session{{ 's' if sessions|length != 1 else '' }} in
       {{ projects|length }} project{{ 's' if projects|length != 1 else '' }}
       {% if q %} matching “{{ q }}”{% endif %}
