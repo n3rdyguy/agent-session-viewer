@@ -65,3 +65,25 @@ class SessionData(TypedDict, total=False):
     recaps: list[dict[str, Any]] | None
     updates: list[dict[str, Any]] | None
     diagnostics: list[ParseDiagnostic]
+
+
+def empty_session(agent: str, path: Path) -> SessionData:
+    """The shape an agent loader returns for a path it does not recognize.
+
+    Routes only reach a loader with an authorized path, so this is a defensive
+    default rather than an expected result.
+    """
+    return {
+        "agent": agent,
+        "path": path,
+        "title": path.name,
+        "turns": [],
+        "summary": None,
+        "resources": None,
+        "artifacts": None,
+        "system_artifacts": None,
+        "hunks": None,
+        "terminal_logs": None,
+        "recaps": None,
+        "updates": None,
+    }

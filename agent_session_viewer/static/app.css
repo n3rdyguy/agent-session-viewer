@@ -129,6 +129,9 @@
       padding: 0.12rem 0.3rem; font-size: 0.6rem; margin-right: 0;
       flex: 0 0 auto; align-self: center;
     }
+    /* One rule per agent id in agent_session_viewer/registry.py. These stay here
+       rather than coming from the registry because the CSP is style-src 'self',
+       so per-agent colours cannot be delivered as inline custom properties. */
     .badge.grok   { background: #7c3aed33; color: #c4b5fd; }
     .badge.claude { background: #d9770633; color: #fbbf24; }
     .badge.codex  { background: #05966933; color: #6ee7b7; }

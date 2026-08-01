@@ -2,16 +2,17 @@
 
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, cast
 
-from . import config
 from .images import is_image_path
+from .registry import AGENT_IDS, spec_for
 
+# Hand-written because a Literal cannot be derived from the registry dict at type
+# check time. tests/test_registry.py asserts the two stay in step.
 Agent = Literal["grok", "claude", "codex"]
-AGENTS = frozenset(("grok", "claude", "codex"))
+AGENTS = AGENT_IDS
 
 
 class AuthorizationError(Exception):
@@ -68,39 +69,25 @@ def resolve_session_path(agent: Agent, requested: str) -> AuthorizedSession:
     if not requested or "\x00" in requested:
         raise PathDenied("Path not allowed")
     path = Path(requested).expanduser()
+    spec = spec_for(agent)
+    roots = spec.roots()
 
-    if agent == "grok":
-        resolved, parts = _relative_to_resolved(path, config.GROK_HOME / "sessions")
-        recognized = len(parts) == 2 and resolved.is_dir()
-    elif agent == "claude":
-        resolved, parts = _relative_to_resolved(path, config.CLAUDE_HOME / "projects")
-        is_jsonl = resolved.is_file() and resolved.suffix.lower() == ".jsonl"
-        # <project>/<session>.jsonl, or a subagent transcript recorded beside it at
-        # <project>/<session>/subagents/agent-<id>.jsonl. Nothing else in between.
-        recognized = is_jsonl and (
-            len(parts) == 2
-            or (len(parts) == 4 and parts[2] == "subagents" and parts[3].startswith("agent-"))
-        )
+    if len(roots) == 1:
+        # A single mandatory root: an absent root is a distinct failure worth
+        # reporting as missing rather than denied.
+        resolved, parts = _relative_to_resolved(path, roots[0])
+        recognized = spec.validate(resolved, parts)
     else:
-        candidates = (
-            config.CODEX_HOME / "sessions",
-            config.CODEX_HOME / "archived_sessions",
-        )
+        # Several optional roots (Codex archives sessions into a second tree, which
+        # need not exist). Skip roots that do not resolve and try the next one.
         resolved = _resolved_existing(path)
-        parts = ()
         recognized = False
-        for root in candidates:
+        for root in roots:
             try:
-                root_resolved = root.resolve(strict=True)
-                parts = resolved.relative_to(root_resolved).parts
+                parts = resolved.relative_to(root.resolve(strict=True)).parts
             except (FileNotFoundError, NotADirectoryError, OSError, RuntimeError, ValueError):
                 continue
-            if (
-                parts
-                and resolved.is_file()
-                and resolved.suffix.lower() == ".jsonl"
-                and resolved.name.startswith("rollout-")
-            ):
+            if spec.validate(resolved, parts):
                 recognized = True
                 break
 
@@ -111,9 +98,11 @@ def resolve_session_path(agent: Agent, requested: str) -> AuthorizedSession:
 
 def resolve_raw_path(session: AuthorizedSession) -> Path:
     """Derive a downloadable raw file from an already-authorized session."""
-    if session.agent != "grok":
+    raw_names = spec_for(session.agent).raw_names
+    if not raw_names:
+        # The session path is itself the transcript file.
         return session.path
-    for name in ("chat_history.jsonl", "summary.json"):
+    for name in raw_names:
         candidate = session.path / name
         try:
             if candidate.is_file():
@@ -137,41 +126,15 @@ def resolve_media_path(session: AuthorizedSession, requested: str) -> Path:
     if not is_image_path(path):
         raise PathDenied("Not a supported image file")
 
-    roots: tuple[Path, ...]
-    if session.agent == "grok":
-        roots = (session.path,)
-    elif session.agent == "claude":
-        # Subagent transcripts live two levels below the project directory that owns
-        # any associated media, so authorize against the project directory itself.
-        parent = session.path.parent
-        if parent.name == "subagents":
-            project = parent.parent.parent
-            session_id = parent.parent.name
-        else:
-            project = parent
-            session_id = session.path.stem
-        # Pasted images are cached outside the projects tree, in a directory named
-        # by the owning session id; only that session's cache is in bounds.
-        roots = (project, config.CLAUDE_HOME / "image-cache" / session_id)
-    else:
-        roots = (
-            session.path.parent,
-            config.CODEX_HOME / "generated_images",
-        )
-
-    for root in roots:
+    spec = spec_for(session.agent)
+    for root in spec.media_roots(session.path):
         try:
             path.relative_to(root.resolve(strict=True))
             return path
         except (FileNotFoundError, NotADirectoryError, OSError, RuntimeError, ValueError):
             continue
 
-    if session.agent == "codex" and path.name.lower().startswith("codex-clipboard-"):
-        temp_root = Path(os.environ.get("TEMP") or os.environ.get("TMP") or "/tmp")
-        try:
-            path.relative_to(temp_root.resolve(strict=True))
-            return path
-        except (FileNotFoundError, NotADirectoryError, OSError, RuntimeError, ValueError):
-            pass
+    if spec.media_fallback is not None and spec.media_fallback(path):
+        return path
 
     raise PathDenied("Image is not associated with this session")

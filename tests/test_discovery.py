@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from agent_session_viewer import discovery
+from agent_session_viewer import config, discovery
 from agent_session_viewer.agents import codex
 from agent_session_viewer.app import app
 from agent_session_viewer.grouping import group_by_project
@@ -90,7 +90,7 @@ def test_discover_codex_shows_index_title_and_safe_headline(
         + "\n",
         encoding="utf-8",
     )
-    monkeypatch.setattr(discovery, "CODEX_HOME", codex_home)
+    monkeypatch.setattr(config, "CODEX_HOME", codex_home)
 
     sessions = discovery.discover_codex()
 
@@ -119,7 +119,7 @@ def test_discover_codex_rejects_unsafe_title_and_headline(
         + "\n",
         encoding="utf-8",
     )
-    monkeypatch.setattr(discovery, "CODEX_HOME", codex_home)
+    monkeypatch.setattr(config, "CODEX_HOME", codex_home)
 
     session = discovery.discover_codex()[0]
 
@@ -147,7 +147,7 @@ def test_codex_message_count_covers_records_past_the_head_window(
         fh.write("\n")  # blank lines are not records
         for _ in range(150):
             fh.write(filler + "\n")
-    monkeypatch.setattr(discovery, "CODEX_HOME", codex_home)
+    monkeypatch.setattr(config, "CODEX_HOME", codex_home)
 
     card = discovery.discover_codex()[0]
 
@@ -195,7 +195,7 @@ def test_aborted_badge_uses_only_the_message_selected_for_headline(
         session_id,
         "Interrupted request\nturn_aborted",
     )
-    monkeypatch.setattr(discovery, "CODEX_HOME", codex_home)
+    monkeypatch.setattr(config, "CODEX_HOME", codex_home)
     monkeypatch.setattr(codex, "load_codex_session_index", lambda: {})
 
     discovered = discovery.discover_codex()[0]
@@ -287,19 +287,19 @@ def test_session_list_places_aborted_badge_before_title() -> None:
 def test_all_sessions_sorts_mixed_timestamp_types(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(
-        discovery,
-        "discover_grok",
+    monkeypatch.setitem(
+        discovery._DISCOVERERS,
+        "grok",
         lambda: [{"agent": "grok", "id": "g", "path": "g", "updated": 1785405600}],
     )
-    monkeypatch.setattr(
-        discovery,
-        "discover_claude",
+    monkeypatch.setitem(
+        discovery._DISCOVERERS,
+        "claude",
         lambda: [{"agent": "claude", "id": "c", "path": "c", "updated": "2026-07-31T10:00:00Z"}],
     )
-    monkeypatch.setattr(
-        discovery,
-        "discover_codex",
+    monkeypatch.setitem(
+        discovery._DISCOVERERS,
+        "codex",
         lambda: [{"agent": "codex", "id": "x", "path": "x", "created": "2026-07-29T10:00:00Z"}],
     )
 
@@ -419,7 +419,7 @@ def test_claude_card_title_precedence(
 ) -> None:
     home = tmp_path / "claude"
     _write_claude_records(home / "projects" / "project" / "session.jsonl", records)
-    monkeypatch.setattr(discovery, "CLAUDE_HOME", home)
+    monkeypatch.setattr(config, "CLAUDE_HOME", home)
     discovery.clear_discovery_cache()
 
     assert discovery.discover_claude()[0]["title"] == expected
@@ -436,7 +436,7 @@ def test_claude_card_title_falls_back_to_the_full_session_id(
         home / "projects" / "project" / f"{sid}.jsonl",
         [{"type": "file-history-snapshot"}],
     )
-    monkeypatch.setattr(discovery, "CLAUDE_HOME", home)
+    monkeypatch.setattr(config, "CLAUDE_HOME", home)
     discovery.clear_discovery_cache()
 
     title = discovery.discover_claude()[0]["title"]
@@ -462,7 +462,7 @@ def test_claude_card_prefers_recorded_cwd_over_encoded_folder_name(
             }
         ],
     )
-    monkeypatch.setattr(discovery, "CLAUDE_HOME", home)
+    monkeypatch.setattr(config, "CLAUDE_HOME", home)
     discovery.clear_discovery_cache()
 
     card = discovery.discover_claude()[0]
@@ -482,7 +482,7 @@ def test_claude_card_falls_back_to_encoded_name_without_a_recorded_cwd(
         home / "projects" / "home--user--code" / "session.jsonl",
         [{"type": "ai-title", "aiTitle": "No cwd here"}],
     )
-    monkeypatch.setattr(discovery, "CLAUDE_HOME", home)
+    monkeypatch.setattr(config, "CLAUDE_HOME", home)
     discovery.clear_discovery_cache()
 
     assert discovery.discover_claude()[0]["cwd"] == "home/user/code"
@@ -507,7 +507,7 @@ def test_claude_title_is_found_outside_the_bounded_edge_windows(
         *filler,
     ]
     _write_claude_records(home / "projects" / "project" / "session.jsonl", records)
-    monkeypatch.setattr(discovery, "CLAUDE_HOME", home)
+    monkeypatch.setattr(config, "CLAUDE_HOME", home)
     discovery.clear_discovery_cache()
 
     card = discovery.discover_claude()[0]
@@ -551,7 +551,7 @@ def test_claude_model_is_found_outside_the_bounded_edge_windows(
         *tail,
     ]
     _write_claude_records(home / "projects" / "project" / "session.jsonl", records)
-    monkeypatch.setattr(discovery, "CLAUDE_HOME", home)
+    monkeypatch.setattr(config, "CLAUDE_HOME", home)
     discovery.clear_discovery_cache()
 
     card = discovery.discover_claude()[0]

@@ -58,8 +58,10 @@ venvPath = "."
 venv = ".venv"
 include = [
     "agent_session_viewer/app.py",
+    "agent_session_viewer/authorization.py",
     "agent_session_viewer/config.py",
     "agent_session_viewer/grouping.py",
+    "agent_session_viewer/registry.py",
     "agent_session_viewer/util.py",
 ]
 pythonVersion = "3.10"

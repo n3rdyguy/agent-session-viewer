@@ -68,7 +68,10 @@ def test_claude_view_renders_summary_tokens_and_artifacts(
     # Artifacts, file edits, and the events tab all render.
     assert "Available skills" in html
     assert "parser.py" in html
-    assert "Updates stream" in html
+    # Claude has no updates.jsonl; its second tab is the transcript event timeline.
+    assert "Events timeline" in html
+    assert "Updates stream" not in html
+    assert "updates.jsonl" not in html
     # Subagent turns are inlined and tagged rather than hidden.
     assert "subagent: Explore" in html
 

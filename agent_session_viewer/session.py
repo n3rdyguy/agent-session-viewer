@@ -8,29 +8,14 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-from .agents.claude import load_session as load_claude_session
-from .agents.codex import codex_scan_session, get_codex_conversation
-from .agents.grok import (
-    get_grok_conversation,
-    grok_hunk_records,
-    grok_recap_requests,
-    grok_resources,
-    grok_summary_card,
-    grok_terminal_logs,
-    grok_updates_timeline,
-)
+from .agents.loaders import LOADERS
 from .images import rebind_turn_media_links
 from .markdown_output import format_markdown_content
-from .types import SessionData, Turn
-from .util import collect_parse_diagnostics, iter_jsonl
+from .registry import AGENT_SPECS, spec_for
+from .types import SessionData, Turn, empty_session
+from .util import collect_parse_diagnostics
 
 LOGGER = logging.getLogger(__name__)
-
-# Grok/Codex inject large system/developer/project-instruction blobs as chat
-# turns; the view lifts those into a collapsed System panel. Claude does not
-# persist the same injected base instructions in the transcript - its system
-# turns (hooks, slash commands, reminders) stay inline in the chat.
-_SYSTEM_PANEL_AGENTS = frozenset({"grok", "codex"})
 
 
 def is_system_panel_turn(turn: Turn | dict) -> bool:
@@ -272,64 +257,15 @@ def load_session(agent: str, path: Path) -> SessionData:
 
 def _load_session(agent: str, path: Path) -> SessionData:
     """Load a session while the caller owns diagnostic collection."""
-    title = path.name
-    turns: list[Turn] = []
-    summary = None
-    resources = None
-    artifacts = None
-    system_artifacts: list[dict] | None = None
-    hunks = None
-    terminal_logs = None
-    recaps = None
-    updates = None
-
-    if agent == "claude" and path.is_file():
-        return load_claude_session(path)
-
-    if agent == "codex" and path.is_file():
-        # Parse and decode the rollout once, then reuse those records for both
-        # the transcript and its summary/tokens/events/patches.
-        records = list(iter_jsonl(path))
-        scan = codex_scan_session(path, records)
-        meta = scan.get("meta") if isinstance(scan.get("meta"), dict) else {}
-        turns = get_codex_conversation(path, records, session_cwd=meta.get("cwd"))
-        summary = scan["summary"]
-        title = summary.get("title") or title
-        resources = scan["resources"]
-        artifacts = scan.get("artifacts") or []
-        hunks = scan["hunks"]
-        # Reuse "updates" tab for Codex task/patch/image timeline
-        updates = scan["events"]
-    elif agent == "grok":
-        turns = get_grok_conversation(path)
-
-    if agent == "grok" and path.is_dir():
-        summary = grok_summary_card(path)
-        title = summary.get("title") or title
-        resources = grok_resources(path)
-        artifacts = (resources or {}).get("artifacts") or []
-        hunks = grok_hunk_records(path)
-        terminal_logs = grok_terminal_logs(path)
-        recaps = grok_recap_requests(path)
-        updates = grok_updates_timeline(path)
-
-    if agent in _SYSTEM_PANEL_AGENTS and turns:
-        turns, system_artifacts = split_system_panel_turns(turns)
-
-    return {
-        "agent": agent,
-        "path": path,
-        "title": title,
-        "turns": turns,
-        "summary": summary,
-        "resources": resources,
-        "artifacts": artifacts,
-        "system_artifacts": system_artifacts,
-        "hunks": hunks,
-        "terminal_logs": terminal_logs,
-        "recaps": recaps,
-        "updates": updates,
-    }
+    loader = LOADERS.get(agent)
+    if loader is None:
+        # Routes validate the agent first, so this is a defensive default.
+        return empty_session(agent, path)
+    session = loader(path)
+    turns = session.get("turns")
+    if spec_for(agent).system_panel and turns:
+        session["turns"], session["system_artifacts"] = split_system_panel_turns(turns)
+    return session
 
 
 def summary_to_markdown(
@@ -338,39 +274,14 @@ def summary_to_markdown(
     agent: str,
     resources: dict[str, object] | None = None,
 ) -> str:
-    """Shared export header (model/cwd/tokens/todos) for Grok and Codex."""
+    """Shared export header (model/cwd/tokens/todos), with per-agent header rows."""
     if not summary:
         return ""
 
-    if agent == "grok":
-        lines = [
-            f"**Model:** {summary.get('model') or '-'}  ",
-            f"**CWD:** `{summary.get('cwd') or '-'}`  ",
-            f"**Agent:** {summary.get('agent_name') or '-'}  ",
-            f"**Reasoning effort:** {summary.get('reasoning_effort') or '-'}  ",
-            f"**Session id:** `{summary.get('id')}`  ",
-        ]
-    elif agent == "codex":
-        lines = [
-            f"**Model:** {summary.get('model') or '-'}  ",
-            f"**CWD:** `{summary.get('cwd') or '-'}`  ",
-            f"**Originator:** {summary.get('agent_name') or '-'}  ",
-            f"**Reasoning effort:** {summary.get('reasoning_effort') or '-'}  ",
-            f"**Sandbox:** {summary.get('sandbox_profile') or '-'}  ",
-            f"**Session id:** `{summary.get('id')}`  ",
-        ]
-    elif agent == "claude":
-        lines = [
-            f"**Model:** {summary.get('model') or '-'}  ",
-            f"**CWD:** `{summary.get('cwd') or '-'}`  ",
-            f"**Permission mode:** {summary.get('sandbox_profile') or '-'}  ",
-            f"**Reasoning effort:** {summary.get('reasoning_effort') or '-'}  ",
-            f"**Branch:** {summary.get('head_branch') or '-'}  ",
-            f"**CLI version:** {summary.get('cli_version') or '-'}  ",
-            f"**Session id:** `{summary.get('id')}`  ",
-        ]
-    else:
+    spec = AGENT_SPECS.get(agent)
+    if spec is None:
         return ""
+    lines = [field.render(summary) for field in spec.summary_fields]
 
     tok = summary.get("tokens") or {}
     if tok.get("available"):

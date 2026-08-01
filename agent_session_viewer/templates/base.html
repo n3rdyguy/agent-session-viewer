@@ -16,7 +16,7 @@
   <div class="container">
     {% block content %}{% endblock %}
   </div>
-  <footer>Local only • Reads ~/.grok · ~/.claude · ~/.codex</footer>
+  <footer>Local only • Reads {% for a in agents %}{{ a.home_display() }}{{ ' · ' if not loop.last }}{% endfor %}</footer>
   {% block scripts %}{% endblock %}
 </body>
 </html>

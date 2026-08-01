@@ -329,7 +329,7 @@
 
   {% if hunks %}
   <details class="panel-details-sm">
-    <summary>{% if agent == 'codex' %}Patches{% else %}Hunk records{% endif %} ({{ hunks|length }}) · file edits</summary>
+    <summary>{{ spec.hunks_label }} ({{ hunks|length }}) · file edits</summary>
     <ul class="artifact-list">
       {% for h in hunks %}
       <li>
@@ -440,7 +440,7 @@
     <button type="button" class="active" data-tab="chat">Chat history ({{ turns|length }})</button>
     {% if updates is not none %}
     <button type="button" data-tab="updates">
-      {% if agent == 'codex' %}Events timeline ({{ updates|length }}){% else %}Updates stream ({{ updates|length }}){% endif %}
+      {{ spec.updates_label }} ({{ updates|length }})
     </button>
     {% endif %}
   </div>
@@ -462,15 +462,11 @@
 <div id="tab-updates" class="tab-panel">
   {% if updates %}
     <p class="tab-hint">
-      {% if agent == 'codex' %}
-      Task / patch / image events from the Codex rollout (not the full chat - see Chat history).
-      {% else %}
-      Aggregated from <code>updates.jsonl</code> (stream chunks collapsed; tool ids preserved).
-      {% endif %}
+      {{ spec.updates_hint }}
     </p>
     {{ render_bubbles(updates) }}
   {% else %}
-    <div class="empty">{% if agent == 'codex' %}No timeline events found.{% else %}No updates.jsonl events found.{% endif %}</div>
+    <div class="empty">{{ spec.updates_empty }}</div>
   {% endif %}
 </div>
 {% endif %}

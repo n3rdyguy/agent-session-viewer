@@ -9,6 +9,7 @@ from typing import Any
 from ..file_reads import extract_shell_command, file_artifacts_for_tool_result
 from ..images import extract_text, extract_text_and_images
 from ..turns import format_tool_args, make_turn
+from ..types import SessionData, empty_session
 from ..util import (
     display_time,
     empty_token_usage,
@@ -1006,3 +1007,33 @@ def get_grok_conversation(path: Path) -> list[dict]:
             continue
 
     return turns
+
+
+def load_session(path: Path) -> SessionData:
+    """Load a Grok session with the same shape Claude and Codex provide.
+
+    A Grok session is normally a directory. The transcript parser also accepts a
+    bare chat_history.jsonl, and keeps an older-layout fallback for sessions that
+    only ever wrote updates.jsonl - so turns are read either way, while the
+    sidecar panels below only exist for a real session directory.
+    """
+    session = empty_session("grok", path)
+    session["turns"] = get_grok_conversation(path)
+    if not path.is_dir():
+        return session
+
+    summary = grok_summary_card(path)
+    resources = grok_resources(path)
+    session.update(
+        {
+            "title": summary.get("title") or path.name,
+            "summary": summary,
+            "resources": resources,
+            "artifacts": (resources or {}).get("artifacts") or [],
+            "hunks": grok_hunk_records(path),
+            "terminal_logs": grok_terminal_logs(path),
+            "recaps": grok_recap_requests(path),
+            "updates": grok_updates_timeline(path),
+        }
+    )
+    return session

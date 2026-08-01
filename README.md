@@ -267,15 +267,25 @@ agent_session_viewer/
   util.py           # JSONL, token, time, and path helpers
   templates/        # package-owned Jinja templates
   static/           # package-owned CSS, JavaScript, icons, and vendored libraries
+  registry.py       # One AgentSpec per agent: homes, path rules, media roots, labels
   agents/
     grok.py
     codex.py
     claude.py
+    loaders.py      # agent id -> load_session, the only agent interface
 ```
 
-The agent modules use explicit branches and imports; there is no plugin registry or
-framework layer. Codex rollout records and Claude transcripts are each decoded once per
-session request and reused for the conversation, summary, tokens, events, and patches.
+Agent-specific behaviour lives in one descriptor per agent in `registry.py`, which the
+route, discovery, authorization, export, and template layers all read from instead of
+branching on the agent name. Each parser module exposes the same
+`load_session(path) -> SessionData` entrypoint; there is no base class, protocol, or
+plugin loader behind it. Adding an agent means: one `AgentSpec`, one parser module, an
+entry in `agents/loaders.py` and `discovery._DISCOVERERS`, the `Agent` literal in
+`authorization.py`, and one `.badge` rule in `app.css` (the CSP rules out registry-driven
+colours). `tests/test_registry.py` fails if any of those fall out of step.
+
+Codex rollout records and Claude transcripts are each decoded once per session request and
+reused for the conversation, summary, tokens, events, and patches.
 
 ---
 

@@ -21,6 +21,7 @@ from ..images import (
     image_ref_file,
 )
 from ..turns import make_turn
+from ..types import SessionData, empty_session
 from ..util import (
     display_time,
     empty_token_usage,
@@ -983,3 +984,30 @@ def get_codex_conversation(
             continue
 
     return turns
+
+
+def load_session(path: Path) -> SessionData:
+    """Load a Codex session with the same shape Grok and Claude provide."""
+    if not path.is_file():
+        return empty_session("codex", path)
+
+    # Parse and decode the rollout once, then reuse those records for both the
+    # transcript and its summary/tokens/events/patches.
+    records = list(iter_jsonl(path))
+    scan = codex_scan_session(path, records)
+    meta = scan.get("meta") if isinstance(scan.get("meta"), dict) else {}
+    summary = scan["summary"]
+    session = empty_session("codex", path)
+    session.update(
+        {
+            "title": summary.get("title") or path.name,
+            "turns": get_codex_conversation(path, records, session_cwd=meta.get("cwd")),
+            "summary": summary,
+            "resources": scan["resources"],
+            "artifacts": scan.get("artifacts") or [],
+            "hunks": scan["hunks"],
+            # Reuse "updates" for the Codex task/patch/image timeline.
+            "updates": scan["events"],
+        }
+    )
+    return session
