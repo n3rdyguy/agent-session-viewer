@@ -18,6 +18,16 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
           enable-cache: true
+      - name: Check committed line endings are LF
+        shell: bash
+        run: |
+          # .gitattributes pins the repo to LF. Checkout may write CRLF into the
+          # working tree on Windows, so inspect the index (i/) rather than disk.
+          if git ls-files --eol | grep -E '^i/(crlf|mixed)'; then
+            echo "::error::Files above are stored with CRLF. Run: git add --renormalize ."
+            exit 1
+          fi
+          echo "All tracked files are stored with LF."
       - run: uv sync --frozen
       - run: uv run ruff check .
       - run: uv run ruff format --check .
