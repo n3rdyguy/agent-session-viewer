@@ -5,10 +5,12 @@ from __future__ import annotations
 import logging
 import mimetypes
 import os
+from importlib.metadata import PackageNotFoundError, version
 from io import BytesIO
 
 from flask import Flask, Response, abort, render_template, request, send_file
 
+from . import config
 from .authorization import (
     AuthorizationError,
     AuthorizedSession,
@@ -95,6 +97,62 @@ def index():
         agent=agent,
         q=q,
     )
+
+
+@app.route("/settings")
+def settings():
+    """Browser preferences, plus read-only facts about this install.
+
+    Nothing here is written server-side: every preference lives in localStorage
+    and is applied by settings.js. The server section is diagnostics only, which
+    keeps the app read-only and the documented threat model unchanged.
+    """
+    counts: dict[str, int] = {}
+    for card in all_sessions():
+        agent_id = str(card.get("agent") or "")
+        counts[agent_id] = counts.get(agent_id, 0) + 1
+
+    agent_rows = []
+    for spec in AGENT_SPECS.values():
+        home = spec.home()
+        agent_rows.append(
+            {
+                "id": spec.id,
+                "label": spec.label,
+                "home": str(home),
+                "home_exists": home.is_dir(),
+                "roots": [
+                    {"path": str(root), "exists": root.is_dir(), "optional": optional}
+                    for root, optional in spec.root_specs()
+                ],
+                "env_var": spec.home_attr,
+                "sessions": counts.get(spec.id, 0),
+            }
+        )
+
+    return render_template(
+        "settings.html",
+        title="Settings",
+        agent_rows=agent_rows,
+        version=_installed_version(),
+        dotenv_path=str(config.DOTENV_PATH) if config.DOTENV_PATH else None,
+        debug_flags=[
+            ("ASV_DEBUG", _env_flag("ASV_DEBUG")),
+            ("ASV_TIMING_DEBUG", _env_flag("ASV_TIMING_DEBUG")),
+        ],
+    )
+
+
+def _env_flag(name: str) -> bool:
+    return os.environ.get(name, "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def _installed_version() -> str:
+    try:
+        return version("agent-session-viewer")
+    except PackageNotFoundError:
+        # Running from a source checkout without an install.
+        return "dev"
 
 
 @app.route("/view")

@@ -68,7 +68,7 @@ class AgentSpec:
     """Attribute on ``config`` holding this agent's home directory."""
 
     session_subdirs: tuple[str, ...]
-    """Session roots under the home. The first is the "looking in" path."""
+    """Session roots the agent always has. The first is the "looking in" path."""
 
     validate: Callable[[Path, tuple[str, ...]], bool]
     """Does this resolved path, relative to a session root, look like a session?"""
@@ -93,6 +93,14 @@ class AgentSpec:
     (hooks, slash commands, reminders) stay inline in the chat.
     """
 
+    optional_subdirs: tuple[str, ...] = ()
+    """Session roots the agent creates lazily, if ever.
+
+    Searched exactly like ``session_subdirs``; the distinction exists so an absent
+    one is reported as "not created yet" rather than flagged as missing. Codex only
+    creates ``archived_sessions`` the first time a session is archived.
+    """
+
     raw_names: tuple[str, ...] = ()
     """Candidate filenames for /raw when the session is a directory, in preference
     order. Empty means the session path is itself the downloadable file."""
@@ -103,9 +111,17 @@ class AgentSpec:
     def home(self) -> Path:
         return getattr(config, self.home_attr)
 
-    def roots(self) -> tuple[Path, ...]:
+    def root_specs(self) -> tuple[tuple[Path, bool], ...]:
+        """``(path, optional)`` for every session root, required ones first."""
         home = self.home()
-        return tuple(home / sub for sub in self.session_subdirs)
+        return (
+            *((home / sub, False) for sub in self.session_subdirs),
+            *((home / sub, True) for sub in self.optional_subdirs),
+        )
+
+    def roots(self) -> tuple[Path, ...]:
+        """Every session root to search, in preference order."""
+        return tuple(path for path, _ in self.root_specs())
 
     def looking_in(self) -> Path:
         return self.roots()[0]
@@ -252,7 +268,8 @@ CODEX = AgentSpec(
     id="codex",
     label="Codex",
     home_attr="CODEX_HOME",
-    session_subdirs=("sessions", "archived_sessions"),
+    session_subdirs=("sessions",),
+    optional_subdirs=("archived_sessions",),
     validate=_validate_codex,
     media_roots=_codex_media_roots,
     media_fallback=_codex_clipboard_fallback,

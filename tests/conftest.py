@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import importlib
+import threading
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
@@ -39,3 +42,46 @@ def agent_homes(
 def client(agent_homes: dict[str, Path]):
     app_module.app.config.update(TESTING=True)
     return app_module.app.test_client()
+
+
+@pytest.fixture(scope="session")
+def browser() -> Iterator[object]:
+    """One Chromium instance for every `browser`-marked module.
+
+    Shared deliberately: the sync Playwright API cannot start a second driver
+    while the first one's event loop is running, so a per-module fixture breaks
+    as soon as two browser test files run in the same session. Playwright is
+    imported inside the fixture so a `-m "not browser"` run never loads it.
+    """
+    from playwright.sync_api import sync_playwright
+
+    with sync_playwright() as playwright:
+        instance = playwright.chromium.launch()
+        yield instance
+        instance.close()
+
+
+@contextmanager
+def _serve() -> Iterator[str]:
+    """Serve the real app on an ephemeral loopback port."""
+    from werkzeug.serving import make_server
+
+    server = make_server("127.0.0.1", 0, app_module.app)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield f"http://127.0.0.1:{server.server_port}"
+    finally:
+        server.shutdown()
+        thread.join(timeout=5)
+
+
+@pytest.fixture
+def live_app():
+    """The server context manager, as a fixture.
+
+    Handed over rather than entered here so a test can control when the server
+    starts relative to its own setup. Use as ``with live_app() as base_url:``.
+    tests/ is not a package, so this cannot be a plain import.
+    """
+    return _serve

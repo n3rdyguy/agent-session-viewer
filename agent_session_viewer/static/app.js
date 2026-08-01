@@ -9,9 +9,10 @@
     }
   });
 
-  const MD_KEY = 'asv-markdown';
-  const FILE_READS_KEY = 'asv-file-reads';
-  const PREVIEW_KEY = 'asv-preview';
+  // Key names come from prefs.js so the settings page and this file cannot drift.
+  const MD_KEY = window.ASV_PREFS.KEYS.markdown;
+  const FILE_READS_KEY = window.ASV_PREFS.KEYS.fileReads;
+  const PREVIEW_KEY = window.ASV_PREFS.KEYS.preview;
   const tabs = document.querySelectorAll('#view-tabs [data-tab]');
   function activateTab(name) {
     tabs.forEach(b => b.classList.toggle('active', b.dataset.tab === name));

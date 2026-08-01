@@ -64,6 +64,19 @@ def test_session_roots_are_created_under_the_home(agent: str, agent_homes: dict[
 
 
 @pytest.mark.parametrize("agent", sorted(AGENT_SPECS))
+def test_required_roots_come_before_optional_ones(agent: str, agent_homes) -> None:
+    """roots() drives search order, so a lazily-created root must never be first."""
+    spec = AGENT_SPECS[agent]
+    flags = [optional for _, optional in spec.root_specs()]
+
+    assert flags[: len(spec.session_subdirs)] == [False] * len(spec.session_subdirs)
+    assert sorted(flags) == flags
+    assert spec.roots() == tuple(path for path, _ in spec.root_specs())
+    # Every agent needs at least one root that is expected to exist.
+    assert spec.session_subdirs
+
+
+@pytest.mark.parametrize("agent", sorted(AGENT_SPECS))
 def test_summary_fields_render_without_a_summary_payload(agent: str) -> None:
     """A sparse summary must not raise; missing values fall back to a dash."""
     rendered = session.summary_to_markdown({"id": "abc"}, agent=agent)

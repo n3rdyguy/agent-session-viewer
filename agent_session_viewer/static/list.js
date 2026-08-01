@@ -1,7 +1,22 @@
 (function() {
-  const EXPAND_KEY = 'asv-list-expanded';
-  const OVERRIDES_KEY = 'asv-project-overrides';
-  const PROMPTS_KEY = 'asv-list-prompts';
+  // Key names come from prefs.js so the settings page and this file cannot drift.
+  const PREFS = window.ASV_PREFS;
+  const EXPAND_KEY = PREFS.KEYS.expand;
+  const OVERRIDES_KEY = PREFS.KEYS.overrides;
+  const PROMPTS_KEY = PREFS.KEYS.prompts;
+
+  // Session rows render a relative time with the absolute one in the tooltip.
+  // Both values are already in the DOM, so switching is a swap, not a reformat.
+  (function applyTimeFormat() {
+    if (PREFS.get('timeFormat') !== 'absolute') return;
+    document.querySelectorAll('.session-row time').forEach(el => {
+      const absolute = el.getAttribute('title');
+      if (!absolute) return;
+      const relative = el.textContent;
+      el.textContent = absolute;
+      el.setAttribute('title', relative);
+    });
+  })();
   // Superseded by EXPAND_KEY + OVERRIDES_KEY.
   try { localStorage.removeItem('asv-collapsed-projects'); } catch (e) { /* ignore */ }
 
@@ -38,7 +53,7 @@
 
   // Pinned projects float above the rest, keeping the active sort within
   // each partition.
-  const PINS_KEY = 'asv-pinned-projects';
+  const PINS_KEY = PREFS.KEYS.pins;
   const loadPins = () => {
     try { return new Set(JSON.parse(localStorage.getItem(PINS_KEY) || '[]')); }
     catch (e) { return new Set(); }
@@ -119,8 +134,8 @@
 
   // Sort by updated/created, newest or oldest first. Rows carry both epochs as
   // data attributes; groups order by their first row under the active direction.
-  const SORT_FIELD_KEY = 'asv-list-sort-field';
-  const SORT_DIR_KEY = 'asv-list-sort-dir';
+  const SORT_FIELD_KEY = PREFS.KEYS.sortField;
+  const SORT_DIR_KEY = PREFS.KEYS.sortDir;
   const sortField = document.getElementById('sort-field');
   const sortDirBtn = document.getElementById('sort-dir');
   const SORT_FIELDS = ['updated', 'created', 'name'];

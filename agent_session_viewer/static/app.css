@@ -19,6 +19,101 @@
          headers and for scroll-into-view offsets (prompt-history deep links).
          JS overwrites this from the measured header height on load/resize. */
       --sticky-site-header-offset: 3.1rem;
+
+      /* Every colour below this line is themeable. The light overrides live in
+         the [data-theme="light"] block at the end of this file, so a new colour
+         must be added in both places. Settings > Appearance switches themes by
+         setting data-theme on <html>; theme-boot.js applies it before first
+         paint so there is no flash of the wrong theme. */
+
+      /* Chrome */
+      --on-accent: #0c0e12;          /* text/knob sitting on an accent fill */
+      --surface-sunken: #0c0e12;     /* wells: token stats, bars, image frames */
+      --surface-inset: #12161f;      /* nested doc + prompt-history cards */
+      --surface-raised: #1a2030;     /* their headers and hover rows */
+      --chip-bg: #0c0e1288;          /* msgid / copy / fold pills */
+      --chip-text: #a5b4c8;
+      --accent-soft: #6c9eff22;      /* accent wash on hover */
+      --pin-border: #6c9eff55;
+      --toggle-track: #2a2f3a;
+      --toggle-knob: #c5cad3;
+      --bubble-header-border: rgba(42, 47, 58, 0.85);
+      --shadow-sm: rgba(0, 0, 0, 0.15);
+      --shadow-lg: rgba(0, 0, 0, 0.35);
+
+      /* File-read cards inside tool results */
+      --file-prefix-bg: #0c1214;
+      --file-card-bg: #0f1618;
+      --file-card-head-bg: #152022;
+
+      /* Images */
+      --image-backdrop: #111;
+      --image-snippet-bg: #12151c;
+      --reveal-from: #1a2230;
+      --reveal-to: #141a24;
+      --reveal-hover: #1e2a3d;
+
+      /* Toast + parse warning */
+      --toast-bg: #1e293b;
+      --toast-text: #e2e8f0;
+      --warn-border: #a36b16;
+      --warn-bg: rgba(163, 107, 22, 0.12);
+
+      /* Token usage panel */
+      --tok-in: #93c5fd;
+      --tok-out: #6ee7b7;
+      --tok-cached: #c4b5fd;
+      --tok-reason: #fbbf24;
+      --seg-in: #3b82f6;
+      --seg-cached: #8b5cf6;
+      --seg-out: #10b981;
+      --seg-reason: #f59e0b;
+
+      /* Agent badges - one pair per agent id in registry.py */
+      --badge-grok-bg: #7c3aed33;    --badge-grok-fg: #c4b5fd;
+      --badge-claude-bg: #d9770633;  --badge-claude-fg: #fbbf24;
+      --badge-codex-bg: #05966933;   --badge-codex-fg: #6ee7b7;
+      --badge-aborted-bg: #b91c1c33; --badge-aborted-fg: #fca5a5;
+
+      /* Todo status chips */
+      --status-done-bg: #05966933;      --status-done-fg: #6ee7b7;
+      --status-active-bg: #2563eb33;    --status-active-fg: #93c5fd;
+      --status-pending-bg: #6b728033;   --status-pending-fg: #d1d5db;
+      --status-cancelled-bg: #7f1d1d33; --status-cancelled-fg: #fca5a5;
+
+      /* Turn role labels */
+      --role-user: #93c5fd;
+      --role-assistant: #6ee7b7;
+      --role-reasoning: #c4b5fd;
+      --role-tool: #8eb6ff;
+      --role-tool-result: #7ec8c0;
+      --role-system: #9ca3af;
+
+      /* Rendered Markdown */
+      --md-text: #c5cad3;
+      --md-heading: #d2d7e0;
+      --md-strong: #d8dde6;
+      --md-link: #8eb6ff;
+      --md-link-hover: #b4d0ff;
+      --md-hr: #3a4252;
+      --md-border: #3a4354;
+      --md-code-bg: #2a3142;
+      --md-code-text: #d0d6e0;
+      --md-code-border: #3d4658;
+      --md-pre-bg: #232936;
+      --md-pre-text: #cfd5df;
+      --md-plain-bg: #222834;
+      --md-plain-text: #b8c0cc;
+      --md-quote-border: #6b8fc7;
+      --md-quote-text: #9aa3b2;
+      --md-quote-bg: #1c2230;
+      --md-th-text: #a8b0be;
+      --md-td-bg: #1e2430;
+      --md-td-alt-bg: #222937;
+
+      --encrypted-bg: #3d3d6b55;
+      --encrypted-fg: #c4b5fd;
+      --code-inline: #c4b5fd;
     }
     * { box-sizing: border-box; }
     body {
@@ -33,6 +128,20 @@
     header h1 { margin: 0; font-size: 1.2rem; font-weight: 600; }
     header a { color: var(--accent); text-decoration: none; font-size: 0.95rem; }
     header a:hover { text-decoration: underline; }
+    /* Pushed to the right edge of the sticky header. */
+    .settings-link {
+      margin-left: auto; display: inline-flex; align-items: center; gap: 0.4rem;
+      padding: 0.35rem 0.7rem; border-radius: 999px;
+      border: 1px solid var(--border); color: var(--muted); font-size: 0.85rem;
+    }
+    .settings-link:hover {
+      text-decoration: none; color: var(--accent); border-color: var(--accent);
+    }
+    .settings-link[aria-current="page"] { color: var(--accent); border-color: var(--accent); }
+    .settings-link svg { flex: 0 0 auto; }
+    @media (max-width: 620px) {
+      .settings-link-label { display: none; }
+    }
     .container { max-width: 980px; margin: 0 auto; padding: 1.5rem 1.25rem 3rem; }
 
     .toolbar { display: flex; gap: 0.75rem; margin-bottom: 1.5rem; flex-wrap: wrap; align-items: center; }
@@ -49,7 +158,7 @@
       border: 1px solid var(--border); color: var(--muted); text-decoration: none; font-size: 0.85rem;
     }
     .filters a.active, .filters a:hover {
-      background: var(--accent); color: #0c0e12; border-color: var(--accent); font-weight: 600;
+      background: var(--accent); color: var(--on-accent); border-color: var(--accent); font-weight: 600;
     }
 
     .count-line { color: var(--muted); margin: 0 0 1rem; font-size: 0.9rem; }
@@ -81,7 +190,7 @@
     }
     .pin-btn:hover { opacity: 0.85; }
     .pin-btn.on { color: var(--text); opacity: 1; }
-    .project-group.pinned { border-color: #6c9eff55; }
+    .project-group.pinned { border-color: var(--pin-border); }
     .project-summary::-webkit-details-marker { display: none; }
     .project-summary::before {
       content: "▸"; color: var(--muted); flex: 0 0 auto;
@@ -132,10 +241,10 @@
     /* One rule per agent id in agent_session_viewer/registry.py. These stay here
        rather than coming from the registry because the CSP is style-src 'self',
        so per-agent colours cannot be delivered as inline custom properties. */
-    .badge.grok   { background: #7c3aed33; color: #c4b5fd; }
-    .badge.claude { background: #d9770633; color: #fbbf24; }
-    .badge.codex  { background: #05966933; color: #6ee7b7; }
-    .badge.aborted { background: #b91c1c33; color: #fca5a5; }
+    .badge.grok   { background: var(--badge-grok-bg); color: var(--badge-grok-fg); }
+    .badge.claude { background: var(--badge-claude-bg); color: var(--badge-claude-fg); }
+    .badge.codex  { background: var(--badge-codex-bg); color: var(--badge-codex-fg); }
+    .badge.aborted { background: var(--badge-aborted-bg); color: var(--badge-aborted-fg); }
 
     .view-header { margin-bottom: 1.25rem; }
     .view-header h2 { margin: 0.6rem 0 0.3rem; font-size: 1.35rem; }
@@ -152,8 +261,8 @@
       text-decoration: none; cursor: pointer;
     }
     .btn:hover { border-color: var(--accent); color: var(--accent); }
-    .btn-primary { background: var(--accent); color: #0c0e12; border-color: var(--accent); }
-    .btn-primary:hover { opacity: 0.9; color: #0c0e12; }
+    .btn-primary { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+    .btn-primary:hover { opacity: 0.9; color: var(--on-accent); }
 
     .md-toggle {
       display: inline-flex; align-items: center; gap: 0.55rem;
@@ -165,17 +274,17 @@
     .md-toggle input { position: absolute; opacity: 0; width: 0; height: 0; }
     .md-toggle .track {
       width: 2.2rem; height: 1.2rem; border-radius: 999px;
-      background: #2a2f3a; position: relative; transition: background 0.15s;
+      background: var(--toggle-track); position: relative; transition: background 0.15s;
       flex-shrink: 0;
     }
     .md-toggle .track::after {
       content: ""; position: absolute; top: 2px; left: 2px;
       width: 0.95rem; height: 0.95rem; border-radius: 50%;
-      background: #c5cad3; transition: transform 0.15s, background 0.15s;
+      background: var(--toggle-knob); transition: transform 0.15s, background 0.15s;
     }
     .md-toggle input:checked + .track { background: var(--accent); }
     .md-toggle input:checked + .track::after {
-      transform: translateX(1rem); background: #0c0e12;
+      transform: translateX(1rem); background: var(--on-accent);
     }
     .md-toggle .md-toggle-label { color: var(--muted); font-weight: 500; }
     .md-toggle input:checked ~ .md-toggle-label { color: var(--text); }
@@ -209,7 +318,7 @@
     /* Nested docs (system + session artifacts): title-only when collapsed, no fold clip. */
     .collapsible-artifact-docs { margin-top: 0.35rem; gap: 0.55rem; }
     .collapsible-artifact-doc {
-      border: 1px solid var(--border); border-radius: 10px; background: #12161f;
+      border: 1px solid var(--border); border-radius: 10px; background: var(--surface-inset);
       overflow: hidden;
     }
     .collapsible-artifact-doc > summary {
@@ -217,7 +326,7 @@
       padding: 0.55rem 0.85rem;
       cursor: pointer; list-style: none; user-select: none;
       color: var(--muted); font-size: 0.86rem; font-weight: 500;
-      background: #1a2030;
+      background: var(--surface-raised);
     }
     .collapsible-artifact-doc > summary::-webkit-details-marker { display: none; }
     .collapsible-artifact-doc > summary:hover { color: var(--accent); }
@@ -244,7 +353,7 @@
       padding: 0.35rem 0.55rem;
       border: 1px solid var(--border);
       border-radius: 8px;
-      background: #0c1214;
+      background: var(--file-prefix-bg);
       color: var(--muted);
       font-size: 0.8rem;
     }
@@ -260,16 +369,16 @@
       margin: 0.1rem 0 0.45rem;
     }
     .inline-file-read {
-      border: 1px solid var(--tool-result-border, #2a4a48);
+      border: 1px solid var(--tool-result-border);
       border-radius: 8px;
-      background: #0f1618;
+      background: var(--file-card-bg);
       overflow: hidden;
     }
     .inline-file-read > summary {
       display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem 0.65rem;
       padding: 0.4rem 0.7rem;
       cursor: pointer; list-style: none; user-select: none;
-      background: #152022;
+      background: var(--file-card-head-bg);
       color: var(--muted);
       font-family: ui-monospace, Menlo, Consolas, monospace;
       font-size: 0.8rem;
@@ -338,7 +447,7 @@
       gap: 0.55rem;
     }
     .token-stat {
-      background: #0c0e12; border: 1px solid var(--border); border-radius: 10px;
+      background: var(--surface-sunken); border: 1px solid var(--border); border-radius: 10px;
       padding: 0.65rem 0.75rem;
     }
     .token-stat .tlabel {
@@ -349,19 +458,19 @@
       font-family: ui-monospace, Menlo, Consolas, monospace;
       font-size: 1.05rem; font-weight: 600; color: var(--text);
     }
-    .token-stat.in .tvalue { color: #93c5fd; }
-    .token-stat.out .tvalue { color: #6ee7b7; }
-    .token-stat.cached .tvalue { color: #c4b5fd; }
-    .token-stat.reason .tvalue { color: #fbbf24; }
+    .token-stat.in .tvalue { color: var(--tok-in); }
+    .token-stat.out .tvalue { color: var(--tok-out); }
+    .token-stat.cached .tvalue { color: var(--tok-cached); }
+    .token-stat.reason .tvalue { color: var(--tok-reason); }
     .token-bar {
       margin-top: 0.75rem; height: 10px; border-radius: 999px; overflow: hidden;
-      background: #0c0e12; border: 1px solid var(--border); display: flex;
+      background: var(--surface-sunken); border: 1px solid var(--border); display: flex;
     }
     .token-bar > span { display: block; height: 100%; min-width: 0; }
-    .token-bar .seg-in { background: #3b82f6; }
-    .token-bar .seg-cached { background: #8b5cf6; }
-    .token-bar .seg-out { background: #10b981; }
-    .token-bar .seg-reason { background: #f59e0b; }
+    .token-bar .seg-in { background: var(--seg-in); }
+    .token-bar .seg-cached { background: var(--seg-cached); }
+    .token-bar .seg-out { background: var(--seg-out); }
+    .token-bar .seg-reason { background: var(--seg-reason); }
     .token-legend {
       display: flex; flex-wrap: wrap; gap: 0.75rem 1.1rem; margin-top: 0.55rem;
       font-size: 0.75rem; color: var(--muted);
@@ -370,16 +479,16 @@
       display: inline-block; width: 0.55rem; height: 0.55rem; border-radius: 2px;
       margin-right: 0.35rem; vertical-align: middle;
     }
-    .token-legend .lg-in { background: #3b82f6; }
-    .token-legend .lg-cached { background: #8b5cf6; }
-    .token-legend .lg-out { background: #10b981; }
-    .token-legend .lg-reason { background: #f59e0b; }
+    .token-legend .lg-in { background: var(--seg-in); }
+    .token-legend .lg-cached { background: var(--seg-cached); }
+    .token-legend .lg-out { background: var(--seg-out); }
+    .token-legend .lg-reason { background: var(--seg-reason); }
     .token-context {
       margin-top: 0.75rem; font-size: 0.82rem; color: var(--muted);
       font-family: ui-monospace, Menlo, Consolas, monospace;
     }
     .token-context .bar {
-      margin-top: 0.35rem; height: 6px; border-radius: 999px; background: #0c0e12;
+      margin-top: 0.35rem; height: 6px; border-radius: 999px; background: var(--surface-sunken);
       border: 1px solid var(--border); overflow: hidden;
     }
     .token-context .bar > span {
@@ -404,15 +513,15 @@
       font-size: 0.7rem; font-weight: 700; text-transform: uppercase;
       padding: 0.12rem 0.4rem; border-radius: 4px; white-space: nowrap;
     }
-    .todo-status.completed { background: #05966933; color: #6ee7b7; }
-    .todo-status.in_progress { background: #2563eb33; color: #93c5fd; }
-    .todo-status.pending { background: #6b728033; color: #d1d5db; }
-    .todo-status.cancelled { background: #7f1d1d33; color: #fca5a5; }
+    .todo-status.completed { background: var(--status-done-bg); color: var(--status-done-fg); }
+    .todo-status.in_progress { background: var(--status-active-bg); color: var(--status-active-fg); }
+    .todo-status.pending { background: var(--status-pending-bg); color: var(--status-pending-fg); }
+    .todo-status.cancelled { background: var(--status-cancelled-bg); color: var(--status-cancelled-fg); }
 
     .prompt-history-list {
       list-style: none; padding: 0; margin: 0;
       border: 1px solid var(--border); border-radius: 10px;
-      background: #12161f; overflow: hidden;
+      background: var(--surface-inset); overflow: hidden;
     }
     .prompt-history-list li {
       border-bottom: 1px solid var(--border);
@@ -432,7 +541,7 @@
       color: var(--text); text-decoration: none;
     }
     .prompt-history-link:hover {
-      color: var(--accent); background: #1a2030;
+      color: var(--accent); background: var(--surface-raised);
     }
     .prompt-history-link:hover .prompt-history-time,
     .prompt-history-link:hover .prompt-history-index {
@@ -476,8 +585,48 @@
       vertical-align: top;
     }
     .settings-table th { color: var(--muted); font-weight: 600; font-size: 0.75rem; }
-    .settings-table code { font-size: 0.8rem; color: #c4b5fd; }
+    .settings-table code { font-size: 0.8rem; color: var(--code-inline); }
     .settings-table-inset { margin-top: 0.5rem; }
+
+    /* Settings page. Namespaced .prefs-* because .settings-table above is the
+       unrelated per-session settings readout inside the view page. */
+    .prefs-row {
+      display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;
+      padding: 0.7rem 0; border-bottom: 1px solid var(--border);
+    }
+    .prefs-row:last-of-type { border-bottom: none; padding-bottom: 0.2rem; }
+    .prefs-label { flex: 1; min-width: 13rem; }
+    .prefs-label label, .prefs-label > span {
+      font-size: 0.9rem; font-weight: 500; cursor: default;
+    }
+    .prefs-hint { margin: 0.15rem 0 0; color: var(--muted); font-size: 0.78rem; }
+    .prefs-hint-block { margin: 0 0 0.5rem; }
+    .prefs-select {
+      background: var(--card); border: 1px solid var(--border); color: var(--text);
+      border-radius: 8px; font-size: 0.85rem; padding: 0.35rem 0.55rem; cursor: pointer;
+      min-width: 9rem;
+    }
+    .prefs-select:hover { border-color: var(--accent); }
+    .prefs-control-group { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+    /* The switch alone, without the pill chrome .md-toggle draws in a toolbar. */
+    .md-toggle.prefs-toggle {
+      border: none; background: none; padding: 0; gap: 0;
+    }
+    .md-toggle.prefs-toggle:hover { border-color: transparent; }
+    /* A required session root that is absent: the agent is probably not installed. */
+    .prefs-missing {
+      margin-left: 0.4rem; padding: 0.05rem 0.35rem; border-radius: 4px;
+      background: var(--status-cancelled-bg); color: var(--status-cancelled-fg);
+      font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.03em;
+    }
+    /* An optional root that is absent: normal, so this stays quiet. */
+    .prefs-note { margin-left: 0.4rem; color: var(--muted); font-size: 0.72rem; }
+    .prefs-saved {
+      margin: 0.75rem 0 0; min-height: 1.1rem;
+      color: var(--accent); font-size: 0.8rem;
+      opacity: 0; transition: opacity 0.15s;
+    }
+    .prefs-saved.is-visible { opacity: 1; }
 
     /* Spacing for panel <details> blocks. These were inline style attributes
        until the CSP dropped style-src 'unsafe-inline'; the three sizes are the
@@ -499,14 +648,14 @@
 
     .artifact-docs { display: flex; flex-direction: column; gap: 0.85rem; margin-top: 0.65rem; }
     .artifact-doc {
-      border: 1px solid var(--border); border-radius: 10px; background: #12161f;
+      border: 1px solid var(--border); border-radius: 10px; background: var(--surface-inset);
       overflow: hidden;
     }
     .artifact-doc-head {
       display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
       gap: 0.5rem 0.75rem;
       padding: 0.55rem 0.85rem; border-bottom: 1px solid var(--border);
-      background: #1a2030; font-size: 0.88rem;
+      background: var(--surface-raised); font-size: 0.88rem;
     }
     .artifact-doc-head-main {
       display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.75rem; min-width: 0;
@@ -527,7 +676,7 @@
       background: var(--card); color: var(--muted); text-decoration: none; font-size: 0.85rem; cursor: pointer;
     }
     .tabs a.active, .tabs button.active {
-      background: var(--accent); color: #0c0e12; border-color: var(--accent); font-weight: 600;
+      background: var(--accent); color: var(--on-accent); border-color: var(--accent); font-weight: 600;
     }
     .chat-toolbar {
       display: flex; gap: 0.45rem; flex-wrap: wrap; margin-left: auto;
@@ -614,8 +763,8 @@
       /* Match the card’s top radius at rest so corners aren’t square inside the bubble */
       border-top-left-radius: var(--bubble-radius, 14px);
       border-top-right-radius: var(--bubble-radius, 14px);
-      border-bottom: 1px solid rgba(42, 47, 58, 0.85);
-      box-shadow: 0 1px 0 rgba(0,0,0,0.15);
+      border-bottom: 1px solid var(--bubble-header-border);
+      box-shadow: 0 1px 0 var(--shadow-sm);
     }
     /* When stuck under the site header: square top edges + opaque seal above so
        scrolled content can’t peek through the rounded-corner wedges. */
@@ -624,7 +773,7 @@
       border-top-right-radius: 0;
       box-shadow:
         0 -12px 0 0 var(--bubble-header-bg),
-        0 1px 0 rgba(0,0,0,0.15);
+        0 1px 0 var(--shadow-sm);
     }
     .bubble-header-main {
       display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap; min-width: 0;
@@ -635,20 +784,20 @@
     .bubble-header .role { font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; }
     .bubble-header .msgid {
       font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.72rem;
-      color: #a5b4c8; background: #0c0e1288; padding: 0.1rem 0.4rem; border-radius: 4px;
+      color: var(--chip-text); background: var(--chip-bg); padding: 0.1rem 0.4rem; border-radius: 4px;
     }
-    .bubble.user .role { color: #93c5fd; }
-    .bubble.assistant .role { color: #6ee7b7; }
-    .bubble.reasoning .role { color: #c4b5fd; }
-    .bubble.tool_call .role, .bubble.event .role { color: #8eb6ff; }
-    .bubble.tool_result .role { color: #7ec8c0; }
-    .bubble.system .role, .bubble.system_reminder .role { color: #9ca3af; }
+    .bubble.user .role { color: var(--role-user); }
+    .bubble.assistant .role { color: var(--role-assistant); }
+    .bubble.reasoning .role { color: var(--role-reasoning); }
+    .bubble.tool_call .role, .bubble.event .role { color: var(--role-tool); }
+    .bubble.tool_result .role { color: var(--role-tool-result); }
+    .bubble.system .role, .bubble.system_reminder .role { color: var(--role-system); }
 
     .copy-menu { position: relative; }
     .copy-btn {
       display: inline-flex; align-items: center; gap: 0.25rem;
       padding: 0.2rem 0.55rem; border-radius: 6px;
-      border: 1px solid var(--border); background: #0c0e1288;
+      border: 1px solid var(--border); background: var(--chip-bg);
       color: var(--muted); font-size: 0.72rem; font-weight: 600;
       cursor: pointer; letter-spacing: 0.02em;
     }
@@ -660,7 +809,7 @@
       display: inline-flex; align-items: center; justify-content: center;
       width: 1.7rem; height: 1.55rem; padding: 0;
       border-radius: 6px; border: 1px solid var(--border);
-      background: #0c0e1288; color: var(--muted);
+      background: var(--chip-bg); color: var(--muted);
       font-size: 0.72rem; cursor: pointer; line-height: 1;
       flex-shrink: 0;
     }
@@ -680,7 +829,7 @@
       position: absolute; right: 0; top: calc(100% + 4px);
       min-width: 9.5rem; z-index: 20;
       background: var(--card); border: 1px solid var(--border);
-      border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+      border-radius: 8px; box-shadow: 0 8px 24px var(--shadow-lg);
       padding: 0.3rem; display: none;
     }
     .copy-menu.open .copy-menu-panel { display: block; }
@@ -691,7 +840,7 @@
       font-size: 0.8rem; cursor: pointer;
     }
     .copy-menu-panel button:hover {
-      background: #6c9eff22; color: var(--accent);
+      background: var(--accent-soft); color: var(--accent);
     }
     .copy-menu-panel .copy-hint {
       padding: 0.25rem 0.6rem 0.35rem; font-size: 0.68rem; color: var(--muted);
@@ -709,7 +858,7 @@
       white-space: normal;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Inter", sans-serif;
       font-size: 0.95rem; line-height: 1.65;
-      color: #c5cad3;
+      color: var(--md-text);
     }
     .bubble.tool_call .bubble-text.markdown-body,
     .bubble.tool_result .bubble-text.markdown-body,
@@ -719,82 +868,82 @@
     }
     .markdown-body > :first-child { margin-top: 0; }
     .markdown-body > :last-child { margin-bottom: 0; }
-    .markdown-body p { margin: 0.55em 0; color: #c5cad3; }
+    .markdown-body p { margin: 0.55em 0; color: var(--md-text); }
     .markdown-body h1, .markdown-body h2, .markdown-body h3,
     .markdown-body h4, .markdown-body h5, .markdown-body h6 {
       margin: 1em 0 0.45em; line-height: 1.25; font-weight: 650;
-      color: #d2d7e0;
+      color: var(--md-heading);
     }
     .markdown-body h1 { font-size: 1.35em; }
     .markdown-body h2 { font-size: 1.2em; }
     .markdown-body h3 { font-size: 1.08em; }
     .markdown-body h4, .markdown-body h5, .markdown-body h6 { font-size: 1em; }
-    .markdown-body ul, .markdown-body ol { margin: 0.45em 0; padding-left: 1.4em; color: #c5cad3; }
+    .markdown-body ul, .markdown-body ol { margin: 0.45em 0; padding-left: 1.4em; color: var(--md-text); }
     .markdown-body li { margin: 0.2em 0; }
     .markdown-body li > p { margin: 0.25em 0; }
     .markdown-body blockquote {
       margin: 0.6em 0; padding: 0.35em 0.9em;
-      border-left: 3px solid #6b8fc7; color: #9aa3b2;
-      background: #1c2230;
+      border-left: 3px solid var(--md-quote-border); color: var(--md-quote-text);
+      background: var(--md-quote-bg);
       border-radius: 0 8px 8px 0;
     }
-    .markdown-body a { color: #8eb6ff; }
-    .markdown-body a:hover { color: #b4d0ff; }
+    .markdown-body a { color: var(--md-link); }
+    .markdown-body a:hover { color: var(--md-link-hover); }
     .markdown-body hr {
-      border: none; border-top: 1px solid #3a4252; margin: 1em 0;
+      border: none; border-top: 1px solid var(--md-hr); margin: 1em 0;
     }
     .markdown-body code {
       font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
       font-size: 0.88em;
-      background: #2a3142;
-      color: #d0d6e0;
-      border: 1px solid #3d4658;
+      background: var(--md-code-bg);
+      color: var(--md-code-text);
+      border: 1px solid var(--md-code-border);
       border-radius: 5px; padding: 0.12em 0.4em;
     }
     .markdown-body pre {
       margin: 0.65em 0; padding: 0.8rem 0.95rem; overflow: auto;
-      background: #232936;
-      border: 1px solid #3a4354;
+      background: var(--md-pre-bg);
+      border: 1px solid var(--md-border);
       border-radius: 10px;
       font-size: 0.84rem; line-height: 1.5;
-      color: #cfd5df;
+      color: var(--md-pre-text);
     }
     .markdown-body pre code {
       background: none; border: none; padding: 0; font-size: inherit;
-      color: #cfd5df;
+      color: var(--md-pre-text);
     }
     .markdown-body pre.md-preserve {
       white-space: pre-wrap;
       word-break: break-word;
       margin: 0;
-      background: #222834;
-      color: #b8c0cc;
-      border-color: #3a4354;
+      background: var(--md-plain-bg);
+      color: var(--md-plain-text);
+      border-color: var(--md-border);
       font-size: 0.82rem;
       line-height: 1.5;
     }
     .markdown-body table {
       border-collapse: collapse; margin: 0.7em 0; width: 100%;
       font-size: 0.88rem; display: block; overflow-x: auto;
-      color: #c5cad3;
+      color: var(--md-text);
     }
     .markdown-body th, .markdown-body td {
-      border: 1px solid #3a4354; padding: 0.4rem 0.65rem; text-align: left;
+      border: 1px solid var(--md-border); padding: 0.4rem 0.65rem; text-align: left;
     }
     .markdown-body th {
-      background: #2a3142; color: #a8b0be; font-weight: 600;
+      background: var(--md-code-bg); color: var(--md-th-text); font-weight: 600;
     }
-    .markdown-body td { background: #1e2430; }
-    .markdown-body tr:nth-child(even) td { background: #222937; }
+    .markdown-body td { background: var(--md-td-bg); }
+    .markdown-body tr:nth-child(even) td { background: var(--md-td-alt-bg); }
     .markdown-body img {
-      max-width: 100%; height: auto; border-radius: 8px; border: 1px solid #3a4354;
+      max-width: 100%; height: auto; border-radius: 8px; border: 1px solid var(--md-border);
     }
     .markdown-body input[type="checkbox"] { margin-right: 0.35rem; }
-    .markdown-body strong { color: #d8dde6; font-weight: 650; }
-    .markdown-body em { color: #c5cad3; }
+    .markdown-body strong { color: var(--md-strong); font-weight: 650; }
+    .markdown-body em { color: var(--md-text); }
     .encrypted-tag {
       display: inline-block; margin-top: 0.35rem; padding: 0.15rem 0.5rem;
-      border-radius: 4px; background: #3d3d6b55; color: #c4b5fd; font-size: 0.78rem;
+      border-radius: 4px; background: var(--encrypted-bg); color: var(--encrypted-fg); font-size: 0.78rem;
       font-family: ui-monospace, Menlo, Consolas, monospace;
     }
 
@@ -803,18 +952,18 @@
     }
     .chat-image {
       margin: 0; max-width: min(520px, 100%);
-      background: #0c0e12; border: 1px solid var(--border); border-radius: 10px;
+      background: var(--surface-sunken); border: 1px solid var(--border); border-radius: 10px;
       overflow: hidden;
     }
     .chat-image .image-snippet {
       padding: 0.45rem 0.65rem; border-bottom: 1px solid var(--border);
       font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-      font-size: 0.78rem; color: #a5b4c8; word-break: break-all; white-space: pre-wrap;
-      line-height: 1.4; background: #12151c;
+      font-size: 0.78rem; color: var(--chip-text); word-break: break-all; white-space: pre-wrap;
+      line-height: 1.4; background: var(--image-snippet-bg);
     }
     .chat-image img {
       display: block; max-width: 100%; max-height: 360px; width: auto; height: auto;
-      object-fit: contain; background: #111;
+      object-fit: contain; background: var(--image-backdrop);
     }
     .chat-image img.preview-image {
       cursor: default;
@@ -830,7 +979,7 @@
     .image-caption-label { color: var(--muted); }
     .image-copy-actions { display: inline-flex; gap: 0.35rem; flex-wrap: wrap; }
     .image-copy-btn {
-      appearance: none; border: 1px solid var(--border); background: #1a2030;
+      appearance: none; border: 1px solid var(--border); background: var(--surface-raised);
       color: var(--text); border-radius: 6px; padding: 0.15rem 0.45rem;
       font-size: 0.72rem; cursor: pointer;
     }
@@ -839,10 +988,10 @@
       display: flex; flex-direction: column; align-items: flex-start; gap: 0.2rem;
       width: 100%; margin: 0; padding: 0.85rem 1rem;
       border: none; border-bottom: 1px solid var(--border);
-      background: linear-gradient(180deg, #1a2230 0%, #141a24 100%);
+      background: linear-gradient(180deg, var(--reveal-from) 0%, var(--reveal-to) 100%);
       color: var(--text); cursor: pointer; text-align: left;
     }
-    .image-reveal-btn:hover { background: #1e2a3d; }
+    .image-reveal-btn:hover { background: var(--reveal-hover); }
     .image-reveal-btn:disabled { opacity: 0.7; cursor: wait; }
     .image-reveal-icon { font-size: 1.1rem; line-height: 1; }
     .image-reveal-label {
@@ -853,7 +1002,7 @@
       font-family: ui-monospace, Menlo, Consolas, monospace;
       word-break: break-all; line-height: 1.35; max-width: 100%;
     }
-    .image-reveal-frame { background: #111; }
+    .image-reveal-frame { background: var(--image-backdrop); }
     .image-reveal-frame .image-missing {
       padding: 0.75rem 1rem; color: var(--muted); font-size: 0.82rem;
     }
@@ -862,7 +1011,7 @@
     .img-path-link { color: var(--accent); text-decoration: underline; word-break: break-all; }
     .copy-toast {
       position: fixed; bottom: 1.25rem; left: 50%; transform: translateX(-50%);
-      background: #1e293b; color: #e2e8f0; border: 1px solid var(--accent);
+      background: var(--toast-bg); color: var(--toast-text); border: 1px solid var(--accent);
       padding: 0.55rem 1rem; border-radius: 999px; font-size: 0.85rem;
       z-index: 200; opacity: 0; pointer-events: none; transition: opacity 0.2s;
     }
@@ -905,11 +1054,11 @@
       display: inline-flex; align-items: center; gap: 0.4rem;
       margin-top: 0.55rem; padding: 0.3rem 0.7rem;
       border-radius: 999px; border: 1px solid var(--border);
-      background: #0c0e1288; color: var(--accent);
+      background: var(--chip-bg); color: var(--accent);
       font-size: 0.8rem; font-weight: 500; cursor: pointer;
     }
     .fold-toggle:hover {
-      border-color: var(--accent); background: #6c9eff22;
+      border-color: var(--accent); background: var(--accent-soft);
     }
     .fold-toggle .fold-chars {
       color: var(--muted); font-weight: 400; font-size: 0.75rem;
@@ -920,12 +1069,136 @@
     .parse-warning {
       margin: 1rem 0;
       padding: .75rem 1rem;
-      border: 1px solid #a36b16;
+      border: 1px solid var(--warn-border);
       border-radius: 8px;
-      background: rgba(163, 107, 22, .12);
+      background: var(--warn-bg);
       color: var(--text);
       font-size: .9rem;
     }
     .parse-warning details { margin-top: .4rem; }
     .parse-warning ul { margin: .4rem 0 0; padding-left: 1.25rem; }
     footer { text-align: center; padding: 1.5rem; color: var(--muted); font-size: 0.8rem; }
+
+    /* ─────────────────────────────────────────────
+       Light theme
+
+       Only concrete themes appear here. "Auto" is resolved to dark or light by
+       theme-boot.js before first paint, so this file never needs a
+       prefers-color-scheme duplicate of the whole block. With JavaScript
+       disabled no attribute is set and the dark :root defaults apply, which is
+       exactly the pre-settings behaviour.
+
+       Every custom property below the themeable marker in :root must have an
+       entry here, or it will keep its dark value on a light background.
+       ───────────────────────────────────────────── */
+    [data-theme="light"] {
+      --bg: #f5f7fa;
+      --card: #ffffff;
+      --border: #d9dee7;
+      --text: #1b202a;
+      --muted: #5b6675;
+      --accent: #2563eb;
+      --user-bg: #dbe8fb;
+      --assistant-bg: #d9f0e4;
+      --tool-bg: #e7edf7;
+      --tool-border: #b6c6df;
+      --tool-result-bg: #e0eef0;
+      --tool-result-border: #a3c8cd;
+      --reason-bg: #ebe8f8;
+      --reason-border: #c2bae7;
+      --system-bg: #eceff4;
+
+      /* Chrome */
+      --on-accent: #ffffff;
+      --surface-sunken: #eceff5;
+      --surface-inset: #f8fafc;
+      --surface-raised: #edf1f7;
+      --chip-bg: #e5eaf2;
+      --chip-text: #48525f;
+      --accent-soft: #2563eb1a;
+      --pin-border: #2563eb66;
+      --toggle-track: #c9d1dd;
+      --toggle-knob: #ffffff;
+      --bubble-header-border: rgba(27, 32, 42, 0.12);
+      --shadow-sm: rgba(27, 32, 42, 0.06);
+      --shadow-lg: rgba(27, 32, 42, 0.16);
+
+      /* File-read cards */
+      --file-prefix-bg: #f0f3f6;
+      --file-card-bg: #f7fafa;
+      --file-card-head-bg: #e9f0f1;
+
+      /* Images */
+      --image-backdrop: #e8ecf2;
+      --image-snippet-bg: #f1f4f8;
+      --reveal-from: #edf2f8;
+      --reveal-to: #e3e9f2;
+      --reveal-hover: #dce5f2;
+
+      /* Toast + parse warning. The toast stays dark for contrast against the page. */
+      --toast-bg: #1b202a;
+      --toast-text: #f3f6fa;
+      --warn-border: #b0770f;
+      --warn-bg: rgba(176, 119, 15, 0.12);
+
+      /* Token usage panel. Text darkens for contrast; bar fills stay saturated. */
+      --tok-in: #1d4ed8;
+      --tok-out: #047857;
+      --tok-cached: #6d28d9;
+      --tok-reason: #b45309;
+      --seg-in: #3b82f6;
+      --seg-cached: #8b5cf6;
+      --seg-out: #10b981;
+      --seg-reason: #f59e0b;
+
+      /* Agent badges - one pair per agent id in registry.py */
+      --badge-grok-bg: #7c3aed1f;    --badge-grok-fg: #5b21b6;
+      --badge-claude-bg: #d977061f;  --badge-claude-fg: #92400e;
+      --badge-codex-bg: #0596691f;   --badge-codex-fg: #065f46;
+      --badge-aborted-bg: #b91c1c1f; --badge-aborted-fg: #991b1b;
+
+      /* Todo status chips */
+      --status-done-bg: #0596691f;      --status-done-fg: #065f46;
+      --status-active-bg: #2563eb1f;    --status-active-fg: #1d4ed8;
+      --status-pending-bg: #6b72801f;   --status-pending-fg: #4b5563;
+      --status-cancelled-bg: #7f1d1d1f; --status-cancelled-fg: #991b1b;
+
+      /* Turn role labels */
+      --role-user: #1d4ed8;
+      --role-assistant: #047857;
+      --role-reasoning: #6d28d9;
+      --role-tool: #1e40af;
+      --role-tool-result: #0f766e;
+      --role-system: #4b5563;
+
+      /* Rendered Markdown */
+      --md-text: #262c36;
+      --md-heading: #11151d;
+      --md-strong: #11151d;
+      --md-link: #1d4ed8;
+      --md-link-hover: #1e40af;
+      --md-hr: #d9dee7;
+      --md-border: #d2d8e1;
+      --md-code-bg: #edf1f6;
+      --md-code-text: #1f2937;
+      --md-code-border: #d9dee7;
+      --md-pre-bg: #f3f6f9;
+      --md-pre-text: #1f2937;
+      --md-plain-bg: #f3f6f9;
+      --md-plain-text: #333a45;
+      --md-quote-border: #93a2b6;
+      --md-quote-text: #4b5563;
+      --md-quote-bg: #f0f4f8;
+      --md-th-text: #374151;
+      --md-td-bg: #ffffff;
+      --md-td-alt-bg: #f7f9fb;
+
+      --encrypted-bg: #6d28d91f;
+      --encrypted-fg: #5b21b6;
+      --code-inline: #6d28d9;
+    }
+
+    /* Chromium paints form controls and scrollbars from the UA colour scheme;
+       without this they stay dark inside a light page. */
+    :root { color-scheme: dark; }
+    [data-theme="light"] { color-scheme: light; }

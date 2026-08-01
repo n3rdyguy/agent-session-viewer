@@ -1,0 +1,222 @@
+{% extends "base.html" %}
+{% block title %}Settings{% endblock %}
+{% block content %}
+
+<div class="view-header">
+  <h2>Settings</h2>
+  <div class="meta">
+    Preferences are stored in this browser only. Nothing is written to disk, and
+    no session data leaves this machine.
+  </div>
+</div>
+
+<div class="panel">
+  <h3>Appearance</h3>
+  <div class="prefs-row">
+    <div class="prefs-label">
+      <label for="pref-theme">Theme</label>
+      <p class="prefs-hint">Auto follows your operating system setting.</p>
+    </div>
+    <select id="pref-theme" class="prefs-select" autocomplete="off">
+      <option value="dark">Dark</option>
+      <option value="light">Light</option>
+      <option value="auto">Auto</option>
+    </select>
+  </div>
+</div>
+
+<div class="panel">
+  <h3>Session list</h3>
+
+  <div class="prefs-row">
+    <div class="prefs-label">
+      <label for="pref-agent">Default agent filter</label>
+      <p class="prefs-hint">Which filter the session list opens with.</p>
+    </div>
+    <select id="pref-agent" class="prefs-select" autocomplete="off">
+      <option value="">All agents</option>
+      {% for a in agents %}<option value="{{ a.id }}">{{ a.label }}</option>{% endfor %}
+    </select>
+  </div>
+
+  <div class="prefs-row">
+    <div class="prefs-label">
+      <label for="pref-sort-field">Default sort</label>
+      <p class="prefs-hint">Applied on top of the server's newest-first ordering.</p>
+    </div>
+    <div class="prefs-control-group">
+      <select id="pref-sort-field" class="prefs-select" autocomplete="off">
+        <option value="updated">Updated</option>
+        <option value="created">Created</option>
+        <option value="name">Name</option>
+      </select>
+      <select id="pref-sort-dir" class="prefs-select" autocomplete="off">
+        <option value="desc">Descending</option>
+        <option value="asc">Ascending</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="prefs-row">
+    <div class="prefs-label">
+      <label for="pref-time-format">Timestamps</label>
+      <p class="prefs-hint">
+        Session rows only. Timestamps inside a transcript are always absolute.
+      </p>
+    </div>
+    <select id="pref-time-format" class="prefs-select" autocomplete="off">
+      <option value="relative">Relative (3 hours ago)</option>
+      <option value="absolute">Absolute (2026-08-01 14:05)</option>
+    </select>
+  </div>
+
+  <div class="prefs-row">
+    <div class="prefs-label">
+      <label for="pref-expand">Expand project groups</label>
+      <p class="prefs-hint">Open every project on load instead of collapsed.</p>
+    </div>
+    <label class="md-toggle prefs-toggle">
+      <input type="checkbox" id="pref-expand" autocomplete="off">
+      <span class="track" aria-hidden="true"></span>
+    </label>
+  </div>
+
+  <div class="prefs-row">
+    <div class="prefs-label">
+      <label for="pref-prompts">Show first prompt</label>
+      <p class="prefs-hint">Adds the opening prompt under each session row.</p>
+    </div>
+    <label class="md-toggle prefs-toggle">
+      <input type="checkbox" id="pref-prompts" autocomplete="off">
+      <span class="track" aria-hidden="true"></span>
+    </label>
+  </div>
+</div>
+
+<div class="panel">
+  <h3>Session view</h3>
+
+  <div class="prefs-row">
+    <div class="prefs-label">
+      <label for="pref-markdown">Render Markdown</label>
+      <p class="prefs-hint">
+        Message bodies render as Markdown, sanitized in the browser. Off shows plain text.
+      </p>
+    </div>
+    <label class="md-toggle prefs-toggle">
+      <input type="checkbox" id="pref-markdown" autocomplete="off">
+      <span class="track" aria-hidden="true"></span>
+    </label>
+  </div>
+
+  <div class="prefs-row">
+    <div class="prefs-label">
+      <label for="pref-file-reads">File cards</label>
+      <p class="prefs-hint">Split shell file reads into one card per file inside tool results.</p>
+    </div>
+    <label class="md-toggle prefs-toggle">
+      <input type="checkbox" id="pref-file-reads" autocomplete="off">
+      <span class="track" aria-hidden="true"></span>
+    </label>
+  </div>
+
+  <div class="prefs-row">
+    <div class="prefs-label">
+      <label for="pref-preview">Preview collapsed bubbles</label>
+      <p class="prefs-hint">Show a short preview of collapsed bubbles. Off shows headers only.</p>
+    </div>
+    <label class="md-toggle prefs-toggle">
+      <input type="checkbox" id="pref-preview" autocomplete="off">
+      <span class="track" aria-hidden="true"></span>
+    </label>
+  </div>
+</div>
+
+<div class="panel">
+  <h3>Stored data</h3>
+  <p class="prefs-hint prefs-hint-block">
+    These accumulate as you use the app and are never sent anywhere.
+  </p>
+  <div class="prefs-row">
+    <div class="prefs-label">
+      <span>Pinned projects</span>
+      <p class="prefs-hint"><span id="prefs-pin-count">0</span> pinned</p>
+    </div>
+    <button type="button" class="btn" id="prefs-clear-pins">Clear pins</button>
+  </div>
+  <div class="prefs-row">
+    <div class="prefs-label">
+      <span>Per-project expand overrides</span>
+      <p class="prefs-hint"><span id="prefs-override-count">0</span> stored</p>
+    </div>
+    <button type="button" class="btn" id="prefs-clear-overrides">Clear overrides</button>
+  </div>
+  <div class="prefs-row">
+    <div class="prefs-label">
+      <span>All preferences</span>
+      <p class="prefs-hint">Restore every setting on this page to its default.</p>
+    </div>
+    <button type="button" class="btn" id="prefs-reset">Reset all</button>
+  </div>
+  <p class="prefs-saved" id="prefs-saved" role="status" aria-live="polite"></p>
+</div>
+
+<div class="panel">
+  <h3>This install</h3>
+  <p class="prefs-hint prefs-hint-block">
+    Read-only. Change these with environment variables or a project-local
+    <code>.env</code>, then restart the viewer.
+  </p>
+  <table class="settings-table">
+    <tbody>
+      <tr><th scope="row">Version</th><td>{{ version }}</td></tr>
+      <tr>
+        <th scope="row">.env loaded</th>
+        <td>{% if dotenv_path %}<code>{{ dotenv_path }}</code>{% else %}none{% endif %}</td>
+      </tr>
+      {% for name, on in debug_flags %}
+      <tr><th scope="row"><code>{{ name }}</code></th><td>{{ 'on' if on else 'off' }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <p class="panel-section-label spaced">Agent locations</p>
+  <table class="settings-table">
+    <thead>
+      <tr><th>Agent</th><th>Env var</th><th>Session root</th><th>Sessions</th></tr>
+    </thead>
+    <tbody>
+      {% for row in agent_rows %}
+      {% for root in row.roots %}
+      <tr>
+        {% if loop.first %}
+        <th scope="row" rowspan="{{ row.roots|length }}">{{ row.label }}</th>
+        <td rowspan="{{ row.roots|length }}"><code>{{ row.env_var }}</code></td>
+        {% endif %}
+        <td>
+          <code>{{ root.path }}</code>
+          {# An absent optional root is normal - the agent creates it on first use -
+             so it is a note, not a warning. An absent required root usually means
+             the agent is not installed or its home is pointed somewhere else. #}
+          {% if not root.exists %}
+            {% if root.optional %}
+              <span class="prefs-note" title="Created by the agent when first needed">not created yet</span>
+            {% else %}
+              <span class="prefs-missing">missing</span>
+            {% endif %}
+          {% endif %}
+        </td>
+        {% if loop.first %}
+        <td rowspan="{{ row.roots|length }}">{{ row.sessions }}</td>
+        {% endif %}
+      </tr>
+      {% endfor %}
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='settings.js') }}"></script>
+{% endblock %}

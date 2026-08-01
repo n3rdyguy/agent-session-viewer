@@ -2,17 +2,12 @@ from __future__ import annotations
 
 import json
 import re
-import threading
 from collections.abc import Iterator
-from contextlib import contextmanager
 from pathlib import Path
 from urllib.parse import urlencode
 
 import pytest
-from playwright.sync_api import Browser, Page, expect, sync_playwright
-from werkzeug.serving import BaseWSGIServer, make_server
-
-from agent_session_viewer.app import app
+from playwright.sync_api import Browser, Page, expect
 
 pytestmark = pytest.mark.browser
 
@@ -37,14 +32,6 @@ const safe = true;
 """
 
 
-@pytest.fixture(scope="session")
-def browser() -> Iterator[Browser]:
-    with sync_playwright() as playwright:
-        instance = playwright.chromium.launch()
-        yield instance
-        instance.close()
-
-
 def _write_session(path: Path) -> None:
     record = {
         "type": "user",
@@ -55,24 +42,14 @@ def _write_session(path: Path) -> None:
     path.write_text(json.dumps(record) + "\n", encoding="utf-8")
 
 
-@contextmanager
-def _live_app() -> Iterator[str]:
-    server: BaseWSGIServer = make_server("127.0.0.1", 0, app)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    try:
-        yield f"http://127.0.0.1:{server.server_port}"
-    finally:
-        server.shutdown()
-        thread.join(timeout=5)
-
-
 @pytest.fixture
-def browser_page(browser: Browser, agent_homes: dict[str, Path]) -> Iterator[tuple[Page, str]]:
+def browser_page(
+    browser: Browser, agent_homes: dict[str, Path], live_app
+) -> Iterator[tuple[Page, str]]:
     session = agent_homes["claude"] / "projects" / "hostile" / "session.jsonl"
     _write_session(session)
     page = browser.new_page()
-    with _live_app() as base_url:
+    with live_app() as base_url:
         query = urlencode({"agent": "claude", "path": str(session)})
         yield page, f"{base_url}/view?{query}"
     page.close()
@@ -152,6 +129,7 @@ FIXTURES = Path(__file__).parent / "fixtures"
 def test_tabs_fold_controls_and_both_copy_modes(
     browser: Browser,
     agent_homes: dict[str, Path],
+    live_app,
 ) -> None:
     """Phase 7 regression row: tabs, fold controls, and both copy modes actually work."""
     # bubbles.html only folds bodies longer than 500 characters, so pad past that.
@@ -178,7 +156,7 @@ def test_tabs_fold_controls_and_both_copy_modes(
         "  window.__copied.push(text); return Promise.resolve();"
         "};"
     )
-    with _live_app() as base_url:
+    with live_app() as base_url:
         query = urlencode({"agent": "claude", "path": str(session)})
         page.goto(f"{base_url}/view?{query}")
         _exercise_tabs_folds_and_copy(page)
@@ -222,6 +200,7 @@ def _exercise_tabs_folds_and_copy(page: Page) -> None:
 def test_token_bar_widths_apply_without_inline_styles(
     browser: Browser,
     agent_homes: dict[str, Path],
+    live_app,
 ) -> None:
     """Widths moved from style="" to data-pct when style-src dropped 'unsafe-inline'."""
     session = agent_homes["claude"] / "projects" / "rich" / "session-fixture.jsonl"
@@ -234,7 +213,7 @@ def test_token_bar_widths_apply_without_inline_styles(
     violations: list[str] = []
     page.on("console", lambda message: violations.append(message.text))
     try:
-        with _live_app() as base_url:
+        with live_app() as base_url:
             query = urlencode({"agent": "claude", "path": str(session)})
             page.goto(f"{base_url}/view?{query}")
 
