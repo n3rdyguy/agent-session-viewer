@@ -70,6 +70,8 @@ updated, created, or name. Pin the projects you live in and they stay on top.
 - **File cards** toggle: shell tool results that pulled files split into per-file cards
   (preference in `localStorage`)
 - Header chevron plus **Expand all** / **Collapse all** for the active tab
+- **Subagents** tab when the session spawned children (Claude sidechain JSONL under
+  `subagents/agent-*.jsonl`; Grok `subagents/<id>/meta.json` plus sibling child session)
 - **Todos and prompt history** card when either is available; each prompt row is one line
   (ellipsis when long) and jumps to that turn in chat when a match exists
 - One-click **Markdown export**
@@ -106,6 +108,7 @@ Grok sessions get a deeper view of the on-disk session folder:
 | **Hunk records** | File edit events from `hunk_records.jsonl` |
 | **Recap requests** | Index of `recap_requests/*.json` (id, time, trigger, model) |
 | **Updates stream** | Second tab: aggregated `updates.jsonl` timeline (chunks collapsed, tool ids kept) |
+| **Subagents** | Third tab when present: child runs from `subagents/<id>/meta.json`, with spawn metadata and full sibling child-session chat when `child_session_id` exists under the same project folder; **Open full session** links to the child directory |
 | **Images** | `<image_files>` paths (clickable + preview via `/media`), inline `data:image/…;base64,…` previews with JSON snippet; click data-URL images to **copy to clipboard** |
 
 ### Codex-focused (rich rollout view)
@@ -138,7 +141,7 @@ Claude Code `<session-uuid>.jsonl` transcripts under `~/.claude/projects/<encode
 | **Todos & prompt history** | Task checklist from `task_reminder` attachments (fallback: `~/.claude/todos/<session-id>-agent-*.json`); prompts from `~/.claude/history.jsonl`, with jump-to-turn links |
 | **Chat history** | User + assistant messages, **thinking** (`<encrypted>` when only a signature is stored), tool calls/results matched by **`toolu_` call id** |
 | **System turns** | Slash commands and hook/informational `system` records, injected attachments (plan mode, permissions, task reminders), and `isMeta` `<system-reminder>` records shown as **system reminders** rather than as user messages (inline; Claude has no separate System instructions panel) |
-| **Subagents** | Sidechain transcripts from `<session>/subagents/agent-*.jsonl` merged inline in timestamp order and tagged with the agent type; each is also viewable on its own |
+| **Subagents** | Sidechain transcripts from `<session>/subagents/agent-*.jsonl` merged inline in chat (timestamp order, tagged by agent type) **and** listed on the **Subagents** tab with each child's full transcript in isolation; opening a subagent path directly is still supported |
 | **File edits** | Hunk records from `Edit` / `Write` / `MultiEdit` / `NotebookEdit` `toolUseResult`, with added/removed counts and line ranges from `structuredPatch` |
 | **Memory** | Project `<cwd>/CLAUDE.md` and user `~/.claude/CLAUDE.md` as artifact documents |
 | **Artifacts** | Skill and agent listings |
@@ -441,10 +444,12 @@ each coding-agent **global home** directory:
 | Cursor | `~/.cursor` | `hooks.json`, user skills + `skills-cursor`, agents/rules, MCP if present; sessions via agent-transcripts |
 
 The page also shows **recommended settings** tips (from official docs / common practice)
-and the current value of a few mapped keys when present. Secrets in config are redacted;
-session transcripts, auth files, and plugin source caches are never opened. Nothing is
-written. Override homes with `GROK_HOME`, `CLAUDE_HOME`, `CODEX_HOME`, or `CURSOR_HOME`
-(Cursor is inventory-only — sessions are still only Grok / Claude / Codex).
+and the current value of a few mapped keys when present — including Claude’s
+`includeCoAuthoredBy` default (Co-Authored-By trailers on commits until turned off) and
+Grok’s multi-location skill discovery (`.grok` / `.claude` / `.cursor` / `.agents` trees).
+Secrets in config are redacted; session transcripts, auth files, and plugin source caches
+are never opened. Nothing is written. Override homes with `GROK_HOME`, `CLAUDE_HOME`,
+`CODEX_HOME`, or `CURSOR_HOME`.
 
 ### Settings
 
@@ -523,7 +528,7 @@ uv run python scripts/smoke_wheel.py
 The fixture-based tests cover:
 
 - Flask list, view, export, raw-download, and media route behavior with isolated
-  temporary Grok, Claude, and Codex homes
+  temporary Grok, Claude, Codex, and Cursor homes
 - Agent-home path safety, traversal, prefix collisions, and symlink escapes
 - Image path detection and explicit mixed-content image extraction
 - Ensuring Markdown/HTML output hrefs are not treated as image attachments
@@ -531,7 +536,11 @@ The fixture-based tests cover:
 - Turn roles and message IDs from tiny Grok, Claude, and Codex JSONL fixtures
 - Claude token accounting (cache reads/writes, per-model rows), file-edit hunks from
   `structuredPatch`, chat counts that exclude tool-transport records, inline subagent
-  tagging, list-title precedence, and the subagent authorization shape
+  tagging, dedicated Subagents-tab payloads, list-title precedence, and the subagent
+  authorization shape
+- Grok subagent index (`subagents/*/meta.json`) and sibling child-session loading
+- Cursor agent-transcript discovery/parsing under `projects/…/agent-transcripts/`
+- Agents inventory page (`/agents`): redaction, skill discovery, settings catalog
 - Search/filter URL round-tripping for reserved characters and Unicode
 - Per-project grouping (path spellings that merge, the "(no project)" bucket, recency
   ordering) and the rendered list controls: collapsed-by-default groups, sort options,
@@ -561,6 +570,11 @@ assets/                  # user-attached images
 
 # Sibling of session folders (per project cwd):
 ../prompt_history.jsonl  # user prompts for all sessions in this project
+
+# Child agents (when present):
+subagents/<child-id>/meta.json   # spawn metadata (type, status, prompt, model)
+# Full child transcript is usually a sibling session directory named
+# <child_session_id>/ under the same encoded-cwd folder (see Subagents tab).
 ```
 
 Reasoning steps show the model **summary** text; full chain-of-thought is stored encrypted and displayed as `<encrypted>` (API `reasoningTokens` still count real reasoning usage).
@@ -569,8 +583,8 @@ Reasoning steps show the model **summary** text; full chain-of-thought is stored
 
 ## Notes
 
-- Read-only with respect to agent data: no writes to `~/.grok`, `~/.claude`, or `~/.codex`.
-- Claude subagent transcripts are merged into their parent session's chat inline and tagged; opening one directly is also supported.
+- Read-only with respect to agent data: no writes to `~/.grok`, `~/.claude`, `~/.codex`, or `~/.cursor`.
+- **Subagents tab:** Claude sidechains (`…/subagents/agent-*.jsonl`) are still merged into the parent chat and listed per-child on the Subagents tab; Grok child runs appear from `subagents/<id>/meta.json` with an optional full sibling session. Opening Claude subagent paths (and Grok child session directories) directly is supported when authorized.
 - Token totals are **estimates** reconstructed from usage records (not a separate billing ledger). Reasoning is usually included in output tokens; the UI shows both.
 - Chat and events bubbles start collapsed; use Preview, the header chevron, or Expand all.
 - Image and raw file access is restricted to paths under configured agent homes (plus the

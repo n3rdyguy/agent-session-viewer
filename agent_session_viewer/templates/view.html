@@ -443,6 +443,11 @@
       {{ spec.updates_label }} ({{ updates|length }})
     </button>
     {% endif %}
+    {% if subagents %}
+    <button type="button" data-tab="subagents">
+      Subagents ({{ subagents|length }})
+    </button>
+    {% endif %}
   </div>
   <div class="chat-toolbar">
     <button type="button" class="btn" id="expand-all" title="Expand all folded blocks">Expand all</button>
@@ -468,6 +473,51 @@
   {% else %}
     <div class="empty">{{ spec.updates_empty }}</div>
   {% endif %}
+</div>
+{% endif %}
+
+{% if subagents %}
+<div id="tab-subagents" class="tab-panel">
+  <p class="tab-hint">
+    Child agent runs spawned from this session. Each card is one subagent transcript
+    (Claude: <code>…/subagents/agent-*.jsonl</code>; Grok: <code>…/subagents/&lt;id&gt;/meta.json</code>
+    plus sibling child session when present). Open a card to read that child in isolation;
+    the main chat may still include merged subagent turns for Claude.
+  </p>
+  <div class="subagent-list">
+    {% for sa in subagents %}
+    <details class="subagent-card"{% if loop.first and subagents|length == 1 %} open{% endif %}>
+      <summary class="subagent-summary">
+        <span class="subagent-name">{{ sa.name or sa.id }}</span>
+        {% if sa.subagent_type and sa.subagent_type != sa.name %}
+        <span class="agent-chip">{{ sa.subagent_type }}</span>
+        {% endif %}
+        {% if sa.status %}<span class="agent-chip">{{ sa.status }}</span>{% endif %}
+        {% if sa.model %}<span class="agent-chip">{{ sa.model }}</span>{% endif %}
+        <span class="agent-chip">{{ sa.messages or (sa.turns|length if sa.turns else 0) }} turns</span>
+        <code class="subagent-id">{{ sa.id }}</code>
+      </summary>
+      <div class="subagent-body">
+        {% if sa.description and sa.description != sa.name %}
+        <p class="prefs-hint">{{ sa.description }}</p>
+        {% endif %}
+        {% if sa.view_path and sa.view_agent %}
+        <p class="subagent-actions">
+          <a class="btn" href="{{ url_for('view', agent=sa.view_agent, path=sa.view_path) }}">Open full session</a>
+          {% if sa.path %}<span class="prefs-hint"><code>{{ sa.path }}</code></span>{% endif %}
+        </p>
+        {% elif sa.path %}
+        <p class="prefs-hint">Source: <code>{{ sa.path }}</code></p>
+        {% endif %}
+        {% if sa.turns %}
+          {{ render_bubbles(sa.turns, 'sa-' ~ loop.index0 ~ '-') }}
+        {% else %}
+          <div class="empty">No turns recovered for this subagent.</div>
+        {% endif %}
+      </div>
+    </details>
+    {% endfor %}
+  </div>
 </div>
 {% endif %}
 

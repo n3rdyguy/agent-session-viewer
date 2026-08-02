@@ -197,6 +197,7 @@ def view():
         terminal_logs=session["terminal_logs"],
         recaps=session["recaps"],
         updates=session["updates"],
+        subagents=session.get("subagents"),
         diagnostics=session["diagnostics"],
     )
 

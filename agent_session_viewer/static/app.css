@@ -1154,6 +1154,56 @@
     .tab-panel { display: none; }
     .tab-panel.active { display: block; }
 
+    /* Per-session subagent viewer */
+    .subagent-list { display: flex; flex-direction: column; gap: 0.75rem; }
+    .subagent-card {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: var(--card);
+      overflow: hidden;
+    }
+    .subagent-summary {
+      cursor: pointer;
+      list-style: none;
+      display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem 0.55rem;
+      padding: 0.65rem 0.85rem;
+      background: var(--surface-raised, var(--card));
+      border-bottom: 1px solid transparent;
+      user-select: none;
+    }
+    .subagent-summary::-webkit-details-marker { display: none; }
+    .subagent-summary::marker { content: ""; }
+    .subagent-summary::before {
+      content: "";
+      width: 0.4rem; height: 0.4rem;
+      border-right: 2px solid var(--muted);
+      border-bottom: 2px solid var(--muted);
+      transform: rotate(-45deg);
+      flex: 0 0 auto;
+      transition: transform 0.12s;
+    }
+    .subagent-card[open] > .subagent-summary {
+      border-bottom-color: var(--border);
+    }
+    .subagent-card[open] > .subagent-summary::before {
+      transform: rotate(45deg);
+      margin-top: -0.1rem;
+    }
+    .subagent-name { font-weight: 600; }
+    .subagent-id {
+      font-size: 0.78rem;
+      color: var(--muted);
+      margin-left: auto;
+      max-width: 100%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .subagent-body { padding: 0.75rem 0.9rem 1rem; }
+    .subagent-actions {
+      display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.75rem;
+      margin: 0 0 0.75rem;
+    }
+
     .chat { display: flex; flex-direction: column; gap: 1.1rem; }
     .bubble {
       --bubble-radius: 14px;

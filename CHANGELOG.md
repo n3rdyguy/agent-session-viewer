@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Subagents tab** on the session view when a parent session has child agent
+  runs. Claude loads `…/<session>/subagents/agent-*.jsonl`; Grok loads
+  `…/subagents/<id>/meta.json` and the sibling child session when present. Each
+  child is listed with type/status/model and expands to its own chat bubbles,
+  with an optional link to open a full Grok/Claude child session.
+
 - **Cursor** as a first-class session agent. Discovers and views
   `~/.cursor/projects/<project>/agent-transcripts/<id>/<id>.jsonl` (filter badge **CU**).
   Desktop SQLite (`state.vscdb`) and CLI `store.db` are not browsed — only agent-transcript

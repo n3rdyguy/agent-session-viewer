@@ -51,6 +51,23 @@ class SessionCard(TypedDict, total=False):
     messages: Any
 
 
+class SubagentSession(TypedDict, total=False):
+    """One child agent run attached to a parent session."""
+
+    id: str
+    name: str
+    path: str
+    model: str
+    status: str
+    description: str
+    subagent_type: str
+    turns: list[Turn]
+    messages: int
+    # When the child is itself a browsable session path (Grok sibling dirs).
+    view_path: str
+    view_agent: str
+
+
 class SessionData(TypedDict, total=False):
     agent: str
     path: Path
@@ -64,6 +81,7 @@ class SessionData(TypedDict, total=False):
     terminal_logs: list[dict[str, Any]] | None
     recaps: list[dict[str, Any]] | None
     updates: list[dict[str, Any]] | None
+    subagents: list[SubagentSession] | None
     diagnostics: list[ParseDiagnostic]
 
 
@@ -86,4 +104,5 @@ def empty_session(agent: str, path: Path) -> SessionData:
         "terminal_logs": None,
         "recaps": None,
         "updates": None,
+        "subagents": None,
     }

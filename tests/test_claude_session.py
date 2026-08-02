@@ -55,6 +55,18 @@ def test_subagent_usage_is_included_and_broken_out_per_model() -> None:
     assert tokens["input"] == 715 + 60
 
 
+def test_subagent_viewer_lists_each_child_transcript() -> None:
+    session = load_session(CLAUDE_SESSION)
+    children = session.get("subagents") or []
+    assert len(children) == 1
+    child = children[0]
+    assert child["id"] == "fixture1"
+    assert child["name"] == "Explore"
+    assert child["messages"] >= 1
+    assert any(t.get("role") == "user" for t in child["turns"])
+    assert "Search the fixture tree" in (child["turns"][0].get("text") or "")
+
+
 def test_chat_counts_exclude_tool_result_only_records() -> None:
     counts = claude_scan_session(CLAUDE_SESSION)["summary"]["counts"]
 
