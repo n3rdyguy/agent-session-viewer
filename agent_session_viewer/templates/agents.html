@@ -1,0 +1,480 @@
+{% extends "base.html" %}
+{% block title %}Agents{% endblock %}
+{% block content %}
+<div class="agents-page">
+
+<div class="view-header agents-intro">
+  <h2>Agent homes</h2>
+  <div class="meta">
+    Read-only inventory of each coding-agent home directory (global only).
+    Settings, skills, hooks, plugins, MCP, and instruction files are listed here.
+    Secrets are redacted; session transcripts, auth files, and plugin source caches are never opened.
+  </div>
+</div>
+
+{# Compact sticky bar under the site header: jump between agents + sections for the active agent. #}
+<div class="agents-sticky" id="agents-sticky">
+  <div class="agents-sticky-row">
+    <span class="agents-sticky-label">Agents</span>
+    <nav class="agents-toc-agents" aria-label="Jump to agent">
+      {% for r in reports %}
+      <a class="agents-toc-agent{% if loop.first %} is-active{% endif %}"
+         href="#agent-{{ r.id }}"
+         data-agent="{{ r.id }}">
+        <span class="badge {{ r.id }} mini">{{ r.badge }}</span>
+        <span class="agents-toc-agent-label">{{ r.label }}</span>
+        <span class="agents-toc-agent-meta">{{ r.skills|length }}s · {{ r.hooks|length }}h</span>
+      </a>
+      {% endfor %}
+    </nav>
+  </div>
+  <div class="agents-sticky-row agents-sticky-sections-row">
+    <span class="agents-sticky-label">On this agent</span>
+    {% for r in reports %}
+    <nav class="agents-toc-sections{% if loop.first %} is-active{% endif %}"
+         data-agent="{{ r.id }}"
+         aria-label="{{ r.label }} sections"
+         {% if not loop.first %}hidden{% endif %}>
+      <a href="#agent-{{ r.id }}-recommended">Tips</a>
+      <a href="#agent-{{ r.id }}-settings">Settings</a>
+      <a href="#agent-{{ r.id }}-hooks">Hooks</a>
+      <a href="#agent-{{ r.id }}-plugins">Plugins</a>
+      <a href="#agent-{{ r.id }}-mcp">MCP</a>
+      <a href="#agent-{{ r.id }}-instructions">Instructions</a>
+      {% if r.rules or r.agents or r.commands or r.statuslines %}
+      <a href="#agent-{{ r.id }}-rules">Rules</a>
+      {% endif %}
+      <a href="#agent-{{ r.id }}-map">Home map</a>
+      <a href="#agent-{{ r.id }}-skills">Skills ({{ r.skills|length }})</a>
+    </nav>
+    {% endfor %}
+  </div>
+</div>
+
+{# Full clickable TOC (page overview). #}
+<nav class="agents-toc-full panel" aria-label="Table of contents">
+  <h3>Contents</h3>
+  <div class="agents-toc-grid">
+    {% for r in reports %}
+    <div class="agents-toc-card">
+      <a class="agents-toc-card-title" href="#agent-{{ r.id }}">
+        <span class="badge {{ r.id }} mini">{{ r.badge }}</span>
+        {{ r.label }}
+        {% if not r.exists %}<span class="agent-chip missing">missing</span>{% endif %}
+      </a>
+      <ul class="agents-toc-card-list">
+        <li><a href="#agent-{{ r.id }}-recommended">Recommended settings</a></li>
+        <li><a href="#agent-{{ r.id }}-settings">Settings</a></li>
+        <li><a href="#agent-{{ r.id }}-hooks">Hooks <span class="toc-n">{{ r.hooks|length }}</span></a></li>
+        <li><a href="#agent-{{ r.id }}-plugins">Plugins <span class="toc-n">{{ r.plugins|length }}</span></a></li>
+        <li><a href="#agent-{{ r.id }}-mcp">MCP <span class="toc-n">{{ r.mcp_servers|length }}</span></a></li>
+        <li><a href="#agent-{{ r.id }}-instructions">Instruction files <span class="toc-n">{{ r.instructions|length }}</span></a></li>
+        {% if r.rules or r.agents or r.commands or r.statuslines %}
+        <li><a href="#agent-{{ r.id }}-rules">Rules / agents / commands</a></li>
+        {% endif %}
+        <li><a href="#agent-{{ r.id }}-map">Home map</a></li>
+        <li><a href="#agent-{{ r.id }}-skills">Skills <span class="toc-n">{{ r.skills|length }}</span></a></li>
+      </ul>
+    </div>
+    {% endfor %}
+  </div>
+</nav>
+
+{% for r in reports %}
+<section class="agent-section" id="agent-{{ r.id }}" data-agent="{{ r.id }}">
+  <div class="agent-section-header">
+    <span class="badge {{ r.id }}">{{ r.badge }}</span>
+    <h2>{{ r.label }}</h2>
+  </div>
+  <div class="agent-home-path"><code>{{ r.home }}</code> · env <code>{{ r.home_attr }}</code></div>
+  <div class="agent-meta-chips">
+    {% if r.exists %}
+      <span class="agent-chip ok">home present</span>
+    {% else %}
+      <span class="agent-chip missing">home missing</span>
+    {% endif %}
+    {% if r.version %}<span class="agent-chip">v{{ r.version }}</span>{% endif %}
+    <span class="agent-chip">{{ r.skills|length }} skill{{ 's' if r.skills|length != 1 else '' }}</span>
+    <span class="agent-chip">{{ r.hooks|length }} hook{{ 's' if r.hooks|length != 1 else '' }}</span>
+    <span class="agent-chip">{{ r.plugins|length }} plugin{{ 's' if r.plugins|length != 1 else '' }}</span>
+    <span class="agent-chip">{{ r.mcp_servers|length }} MCP</span>
+    <span class="agent-chip">{{ r.instructions|length }} instruction file{{ 's' if r.instructions|length != 1 else '' }}</span>
+  </div>
+
+  {# ── Recommended ── #}
+  <div class="panel" id="agent-{{ r.id }}-recommended">
+    <h3>Recommended settings</h3>
+    <p class="prefs-hint prefs-hint-block">
+      Tips from official docs and common practice. Informational only — this app never writes config.
+    </p>
+    {% if r.tips %}
+    <ul class="tips-list">
+      {% for t in r.tips %}
+      <li>
+        <p class="tip-title">{{ t.title }}</p>
+        <p class="tip-body">{{ t.body }}</p>
+        {% if t.key and t.current_value %}
+        <p class="tip-current">Current <code>{{ t.key }}</code>: <code>{{ t.current_value }}</code></p>
+        {% elif t.key %}
+        <p class="tip-current">Key <code>{{ t.key }}</code>: not set or not found in scanned config</p>
+        {% endif %}
+        {% if t.permissive_note %}
+        <p class="tip-note">{{ t.permissive_note }}</p>
+        {% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="empty-note">No tips for this agent.</p>
+    {% endif %}
+  </div>
+
+  {# ── Settings ── #}
+  <div class="panel" id="agent-{{ r.id }}-settings">
+    <h3>Settings</h3>
+    <p class="prefs-hint prefs-hint-block">
+      Key/value view of each config file (secrets redacted). Nested maps are flattened;
+      large structures (e.g. hooks) are summarized — open the full file for the raw dump.
+    </p>
+    {% if r.settings_tips %}
+    <div class="settings-tips">
+      <p class="panel-section-label">Settings tips</p>
+      <ul class="tips-list">
+        {% for t in r.settings_tips %}
+        <li class="settings-tip-item">
+          <p class="tip-title">{{ t.title }}</p>
+          <p class="tip-body">{{ t.body }}</p>
+          {% if t.key and t.current_value %}
+          <p class="tip-current">Current <code>{{ t.key }}</code>: <code>{{ t.current_value }}</code></p>
+          {% elif t.key %}
+          <p class="tip-current">Key <code>{{ t.key }}</code>: not set (product default applies)</p>
+          {% endif %}
+          {% if t.permissive_note %}
+          <p class="tip-note">{{ t.permissive_note }}</p>
+          {% endif %}
+        </li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+    {% if r.settings %}
+      {% for f in r.settings %}
+        {% if f.exists %}
+        <div class="settings-file-block">
+          <div class="settings-file-head">
+            <code>{{ f.path }}</code>
+            <span class="agent-chip">{{ f.rows|length }} key{{ 's' if f.rows|length != 1 else '' }}</span>
+            {% if f.truncated %}<span class="agent-chip">truncated</span>{% endif %}
+          </div>
+          {% if f.rows %}
+          <table class="settings-table kv-table">
+            <thead>
+              <tr><th scope="col">Key</th><th scope="col">Value</th></tr>
+            </thead>
+            <tbody>
+              {% for row in f.rows %}
+              <tr>
+                <td class="kv-key"><code>{{ row.key }}</code></td>
+                <td class="kv-val">{{ row.value }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+          {% else %}
+          <p class="empty-note">Could not parse key/value pairs (see full file).</p>
+          {% endif %}
+          <details class="settings-raw">
+            <summary>
+              Full file <code>{{ f.path }}</code>
+              <span class="prefs-hint">collapsed by default</span>
+            </summary>
+            <pre>{{ f.content }}</pre>
+          </details>
+        </div>
+        {% else %}
+        <p class="empty-note"><code>{{ f.path }}</code> — not present</p>
+        {% endif %}
+      {% endfor %}
+    {% else %}
+    <p class="empty-note">No settings files found.</p>
+    {% endif %}
+
+    {# Documented settings catalog (collapsed) #}
+    {% if r.catalog %}
+    <details class="settings-catalog">
+      <summary>
+        <span class="settings-catalog-title">All documented settings</span>
+        <span class="agent-chip ok">{{ r.catalog_set }} set</span>
+        <span class="agent-chip">{{ r.catalog_total - r.catalog_set }} unset</span>
+        <span class="agent-chip">{{ r.catalog_total }} in catalog</span>
+        <span class="prefs-hint">from official docs · collapsed by default</span>
+      </summary>
+      <p class="prefs-hint prefs-hint-block settings-catalog-note">
+        Catalog of commonly documented options for this agent. <strong>Set</strong> means the
+        key appears in your scanned global config (or a related file is present).
+        <strong>Unset</strong> means you are on the product default (or the option is unused).
+        Not every experimental or managed-only key is listed.
+      </p>
+      <table class="settings-table catalog-table">
+        <thead>
+          <tr>
+            <th scope="col">Status</th>
+            <th scope="col">Key</th>
+            <th scope="col">Current</th>
+            <th scope="col">Default</th>
+            <th scope="col">Description</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in r.catalog %}
+          <tr class="catalog-{{ row.status }}">
+            <td>
+              {% if row.status == 'set' %}
+              <span class="catalog-status set">set</span>
+              {% else %}
+              <span class="catalog-status unset">unset</span>
+              {% endif %}
+            </td>
+            <td class="kv-key"><code>{{ row.key }}</code></td>
+            <td class="kv-val">{% if row.current %}{{ row.current }}{% else %}—{% endif %}</td>
+            <td class="kv-val catalog-default">{% if row.default %}<code>{{ row.default }}</code>{% else %}—{% endif %}</td>
+            <td class="catalog-desc">{{ row.description }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </details>
+    {% endif %}
+  </div>
+
+  {# ── Hooks ── #}
+  <div class="panel" id="agent-{{ r.id }}-hooks">
+    <h3>Hooks</h3>
+    {% if r.disabled_hooks %}
+    <p class="panel-section-label">Disabled hooks</p>
+    <div class="dump-block"><pre>{{ r.disabled_hooks }}</pre></div>
+    {% endif %}
+    {% if r.hooks %}
+    <table class="settings-table hooks-table">
+      <thead>
+        <tr><th>Event</th><th>Command / target</th><th>Source</th><th>Timeout</th></tr>
+      </thead>
+      <tbody>
+        {% for h in r.hooks %}
+        <tr>
+          <td>
+            <code>{{ h.event }}</code>
+            {% if h.matcher %}<div class="prefs-hint">matcher: <code>{{ h.matcher }}</code></div>{% endif %}
+            {% if h.extra %}<div class="prefs-hint">{{ h.extra }}</div>{% endif %}
+          </td>
+          <td class="cmd">{{ h.command }}</td>
+          <td><code>{{ h.source }}</code></td>
+          <td>{% if h.timeout is not none %}{{ h.timeout }}{% else %}—{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="empty-note">No hooks configured (or none in allowlisted files).</p>
+    {% endif %}
+  </div>
+
+  {# ── Plugins ── #}
+  <div class="panel" id="agent-{{ r.id }}-plugins">
+    <h3>Plugins</h3>
+    {% if r.plugins %}
+    <table class="settings-table">
+      <thead>
+        <tr><th>Name</th><th>Version</th><th>Enabled</th><th>Source</th></tr>
+      </thead>
+      <tbody>
+        {% for p in r.plugins %}
+        <tr>
+          <td><code>{{ p.name }}</code></td>
+          <td>{{ p.version or '—' }}</td>
+          <td>{% if p.enabled is none %}—{% elif p.enabled %}yes{% else %}no{% endif %}</td>
+          <td><code>{{ p.source }}</code>{% if p.path %}<div class="prefs-hint">{{ p.path }}</div>{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="empty-note">No plugins listed in allowlisted metadata.</p>
+    {% endif %}
+  </div>
+
+  {# ── MCP ── #}
+  <div class="panel" id="agent-{{ r.id }}-mcp">
+    <h3>MCP servers</h3>
+    {% if r.mcp_servers %}
+    <table class="settings-table">
+      <thead>
+        <tr><th>Name</th><th>Command / URL</th><th>Enabled</th><th>Env keys</th><th>Source</th></tr>
+      </thead>
+      <tbody>
+        {% for m in r.mcp_servers %}
+        <tr>
+          <td><code>{{ m.name }}</code></td>
+          <td class="cmd">
+            {% if m.command %}{{ m.command }}{% if m.args %} {{ m.args|join(' ') }}{% endif %}{% endif %}
+            {% if m.url %}{{ m.url }}{% endif %}
+            {% if not m.command and not m.url %}—{% endif %}
+          </td>
+          <td>{% if m.enabled is none %}—{% elif m.enabled %}yes{% else %}no{% endif %}</td>
+          <td>{% if m.env_keys %}{{ m.env_keys|join(', ') }}{% else %}—{% endif %}</td>
+          <td><code>{{ m.source }}</code></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="empty-note">No MCP servers found in scanned config.</p>
+    {% endif %}
+  </div>
+
+  {# ── Instruction files ── #}
+  <div class="panel" id="agent-{{ r.id }}-instructions">
+    <h3>Instruction files (AGENTS.md / CLAUDE.md)</h3>
+    {% if r.instructions %}
+      {% for f in r.instructions %}
+      <div class="dump-block">
+        <div class="dump-block-header">
+          <code>{{ f.path }}</code>
+          {% if f.truncated %}<span class="agent-chip">truncated</span>{% endif %}
+        </div>
+        <pre>{{ f.content }}</pre>
+      </div>
+      {% endfor %}
+    {% else %}
+    <p class="empty-note">No global instruction files at this home root.</p>
+    {% endif %}
+  </div>
+
+  {# ── Rules / agents / commands / statusline ── #}
+  {% if r.rules or r.agents or r.commands or r.statuslines %}
+  <div class="panel" id="agent-{{ r.id }}-rules">
+    <h3>Rules, agents, commands, statusline</h3>
+    {% for f in r.rules + r.agents + r.commands + r.statuslines %}
+    <div class="dump-block">
+      <div class="dump-block-header">
+        <span class="skill-source">{{ f.kind }}</span>
+        <code>{{ f.path }}</code>
+        {% if f.truncated %}<span class="agent-chip">truncated</span>{% endif %}
+      </div>
+      <pre>{{ f.content }}</pre>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {# ── Home map ── #}
+  <div class="panel" id="agent-{{ r.id }}-map">
+    <h3>Home map</h3>
+    <p class="prefs-hint prefs-hint-block">
+      Notable directories only. Session trees and caches are counted, not opened.
+    </p>
+    {% if r.notable_dirs %}
+    <table class="settings-table">
+      <thead>
+        <tr><th>Path</th><th>Status</th><th>Children</th><th>Note</th></tr>
+      </thead>
+      <tbody>
+        {% for d in r.notable_dirs %}
+        <tr>
+          <td><code>{{ d.path }}</code></td>
+          <td>{% if d.exists %}present{% else %}<span class="prefs-missing">missing</span>{% endif %}</td>
+          <td>{% if d.child_count is not none %}{{ d.child_count }}{% else %}—{% endif %}</td>
+          <td>{{ d.note or '—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="empty-note">Home directory not found.</p>
+    {% endif %}
+  </div>
+
+  {# ── Skills (bottom, collapsed by default) ── #}
+  <div class="panel skills-panel" id="agent-{{ r.id }}-skills">
+    <div class="skills-panel-header">
+      <h3>Skills <span class="skills-count">{{ r.skills|length }}</span></h3>
+      {% if r.skills %}
+      <div class="skills-panel-actions">
+        <button type="button" class="btn skills-expand-all" data-skills-for="{{ r.id }}">Expand all</button>
+        <button type="button" class="btn skills-collapse-all" data-skills-for="{{ r.id }}">Collapse all</button>
+      </div>
+      {% endif %}
+    </div>
+    <p class="prefs-hint prefs-hint-block">
+      Click a row to open the full <code>SKILL.md</code>. Collapsed by default to keep the page scannable.
+      {% if r.id == 'grok' %}
+      Grok also loads skills from other global homes when compat is enabled:
+      <code>~/.claude/skills</code> (source <code>claude-compat</code>) and
+      <code>~/.cursor/skills</code> (source <code>cursor-compat</code>), plus its own
+      <code>~/.grok/skills</code> and <code>bundled/skills</code>. Project-local trees
+      (<code>.grok/skills</code>, <code>.claude/skills</code>, <code>.cursor/skills</code>,
+      <code>.agents/skills</code>) are used at runtime too but are not scanned on this
+      global inventory page. See Recommended settings / Settings tips for the full priority list.
+      {% endif %}
+    </p>
+    {% if r.skills %}
+    <div class="skills-table-wrap" data-skills-root="{{ r.id }}">
+      <table class="settings-table skills-table">
+        <thead>
+          <tr>
+            <th class="skills-col-toggle" scope="col"><span class="visually-hidden">Open</span></th>
+            <th scope="col">Name</th>
+            <th scope="col">Source</th>
+            <th scope="col">Path</th>
+            <th scope="col">Description</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for s in r.skills %}
+          <tr class="skill-row" data-skill-name="{{ s.name }}">
+            <td colspan="5" class="skill-cell">
+              <details class="skill-details">
+                <summary class="skill-summary">
+                  <span class="skill-chevron" aria-hidden="true"></span>
+                  <span class="skill-sum-name">{{ s.name }}</span>
+                  <span class="skill-source">{{ s.source }}</span>
+                  <code class="skill-sum-path">{{ s.path }}</code>
+                  <span class="skill-sum-desc">
+                    {% if s.missing %}<span class="agent-chip missing">missing SKILL.md</span>
+                    {% elif s.description %}{{ s.description }}
+                    {% else %}—{% endif %}
+                    {% if s.truncated %} <span class="agent-chip">truncated</span>{% endif %}
+                  </span>
+                </summary>
+                <div class="skill-body">
+                  {% if s.when_to_use %}
+                  <p class="skill-when"><em>When:</em> {{ s.when_to_use }}</p>
+                  {% endif %}
+                  {% if s.body %}
+                  <pre>{{ s.body }}</pre>
+                  {% elif not s.missing %}
+                  <p class="empty-note skill-empty">Empty skill body.</p>
+                  {% else %}
+                  <p class="empty-note skill-empty">SKILL.md could not be read.</p>
+                  {% endif %}
+                </div>
+              </details>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <p class="empty-note">No skills found under allowlisted skill roots.</p>
+    {% endif %}
+  </div>
+
+</section>
+{% endfor %}
+
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='agents.js') }}"></script>
+{% endblock %}

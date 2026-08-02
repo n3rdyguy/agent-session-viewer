@@ -23,6 +23,7 @@ from .authorization import (
 )
 from .discovery import all_sessions
 from .grouping import group_by_project
+from .home_inventory import inventory_all
 from .markdown_output import format_markdown_content
 from .registry import AGENT_SPECS, spec_for
 from .session import (
@@ -96,6 +97,21 @@ def index():
         projects=group_by_project(sessions),
         agent=agent,
         q=q,
+    )
+
+
+@app.route("/agents")
+def agents():
+    """Read-only inventory of each coding-agent home directory.
+
+    Scans allowlisted settings, skills, hooks, plugins, MCP, and instruction
+    files under configured homes. Secrets are redacted; session transcripts,
+    auth files, and plugin source caches are never opened. Nothing is written.
+    """
+    return render_template(
+        "agents.html",
+        title="Agents",
+        reports=inventory_all(),
     )
 
 

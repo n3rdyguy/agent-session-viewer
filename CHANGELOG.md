@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Cursor** as a first-class session agent. Discovers and views
+  `~/.cursor/projects/<project>/agent-transcripts/<id>/<id>.jsonl` (filter badge **CU**).
+  Desktop SQLite (`state.vscdb`) and CLI `store.db` are not browsed — only agent-transcript
+  JSONL. Override the home with `CURSOR_HOME`.
+
+- **Agents home inventory** at `/agents`, reachable from an **Agents** control immediately
+  left of Settings in the header. Read-only scan of global homes for Grok, Claude, Codex,
+  and Cursor: full settings dumps (secrets redacted), skills (`SKILL.md` bodies), hooks,
+  plugins, MCP servers, instruction files (`AGENTS.md` / `CLAUDE.md` and variants), rules,
+  and recommended-settings tips. Session trees, auth files, and plugin source caches are
+  never opened.
+
 - Settings page at `/settings`, reachable from a gear icon on the right of the header on
   every page. It collects the preferences that were previously scattered across per-page
   toggles, adds new ones, and shows read-only facts about the install.

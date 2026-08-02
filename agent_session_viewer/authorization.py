@@ -11,7 +11,7 @@ from .registry import AGENT_IDS, spec_for
 
 # Hand-written because a Literal cannot be derived from the registry dict at type
 # check time. tests/test_registry.py asserts the two stay in step.
-Agent = Literal["grok", "claude", "codex"]
+Agent = Literal["grok", "claude", "codex", "cursor"]
 AGENTS = AGENT_IDS
 
 

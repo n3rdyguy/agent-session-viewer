@@ -9,6 +9,8 @@ from urllib.parse import parse_qs, urlparse
 
 import pytest
 
+from agent_session_viewer.registry import AGENT_SPECS
+
 
 def _write_claude_session(path: Path) -> None:
     records = [
@@ -130,7 +132,8 @@ def test_search_query_round_trips_through_agent_filters(client) -> None:
     toolbar = re.search(r'<div class="filters">(.*?)</div>', html, re.DOTALL)
     assert toolbar is not None
     links = re.findall(r'href="([^"]+)"', toolbar.group(1))
-    assert len(links) == 4
+    # All + one filter link per registered agent.
+    assert len(links) == 1 + len(AGENT_SPECS)
     for href in links:
         parsed = parse_qs(urlparse(unescape(href)).query, keep_blank_values=True)
         assert parsed["q"] == [query]

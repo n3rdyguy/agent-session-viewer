@@ -97,13 +97,17 @@ def test_settings_offers_every_agent_as_a_default_filter(client) -> None:
         assert f'<option value="{spec.id}">{spec.label}</option>' in html
 
 
-@pytest.mark.parametrize("route", ["/", "/settings"])
+@pytest.mark.parametrize("route", ["/", "/settings", "/agents"])
 def test_header_links_to_settings_on_every_page(client, route: str) -> None:
     html = client.get(route).get_data(as_text=True)
 
-    assert 'class="settings-link"' in html
+    assert 'class="header-nav"' in html
+    assert 'href="/agents"' in html
     assert 'href="/settings"' in html
+    assert 'aria-label="Agents"' in html
     assert 'aria-label="Settings"' in html
+    # Agents sits left of Settings in the header markup.
+    assert html.find('href="/agents"') < html.find('href="/settings"')
 
 
 def test_settings_page_marks_itself_current(client) -> None:
@@ -117,6 +121,7 @@ def test_every_page_loads_the_theme_and_prefs_bootstraps(client, agent_homes) ->
     for route, params in (
         ("/", {}),
         ("/settings", {}),
+        ("/agents", {}),
         ("/view", {"agent": "claude", "path": str(session)}),
     ):
         html = client.get(route, query_string=params).get_data(as_text=True)
