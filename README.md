@@ -247,9 +247,8 @@ You do **not** need a separate `python -m venv` or `pip install -r …` step. Pr
 Dev tools (pytest, ruff, pyright, playwright) are in the `dev` dependency group and come
 along with a normal `uv sync`. For a frozen CI-style install: `uv sync --frozen`.
 
-The installed application, including templates and static assets, lives in the
-`agent_session_viewer/` package. Root `app.py` and `main.py` remain deprecated
-source-checkout compatibility entrypoints for older command forms.
+The installed application, including templates and static assets, lives entirely in the
+`agent_session_viewer/` package.
 
 ### Package layout
 
@@ -270,15 +269,18 @@ agent_session_viewer/
   types.py          # Shared session, turn, card, image, and diagnostic shapes
   util.py           # JSONL, token, time, and path helpers
   registry.py       # One AgentSpec per agent: homes, path rules, media roots, labels
+  home_inventory/   # /agents page: settings, skills, hooks, catalogs
   templates/        # package-owned Jinja templates
   static/           # package-owned CSS, JavaScript, icons, and vendored libraries
     theme-boot.js   # Applies the stored theme in <head>, before first paint
     prefs.js        # Shared localStorage keys; default-agent redirect
     settings.js     # Settings page controls
+    agents.js       # Agents inventory sticky TOC / expand skills
   agents/
     grok.py
     codex.py
     claude.py
+    cursor.py
     loaders.py      # agent id -> load_session, the only agent interface
 ```
 
@@ -306,18 +308,9 @@ uv run agent-session-viewer
 
 # Module form:
 uv run python -m agent_session_viewer
-
-# Deprecated root shims (still work in a source checkout):
-uv run python app.py
-uv run python main.py
 ```
 
 Open **http://127.0.0.1:5050** in any modern browser. No build step and no Node.
-
-> **Deprecation:** the root `app.py` and `main.py` shims exist only so older source
-> checkouts keep working. They are not shipped in the wheel — only in the source
-> distribution — and are **scheduled for removal in 0.3.0**. Use the console entrypoint
-> or the module form instead.
 
 The server binds to `127.0.0.1` only (local loopback).
 
