@@ -7,59 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-08-02
+
+Feature release: Cursor sessions, agent-home inventory, subagent viewing, and removal of
+deprecated source-checkout shims.
+
 ### Added
 
-- Settings page at `/settings`, reachable from a gear icon on the right of the header on
-  every page. It collects the preferences that were previously scattered across per-page
-  toggles, adds new ones, and shows read-only facts about the install.
-  - **Appearance:** a light theme, plus Auto to follow the operating system. The stylesheet
-    is now fully tokenized - every colour is a CSS custom property, with light values in a
-    single `[data-theme="light"]` block. `theme-boot.js` applies the stored theme in
-    `<head>` before first paint, so there is no flash of the wrong theme.
-  - **Session list:** default agent filter, default sort field and direction, relative vs
-    absolute timestamps on session rows, expand-project-groups, and show-first-prompt.
-  - **Session view:** render Markdown, file cards, and preview-collapsed-bubbles.
-  - **Stored data:** counts for pinned projects and per-project expand overrides, with
-    buttons to clear either, and a reset-all-preferences button.
-  - **This install:** version, which `.env` was loaded, `ASV_DEBUG` / `ASV_TIMING_DEBUG`
-    state, and each agent's env var, session roots and session count. A root the agent
-    always has is flagged `missing` when absent; a root it creates lazily is labelled
-    "not created yet" instead, so Codex's `archived_sessions` does not look like a fault
-    before anything has been archived. `AgentSpec` distinguishes the two via
-    `session_subdirs` and `optional_subdirs`; both are searched identically.
+- **Subagents tab** on the session view when a parent session has child agent
+  runs. Claude loads `…/<session>/subagents/agent-*.jsonl`; Grok loads
+  `…/subagents/<id>/meta.json` and the sibling child session when present. Each
+  child is listed with type/status/model and expands to its own chat bubbles,
+  with an optional link to open a full Grok/Claude child session.
 
-  Every preference is stored in `localStorage` and applied client-side. The page has no
-  write route and does not change server configuration, so the app stays read-only and the
-  documented threat model is unchanged. Agent homes are still configured by environment
-  variable or `.env` and shown here only for reference.
+- **Cursor** as a first-class session agent. Discovers and views
+  `~/.cursor/projects/<project>/agent-transcripts/<id>/<id>.jsonl` (filter badge **CU**).
+  Desktop SQLite (`state.vscdb`) and CLI `store.db` are not browsed — only agent-transcript
+  JSONL. Override the home with `CURSOR_HOME`.
+
+- **Agents home inventory** at `/agents`, reachable from an **Agents** control immediately
+  left of Settings in the header. Read-only scan of global homes for Grok, Claude, Codex,
+  and Cursor: settings tables, full-file dumps (secrets redacted), skills, hooks, plugins,
+  MCP, instruction files, docs-based setting catalogs, and recommended-settings tips.
+
+- Settings page at `/settings` (browser preferences + install diagnostics), already
+  introduced on the 0.2.x line and documented here as part of the supported surface.
 
 ### Changed
 
-- Replaced the per-agent `if/elif` dispatch chains with an agent registry. Each supported
-  agent is now one `AgentSpec` in `agent_session_viewer/registry.py` describing its home
-  directory, session roots, path-shape authorization, media boundaries, `/raw` candidates,
-  Markdown export header, and the per-agent copy in the session view. The route,
-  discovery, authorization, export, and template layers read that descriptor instead of
-  branching on the agent name.
-- Every agent parser now exposes the same `load_session(path) -> SessionData` entrypoint,
-  wired up in `agent_session_viewer/agents/loaders.py`. Grok's session assembly moved out
-  of `session.py` into `agents/grok.py` alongside Codex's. No base class or protocol was
-  introduced - the shared shape is the existing `SessionData` TypedDict.
-- Agent home directories resolve through `config` when they are read rather than being
-  bound at import, so a single patch point redirects every module.
+- Package description and docs cover four agents: Grok, Claude, Codex, and Cursor.
+- Replaced the per-agent `if/elif` dispatch chains with an agent registry
+  (`AgentSpec` + loaders/discoverers).
 
-Apart from the Claude tab labelling fixed below, there is no user-visible change: routes,
-URLs, export format, and rendered output are unchanged. Verified by capturing `/view`,
-`/export`, `/raw`, and `/` for real sessions of all three agents before and after the
-refactor.
+### Removed
+
+- Root `app.py` and `main.py` source-checkout shims (deprecated in 0.2.0). Use
+  `uv run agent-session-viewer` or `uv run python -m agent_session_viewer`.
 
 ### Fixed
 
-- Claude's second tab is now labelled "Events timeline" and describes what it actually
-  contains (permission-mode changes, queue operations, hook summaries, turn durations,
-  file-history snapshots, attachments, and subagent runs). It previously reused Grok's
-  copy and claimed to be aggregated from `updates.jsonl`, a file Claude does not write.
-  The README already documented it as "Events timeline"; the UI now matches.
+- Claude's second tab is labelled "Events timeline" (not Grok's updates.jsonl copy).
 
 ## [0.2.0] - 2026-08-01
 

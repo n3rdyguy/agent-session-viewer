@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 
 from agent_session_viewer.agents import grok
+from agent_session_viewer.agents.grok import list_subagent_sessions, load_session
 
 FIXTURES = Path(__file__).parent / "fixtures"
 GROK_FIXTURE = FIXTURES / "grok"
@@ -206,3 +207,80 @@ def test_fixture_conversation_still_loads() -> None:
     turns = grok.get_grok_conversation(GROK_FIXTURE)
     assert turns
     assert turns[0]["role"] == "user"
+
+
+def test_grok_subagent_meta_without_child_transcript(tmp_path: Path) -> None:
+    session = tmp_path / "sess"
+    session.mkdir()
+    (session / "chat_history.jsonl").write_text(
+        json.dumps({"role": "user", "content": "hi"}) + "\n", encoding="utf-8"
+    )
+    meta_dir = session / "subagents" / "child-1"
+    meta_dir.mkdir(parents=True)
+    (meta_dir / "meta.json").write_text(
+        json.dumps(
+            {
+                "subagent_id": "child-1",
+                "child_session_id": "child-1",
+                "subagent_type": "explore",
+                "description": "research helper",
+                "status": "completed",
+                "prompt": "Look for TODOs in the tree.",
+                "effective_model_id": "grok-test",
+                "tool_calls": 2,
+                "turns": 1,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    children = list_subagent_sessions(session)
+    assert len(children) == 1
+    child = children[0]
+    assert child["name"] == "research helper"
+    assert child["subagent_type"] == "explore"
+    assert child["status"] == "completed"
+    assert child["model"] == "grok-test"
+    assert any("Look for TODOs" in (t.get("text") or "") for t in child["turns"])
+
+    loaded = load_session(session)
+    assert loaded.get("subagents")
+    assert loaded["subagents"][0]["id"] == "child-1"
+
+
+def test_grok_subagent_loads_sibling_child_session(tmp_path: Path) -> None:
+    cwd = tmp_path / "encoded-cwd"
+    parent = cwd / "parent-sess"
+    child = cwd / "child-sess"
+    parent.mkdir(parents=True)
+    child.mkdir()
+    (parent / "chat_history.jsonl").write_text("{}\n", encoding="utf-8")
+    (child / "chat_history.jsonl").write_text(
+        json.dumps(
+            {
+                "role": "assistant",
+                "content": [{"type": "text", "text": "child answer"}],
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    meta_dir = parent / "subagents" / "child-sess"
+    meta_dir.mkdir(parents=True)
+    (meta_dir / "meta.json").write_text(
+        json.dumps(
+            {
+                "subagent_id": "child-sess",
+                "child_session_id": "child-sess",
+                "description": "worker",
+                "status": "completed",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    children = list_subagent_sessions(parent)
+    assert len(children) == 1
+    assert children[0]["view_path"] == str(child)
+    assert children[0]["view_agent"] == "grok"
+    assert any("child answer" in (t.get("text") or "") for t in children[0]["turns"])

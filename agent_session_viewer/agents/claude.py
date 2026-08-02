@@ -10,7 +10,7 @@ from ..discovery import safe_claude_headline
 from ..file_reads import extract_shell_command, file_artifacts_for_tool_result
 from ..images import extract_text, extract_text_and_images
 from ..turns import format_tool_args, make_turn
-from ..types import SessionData, Turn
+from ..types import SessionData, SubagentSession, Turn
 from ..util import (
     display_time,
     empty_token_usage,
@@ -928,6 +928,77 @@ def _subagent_label(records: list[dict[str, Any]], agent_id: str) -> str:
     return f"subagent: {agent_id}"
 
 
+def _subagent_display_name(records: list[dict[str, Any]], agent_id: str) -> str:
+    for obj in records:
+        name = obj.get("attributionAgent")
+        if isinstance(name, str) and name:
+            return name
+    return agent_id
+
+
+def _subagent_model(records: list[dict[str, Any]]) -> str:
+    for obj in records:
+        message = obj.get("message") if isinstance(obj.get("message"), dict) else {}
+        model = message.get("model") if isinstance(message, dict) else None
+        if isinstance(model, str) and model:
+            return model
+    return ""
+
+
+def list_subagent_sessions(
+    path: Path,
+    *,
+    session_cwd: str | None = None,
+    subagent_records: dict[str, list[dict[str, Any]]] | None = None,
+) -> list[SubagentSession]:
+    """Build per-subagent transcript panels from ``…/<session>/subagents/agent-*.jsonl``.
+
+    Claude Code keeps each subagent sidechain in its own file beside the parent
+    session (see code.claude.com docs on sub-agents / session layout). The main
+    chat still merges them chronologically; this list powers the dedicated
+    Subagents tab so each child can be read in isolation.
+    """
+    if is_subagent_path(path):
+        return []
+    records_by_id = subagent_records if subagent_records is not None else load_subagent_records(path)
+    session_dir = path.parent if path.is_file() else path
+    out: list[SubagentSession] = []
+    for agent_id, agent_records in sorted(records_by_id.items(), key=lambda item: item[0]):
+        collected = _turns_from_records(
+            path,
+            agent_records,
+            session_dir,
+            session_cwd,
+            agent_label="",
+        )
+        collected.sort(key=lambda item: (item[0], item[1]))
+        turns = [turn for _, _, turn in collected]
+        file_path = path.parent / path.stem / SUBAGENT_DIR / f"{SUBAGENT_PREFIX}{agent_id}.jsonl"
+        # When the authorized path is the main .jsonl, the subagent file is the
+        # sibling tree; prefer the real file when present.
+        for candidate in subagent_files(path):
+            if candidate.stem[len(SUBAGENT_PREFIX) :] == agent_id:
+                file_path = candidate
+                break
+        name = _subagent_display_name(agent_records, agent_id)
+        out.append(
+            {
+                "id": agent_id,
+                "name": name,
+                "path": str(file_path),
+                "model": _subagent_model(agent_records),
+                "status": "",
+                "description": "",
+                "subagent_type": name if name != agent_id else "",
+                "turns": turns,
+                "messages": len(turns),
+                "view_path": str(file_path),
+                "view_agent": "claude",
+            }
+        )
+    return out
+
+
 def get_conversation(path: Path) -> list[Turn]:
     """Backwards-compatible entrypoint used by the v1 conversation helper."""
     return get_claude_conversation(path)
@@ -940,12 +1011,13 @@ def load_session(path: Path) -> SessionData:
     scan = claude_scan_session(path, records, subagents)
     summary = scan["summary"]
     meta = scan["meta"]
+    cwd = meta.get("cwd") or None
     return {
         "agent": "claude",
         "path": path,
         "title": summary.get("title") or path.name,
         "turns": get_claude_conversation(
-            path, records, subagents, session_cwd=meta.get("cwd") or None
+            path, records, subagents, session_cwd=cwd if isinstance(cwd, str) else None
         ),
         "summary": summary,
         "resources": scan["resources"],
@@ -954,4 +1026,10 @@ def load_session(path: Path) -> SessionData:
         "terminal_logs": None,
         "recaps": None,
         "updates": scan["events"],
+        "subagents": list_subagent_sessions(
+            path,
+            session_cwd=cwd if isinstance(cwd, str) else None,
+            subagent_records=subagents,
+        )
+        or None,
     }

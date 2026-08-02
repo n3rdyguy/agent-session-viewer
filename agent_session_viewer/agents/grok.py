@@ -9,7 +9,7 @@ from typing import Any
 from ..file_reads import extract_shell_command, file_artifacts_for_tool_result
 from ..images import extract_text, extract_text_and_images
 from ..turns import format_tool_args, make_turn
-from ..types import SessionData, empty_session
+from ..types import SessionData, SubagentSession, empty_session
 from ..util import (
     display_time,
     empty_token_usage,
@@ -1009,6 +1009,99 @@ def get_grok_conversation(path: Path) -> list[dict]:
     return turns
 
 
+def list_subagent_sessions(path: Path) -> list[SubagentSession]:
+    """List Grok child agents recorded under ``session/subagents/<id>/meta.json``.
+
+    Grok spawns independent child sessions (see user-guide 16-subagents.md). The
+    parent keeps a ``subagents/`` index with metadata; full transcripts usually
+    live as sibling session directories named by ``child_session_id`` under the
+    same encoded-cwd folder. When only meta is present, the panel still shows
+    spawn description, status, and prompt excerpt.
+    """
+    if not path.is_dir():
+        return []
+    root = path / "subagents"
+    if not root.is_dir():
+        return []
+    out: list[SubagentSession] = []
+    try:
+        children = sorted(p for p in root.iterdir() if p.is_dir())
+    except OSError:
+        return []
+
+    parent_cwd = path.parent  # …/<encoded-cwd>/<session-id>
+    for child in children:
+        meta = load_json(child / "meta.json") or {}
+        if not isinstance(meta, dict):
+            meta = {}
+        sub_id = str(meta.get("subagent_id") or meta.get("child_session_id") or child.name)
+        child_id = str(meta.get("child_session_id") or sub_id)
+        child_session = parent_cwd / child_id
+        turns = []
+        if child_session.is_dir() and (child_session / "chat_history.jsonl").is_file():
+            turns = get_grok_conversation(child_session)
+        elif (child / "chat_history.jsonl").is_file():
+            turns = get_grok_conversation(child)
+        name = str(
+            meta.get("description")
+            or meta.get("subagent_type")
+            or meta.get("agent_name")
+            or sub_id[:12]
+        )
+        status = str(meta.get("status") or "")
+        model = str(meta.get("effective_model_id") or meta.get("model") or "")
+        subagent_type = str(meta.get("subagent_type") or "")
+        description = str(meta.get("description") or "")
+        prompt = str(meta.get("prompt") or "")
+        if not turns:
+            # Lightweight index entry: surface spawn metadata as a short transcript.
+            if prompt.strip():
+                excerpt = prompt.strip()
+                if len(excerpt) > 4000:
+                    excerpt = excerpt[:4000] + "\n… [truncated]"
+                turns.append(
+                    make_turn(
+                        role="system",
+                        text=excerpt,
+                        meta="spawn prompt",
+                    )
+                )
+            detail_bits = [
+                f"status: {status}" if status else "",
+                f"type: {subagent_type}" if subagent_type else "",
+                f"model: {model}" if model else "",
+                f"tool_calls: {meta.get('tool_calls')}"
+                if meta.get("tool_calls") is not None
+                else "",
+                f"turns: {meta.get('turns')}" if meta.get("turns") is not None else "",
+                f"duration_ms: {meta.get('duration_ms')}"
+                if meta.get("duration_ms") is not None
+                else "",
+            ]
+            detail = "\n".join(b for b in detail_bits if b)
+            if detail:
+                turns.append(make_turn(role="event", text=detail, meta="subagent meta"))
+        view_path = ""
+        if child_session.is_dir():
+            view_path = str(child_session)
+        out.append(
+            {
+                "id": sub_id,
+                "name": name,
+                "path": str(child),
+                "model": model,
+                "status": status,
+                "description": description,
+                "subagent_type": subagent_type,
+                "turns": turns,
+                "messages": len(turns),
+                "view_path": view_path,
+                "view_agent": "grok" if view_path else "",
+            }
+        )
+    return out
+
+
 def load_session(path: Path) -> SessionData:
     """Load a Grok session with the same shape Claude and Codex provide.
 
@@ -1024,6 +1117,7 @@ def load_session(path: Path) -> SessionData:
 
     summary = grok_summary_card(path)
     resources = grok_resources(path)
+    subagents = list_subagent_sessions(path)
     session.update(
         {
             "title": summary.get("title") or path.name,
@@ -1034,6 +1128,7 @@ def load_session(path: Path) -> SessionData:
             "terminal_logs": grok_terminal_logs(path),
             "recaps": grok_recap_requests(path),
             "updates": grok_updates_timeline(path),
+            "subagents": subagents or None,
         }
     )
     return session

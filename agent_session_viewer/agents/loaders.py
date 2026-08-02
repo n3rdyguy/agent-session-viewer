@@ -15,10 +15,11 @@ from collections.abc import Callable
 from pathlib import Path
 
 from ..types import SessionData
-from . import claude, codex, grok
+from . import claude, codex, cursor, grok
 
 LOADERS: dict[str, Callable[[Path], SessionData]] = {
     "grok": grok.load_session,
     "claude": claude.load_session,
     "codex": codex.load_session,
+    "cursor": cursor.load_session,
 }

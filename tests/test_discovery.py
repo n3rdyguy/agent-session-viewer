@@ -302,6 +302,7 @@ def test_all_sessions_sorts_mixed_timestamp_types(
         "codex",
         lambda: [{"agent": "codex", "id": "x", "path": "x", "created": "2026-07-29T10:00:00Z"}],
     )
+    monkeypatch.setitem(discovery._DISCOVERERS, "cursor", lambda: [])
 
     ordered = [s["id"] for s in discovery.all_sessions(None)]
 

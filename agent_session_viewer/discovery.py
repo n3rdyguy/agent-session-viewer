@@ -551,10 +551,117 @@ def session_sort_key(s: SessionCard) -> float:
 # Registration table rather than a dispatch chain. It cannot live on the specs
 # themselves: the parsers in agents/ import this module, so registry.py must not
 # reach back into it.
+def _scan_cursor_card(path: Path) -> dict[str, Any]:
+    """Bounded card scan for a Cursor agent-transcript JSONL."""
+    from .agents.cursor import extract_user_query
+
+    headline = ""
+    messages = 0
+    try:
+        stat = path.stat()
+        updated = stat.st_mtime
+    except OSError:
+        updated = None
+
+    # Read a small head window for the first user_query headline.
+    try:
+        with path.open("r", encoding="utf-8", errors="replace") as fh:
+            for i, line in enumerate(fh):
+                if i >= _DISCOVERY_HEAD_RECORDS:
+                    break
+                messages += 1
+                if headline:
+                    continue
+                rec = decode_jsonl_record(path, i + 1, line)
+                if not isinstance(rec, dict):
+                    continue
+                if str(rec.get("role") or "").lower() != "user":
+                    continue
+                message = rec.get("message") if isinstance(rec.get("message"), dict) else rec
+                content = message.get("content") if isinstance(message, dict) else None
+                texts: list[str] = []
+                if isinstance(content, list):
+                    for block in content:
+                        if isinstance(block, dict) and isinstance(block.get("text"), str):
+                            texts.append(block["text"])
+                elif isinstance(content, str):
+                    texts.append(content)
+                raw = "\n".join(texts)
+                query = extract_user_query(raw)
+                if query:
+                    headline = safe_claude_headline(query) or query.splitlines()[0][:120]
+    except OSError:
+        pass
+
+    return {
+        "title": headline or path.stem,
+        "headline": headline,
+        "updated": updated,
+        "created": updated,
+        "messages": messages if messages else None,
+        "cwd": None,
+        "model": None,
+    }
+
+
+def discover_cursor() -> list[SessionCard]:
+    """Discover Cursor agent-transcript JSONL files under ``CURSOR_HOME/projects``."""
+    from .agents.cursor import decode_project_cwd_hint, is_cursor_transcript
+
+    sessions: list[SessionCard] = []
+    root = AGENT_SPECS["cursor"].looking_in()
+    if not root.exists():
+        _prune_agent_cache("cursor", set())
+        return sessions
+
+    live_paths: set[str] = set()
+    try:
+        projects = sorted(p for p in root.iterdir() if p.is_dir())
+    except OSError:
+        _prune_agent_cache("cursor", set())
+        return sessions
+
+    for proj in projects:
+        transcripts = proj / "agent-transcripts"
+        if not transcripts.is_dir():
+            continue
+        cwd_hint = decode_project_cwd_hint(proj.name)
+        try:
+            sid_dirs = sorted(p for p in transcripts.iterdir() if p.is_dir())
+        except OSError:
+            continue
+        for sid_dir in sid_dirs:
+            candidate = sid_dir / f"{sid_dir.name}.jsonl"
+            if not is_cursor_transcript(candidate):
+                continue
+            key = _file_key("cursor", candidate)
+            if key is None:
+                continue
+            live_paths.add(key[1])
+            card = _cached_card("cursor", candidate, _scan_cursor_card) or {}
+            sessions.append(
+                {
+                    "agent": "cursor",
+                    "id": sid_dir.name,
+                    "path": str(candidate),
+                    "cwd": card.get("cwd") or cwd_hint,
+                    "title": card.get("title") or card.get("headline") or sid_dir.name,
+                    "headline": card.get("headline") or "",
+                    "created": card.get("created"),
+                    "updated": card.get("updated"),
+                    "model": card.get("model"),
+                    "messages": card.get("messages"),
+                }
+            )
+    _prune_agent_cache("cursor", live_paths)
+    return sessions
+
+
 _DISCOVERERS: dict[str, Callable[[], list[SessionCard]]] = {
     "grok": discover_grok,
     "claude": discover_claude,
     "codex": discover_codex,
+    "cursor": discover_cursor,
 }
 
 

@@ -49,3 +49,5 @@ HOME = Path.home()
 GROK_HOME = Path(os.environ.get("GROK_HOME", HOME / ".grok")).expanduser()
 CLAUDE_HOME = Path(os.environ.get("CLAUDE_HOME", HOME / ".claude")).expanduser()
 CODEX_HOME = Path(os.environ.get("CODEX_HOME", HOME / ".codex")).expanduser()
+# Inventory-only: Cursor sessions are not browsed by this viewer.
+CURSOR_HOME = Path(os.environ.get("CURSOR_HOME", HOME / ".cursor")).expanduser()

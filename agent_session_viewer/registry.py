@@ -165,6 +165,19 @@ def _validate_codex(resolved: Path, parts: tuple[str, ...]) -> bool:
     )
 
 
+def _validate_cursor(resolved: Path, parts: tuple[str, ...]) -> bool:
+    """<project>/agent-transcripts/<session-id>/<session-id>.jsonl under projects/."""
+    if not (resolved.is_file() and resolved.suffix.lower() == ".jsonl"):
+        return False
+    # parts relative to projects/: project, agent-transcripts, sid, sid.jsonl
+    return (
+        len(parts) == 4
+        and parts[1] == "agent-transcripts"
+        and parts[2] == resolved.stem
+        and parts[3] == resolved.name
+    )
+
+
 # ─────────────────────────────────────────────
 # Media boundaries
 # ─────────────────────────────────────────────
@@ -203,6 +216,12 @@ def _codex_clipboard_fallback(path: Path) -> bool:
     except (FileNotFoundError, NotADirectoryError, OSError, RuntimeError, ValueError):
         return False
     return True
+
+
+def _cursor_media_roots(session: Path) -> tuple[Path, ...]:
+    # Transcript lives at …/agent-transcripts/<id>/<id>.jsonl; media may sit beside it
+    # or under the project folder.
+    return (session.parent, session.parent.parent.parent)
 
 
 # ─────────────────────────────────────────────
@@ -290,9 +309,34 @@ CODEX = AgentSpec(
     updates_empty="No timeline events found.",
 )
 
+CURSOR = AgentSpec(
+    id="cursor",
+    label="Cursor",
+    home_attr="CURSOR_HOME",
+    session_subdirs=("projects",),
+    validate=_validate_cursor,
+    media_roots=_cursor_media_roots,
+    system_panel=False,
+    summary_fields=(
+        _MODEL,
+        _CWD,
+        SummaryField("Agent", "agent_name"),
+        _SESSION_ID,
+    ),
+    hunks_label="Hunk records",
+    updates_label="Events timeline",
+    updates_hint=Markup(
+        "Cursor agent-transcript JSONL under <code>projects/…/agent-transcripts/</code> "
+        "(chat only; desktop SQLite stores are not browsed)."
+    ),
+    updates_empty="No timeline events found.",
+)
+
 # Insertion order drives the filter links, the empty-state paths, and the console
 # banner, and matches the order sessions are discovered in.
-AGENT_SPECS: dict[str, AgentSpec] = {spec.id: spec for spec in (GROK, CLAUDE, CODEX)}
+AGENT_SPECS: dict[str, AgentSpec] = {
+    spec.id: spec for spec in (GROK, CLAUDE, CODEX, CURSOR)
+}
 AGENT_IDS: frozenset[str] = frozenset(AGENT_SPECS)
 
 

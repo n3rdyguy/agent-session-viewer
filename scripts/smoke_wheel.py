@@ -21,6 +21,7 @@ PACKAGE_ASSETS = {
     "agent_session_viewer/static/app.js",
     "agent_session_viewer/static/prefs.js",
     "agent_session_viewer/static/settings.js",
+    "agent_session_viewer/static/agents.js",
     "agent_session_viewer/static/theme-boot.js",
     "agent_session_viewer/static/apple-touch-icon.png",
     "agent_session_viewer/static/favicon-16.png",
@@ -37,6 +38,7 @@ PACKAGE_ASSETS = {
     "agent_session_viewer/templates/list.html",
     "agent_session_viewer/templates/partials/bubbles.html",
     "agent_session_viewer/templates/settings.html",
+    "agent_session_viewer/templates/agents.html",
     "agent_session_viewer/templates/view.html",
 }
 FORBIDDEN_WHEEL_PREFIXES = ("app.py", "main.py", "templates/", "static/")
@@ -45,6 +47,7 @@ STATIC_URLS = (
     "/static/app.js",
     "/static/prefs.js",
     "/static/settings.js",
+    "/static/agents.js",
     "/static/theme-boot.js",
     "/static/apple-touch-icon.png",
     "/static/favicon-16.png",
@@ -109,7 +112,7 @@ def isolated_environment(directory: Path, wheel: Path) -> tuple[Path, dict[str, 
         check=True,
     )
     env = os.environ.copy()
-    for name in ("GROK_HOME", "CLAUDE_HOME", "CODEX_HOME"):
+    for name in ("GROK_HOME", "CLAUDE_HOME", "CODEX_HOME", "CURSOR_HOME"):
         env[name] = str(directory / name.lower())
     return python, env
 

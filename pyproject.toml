@@ -1,7 +1,7 @@
 [project]
 name = "agent-session-viewer"
-version = "0.2.0"
-description = "Local web UI for browsing, searching, and exporting Grok, Claude, and Codex agent sessions"
+version = "0.3.0"
+description = "Local web UI for browsing, searching, and exporting Grok, Claude, Codex, and Cursor agent sessions"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
@@ -29,8 +29,6 @@ packages = ["agent_session_viewer"]
 [tool.hatch.build.targets.sdist]
 include = [
     "agent_session_viewer/",
-    "app.py",
-    "main.py",
     "README.md",
     "CHANGELOG.md",
     "LICENSE*",

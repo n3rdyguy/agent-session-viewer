@@ -243,6 +243,15 @@ def load_session(agent: str, path: Path) -> SessionData:
     session_path = session.get("path") or path
     rebind_turn_media_links(session.get("turns"), agent=session_agent, session=session_path)
     rebind_turn_media_links(session.get("updates"), agent=session_agent, session=session_path)
+    for sub in session.get("subagents") or []:
+        if not isinstance(sub, dict):
+            continue
+        sub_path = sub.get("view_path") or sub.get("path") or session_path
+        rebind_turn_media_links(
+            sub.get("turns"),
+            agent=str(sub.get("view_agent") or session_agent),
+            session=sub_path,
+        )
     # Deep-link prompt-history rows to the matching user turns in chat.
     resources = session.get("resources")
     if isinstance(resources, dict) and resources.get("prompt_history"):

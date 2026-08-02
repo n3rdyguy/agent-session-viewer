@@ -7,6 +7,7 @@ Supports:
 - **Grok Build** (`~/.grok/sessions`)
 - **Codex CLI** (`~/.codex/sessions`)
 - **Claude Code** (`~/.claude/projects`)
+- **Cursor** (`~/.cursor/projects/…/agent-transcripts/`)
 
 Everything stays on your machine. The app only reads session files; it does not send data anywhere.
 
@@ -28,8 +29,8 @@ uv sync
 uv run agent-session-viewer
 ```
 
-Open **http://127.0.0.1:5050**. Nothing to configure: the viewer reads Grok, Claude, and
-Codex sessions from their default home directories, and only reads them.
+Open **http://127.0.0.1:5050**. Nothing to configure: the viewer reads Grok, Claude, Codex,
+and Cursor sessions from their default home directories, and only reads them.
 
 The front page groups sessions by project. Click a project header to expand it, then a
 session to open it - or use **Expand** to open every group at once. Type in the search box
@@ -47,7 +48,7 @@ updated, created, or name. Pin the projects you live in and they stay on top.
 - **Expand** toggle: groups start collapsed; opening or closing an individual group is
   remembered as an override, and flipping the toggle clears the overrides
 - **Pin** any project to float it above the rest (pinned groups keep the active sort)
-- Two-letter **agent badges** on each project header (`CL` / `CO` / `GR`) for the agents
+- Two-letter **agent badges** on each project header (`CL` / `CO` / `GR` / `CU`) for the agents
   that have sessions in that project, in the same colors as the session badges
 - **Sort** by updated, created, or name, ascending or descending
 - Instant client-side filtering as you type, over the same fields as the server search;
@@ -60,8 +61,8 @@ updated, created, or name. Pin the projects you live in and they stay on top.
 
 ### All agents
 
-- Unified session list across Grok, Claude, and Codex
-- Filter by agent (All / Grok / Claude / Codex)
+- Unified session list across Grok, Claude, Codex, and Cursor
+- Filter by agent (All / Grok / Claude / Codex / Cursor)
 - Search title, ID, path, model, working directory, and first-prompt headline
 - Chat-style conversation view with role-colored bubbles
 - **Preview** toggle: chat and events start collapsed; long content shows a short faded
@@ -69,6 +70,8 @@ updated, created, or name. Pin the projects you live in and they stay on top.
 - **File cards** toggle: shell tool results that pulled files split into per-file cards
   (preference in `localStorage`)
 - Header chevron plus **Expand all** / **Collapse all** for the active tab
+- **Subagents** tab when the session spawned children (Claude sidechain JSONL under
+  `subagents/agent-*.jsonl`; Grok `subagents/<id>/meta.json` plus sibling child session)
 - **Todos and prompt history** card when either is available; each prompt row is one line
   (ellipsis when long) and jumps to that turn in chat when a match exists
 - One-click **Markdown export**
@@ -105,6 +108,7 @@ Grok sessions get a deeper view of the on-disk session folder:
 | **Hunk records** | File edit events from `hunk_records.jsonl` |
 | **Recap requests** | Index of `recap_requests/*.json` (id, time, trigger, model) |
 | **Updates stream** | Second tab: aggregated `updates.jsonl` timeline (chunks collapsed, tool ids kept) |
+| **Subagents** | Third tab when present: child runs from `subagents/<id>/meta.json`, with spawn metadata and full sibling child-session chat when `child_session_id` exists under the same project folder; **Open full session** links to the child directory |
 | **Images** | `<image_files>` paths (clickable + preview via `/media`), inline `data:image/…;base64,…` previews with JSON snippet; click data-URL images to **copy to clipboard** |
 
 ### Codex-focused (rich rollout view)
@@ -137,7 +141,7 @@ Claude Code `<session-uuid>.jsonl` transcripts under `~/.claude/projects/<encode
 | **Todos & prompt history** | Task checklist from `task_reminder` attachments (fallback: `~/.claude/todos/<session-id>-agent-*.json`); prompts from `~/.claude/history.jsonl`, with jump-to-turn links |
 | **Chat history** | User + assistant messages, **thinking** (`<encrypted>` when only a signature is stored), tool calls/results matched by **`toolu_` call id** |
 | **System turns** | Slash commands and hook/informational `system` records, injected attachments (plan mode, permissions, task reminders), and `isMeta` `<system-reminder>` records shown as **system reminders** rather than as user messages (inline; Claude has no separate System instructions panel) |
-| **Subagents** | Sidechain transcripts from `<session>/subagents/agent-*.jsonl` merged inline in timestamp order and tagged with the agent type; each is also viewable on its own |
+| **Subagents** | Sidechain transcripts from `<session>/subagents/agent-*.jsonl` merged inline in chat (timestamp order, tagged by agent type) **and** listed on the **Subagents** tab with each child's full transcript in isolation; opening a subagent path directly is still supported |
 | **File edits** | Hunk records from `Edit` / `Write` / `MultiEdit` / `NotebookEdit` `toolUseResult`, with added/removed counts and line ranges from `structuredPatch` |
 | **Memory** | Project `<cwd>/CLAUDE.md` and user `~/.claude/CLAUDE.md` as artifact documents |
 | **Artifacts** | Skill and agent listings |
@@ -243,9 +247,8 @@ You do **not** need a separate `python -m venv` or `pip install -r …` step. Pr
 Dev tools (pytest, ruff, pyright, playwright) are in the `dev` dependency group and come
 along with a normal `uv sync`. For a frozen CI-style install: `uv sync --frozen`.
 
-The installed application, including templates and static assets, lives in the
-`agent_session_viewer/` package. Root `app.py` and `main.py` remain deprecated
-source-checkout compatibility entrypoints for older command forms.
+The installed application, including templates and static assets, lives entirely in the
+`agent_session_viewer/` package.
 
 ### Package layout
 
@@ -266,15 +269,18 @@ agent_session_viewer/
   types.py          # Shared session, turn, card, image, and diagnostic shapes
   util.py           # JSONL, token, time, and path helpers
   registry.py       # One AgentSpec per agent: homes, path rules, media roots, labels
+  home_inventory/   # /agents page: settings, skills, hooks, catalogs
   templates/        # package-owned Jinja templates
   static/           # package-owned CSS, JavaScript, icons, and vendored libraries
     theme-boot.js   # Applies the stored theme in <head>, before first paint
     prefs.js        # Shared localStorage keys; default-agent redirect
     settings.js     # Settings page controls
+    agents.js       # Agents inventory sticky TOC / expand skills
   agents/
     grok.py
     codex.py
     claude.py
+    cursor.py
     loaders.py      # agent id -> load_session, the only agent interface
 ```
 
@@ -302,18 +308,9 @@ uv run agent-session-viewer
 
 # Module form:
 uv run python -m agent_session_viewer
-
-# Deprecated root shims (still work in a source checkout):
-uv run python app.py
-uv run python main.py
 ```
 
 Open **http://127.0.0.1:5050** in any modern browser. No build step and no Node.
-
-> **Deprecation:** the root `app.py` and `main.py` shims exist only so older source
-> checkouts keep working. They are not shipped in the wheel — only in the source
-> distribution — and are **scheduled for removal in 0.3.0**. Use the console entrypoint
-> or the module form instead.
 
 The server binds to `127.0.0.1` only (local loopback).
 
@@ -345,6 +342,7 @@ platforms.
 | `GROK_HOME` | Grok product root (sessions under `…/sessions`) | `~/.grok` |
 | `CLAUDE_HOME` | Claude Code root (projects under `…/projects`) | `~/.claude` |
 | `CODEX_HOME` | Codex root (sessions under `…/sessions`) | `~/.codex` |
+| `CURSOR_HOME` | Cursor root (`projects/…/agent-transcripts` sessions + inventory) | `~/.cursor` |
 
 `ASV_TIMING_DEBUG` is independent of `ASV_DEBUG`. After enabling it, reload the session
 list or open a session. Timing entries are written to the terminal running the server:
@@ -396,6 +394,7 @@ uv run agent-session-viewer
 | Grok Build | `~/.grok/sessions/` | `%USERPROFILE%\.grok\sessions\` | `GROK_HOME` (product root) |
 | Claude Code | `~/.claude/projects/` | `%USERPROFILE%\.claude\projects\` | `CLAUDE_HOME` |
 | Codex CLI | `~/.codex/sessions/` (+ `archived_sessions`) | `%USERPROFILE%\.codex\sessions\` | `CODEX_HOME` |
+| Cursor | `~/.cursor/projects/…/agent-transcripts/` | `%USERPROFILE%\.cursor\projects\…` | `CURSOR_HOME` |
 
 On Windows, Grok session group folders are URL-encoded paths under `sessions\` (e.g. `C%3A%5CUsers%5C…`).
 
@@ -418,11 +417,32 @@ degrade to empty when missing or damaged.
 | `/export?agent=&path=` | Download conversation as Markdown |
 | `/raw?agent=&path=` | Download the raw file derived from an authorized session |
 | `/media?agent=&session=&path=` | Serve passive image media associated with an authorized session |
+| `/agents` | Read-only inventory of each agent home (settings, skills, hooks, plugins, MCP, instruction files) |
 | `/settings` | Browser preferences, and a read-only summary of this install |
 
 Application links are generated by Flask, including query encoding. Search text therefore
 round-trips through every agent filter unchanged, including Unicode and reserved URL
 characters.
+
+### Agents (home inventory)
+
+The **Agents** control to the left of Settings opens `/agents`. It is a read-only dump of
+each coding-agent **global home** directory:
+
+| Agent | Default home | What is listed |
+|-------|--------------|----------------|
+| Grok | `~/.grok` | `config.toml`, skills (user + bundled + Claude/Cursor compat), hooks, MCP, plugins, `AGENTS.md` / variants, rules, home map |
+| Claude | `~/.claude` | `settings.json`, skills, hooks, plugins metadata, `CLAUDE.md` / variants, rules/commands/agents, statusline |
+| Codex | `~/.codex` | `config.toml`, skills, plugins, MCP, rules, `AGENTS.md` / variants |
+| Cursor | `~/.cursor` | `hooks.json`, user skills + `skills-cursor`, agents/rules, MCP if present; sessions via agent-transcripts |
+
+The page also shows **recommended settings** tips (from official docs / common practice)
+and the current value of a few mapped keys when present — including Claude’s
+`includeCoAuthoredBy` default (Co-Authored-By trailers on commits until turned off) and
+Grok’s multi-location skill discovery (`.grok` / `.claude` / `.cursor` / `.agents` trees).
+Secrets in config are redacted; session transcripts, auth files, and plugin source caches
+are never opened. Nothing is written. Override homes with `GROK_HOME`, `CLAUDE_HOME`,
+`CODEX_HOME`, or `CURSOR_HOME`.
 
 ### Settings
 
@@ -501,7 +521,7 @@ uv run python scripts/smoke_wheel.py
 The fixture-based tests cover:
 
 - Flask list, view, export, raw-download, and media route behavior with isolated
-  temporary Grok, Claude, and Codex homes
+  temporary Grok, Claude, Codex, and Cursor homes
 - Agent-home path safety, traversal, prefix collisions, and symlink escapes
 - Image path detection and explicit mixed-content image extraction
 - Ensuring Markdown/HTML output hrefs are not treated as image attachments
@@ -509,7 +529,11 @@ The fixture-based tests cover:
 - Turn roles and message IDs from tiny Grok, Claude, and Codex JSONL fixtures
 - Claude token accounting (cache reads/writes, per-model rows), file-edit hunks from
   `structuredPatch`, chat counts that exclude tool-transport records, inline subagent
-  tagging, list-title precedence, and the subagent authorization shape
+  tagging, dedicated Subagents-tab payloads, list-title precedence, and the subagent
+  authorization shape
+- Grok subagent index (`subagents/*/meta.json`) and sibling child-session loading
+- Cursor agent-transcript discovery/parsing under `projects/…/agent-transcripts/`
+- Agents inventory page (`/agents`): redaction, skill discovery, settings catalog
 - Search/filter URL round-tripping for reserved characters and Unicode
 - Per-project grouping (path spellings that merge, the "(no project)" bucket, recency
   ordering) and the rendered list controls: collapsed-by-default groups, sort options,
@@ -539,6 +563,11 @@ assets/                  # user-attached images
 
 # Sibling of session folders (per project cwd):
 ../prompt_history.jsonl  # user prompts for all sessions in this project
+
+# Child agents (when present):
+subagents/<child-id>/meta.json   # spawn metadata (type, status, prompt, model)
+# Full child transcript is usually a sibling session directory named
+# <child_session_id>/ under the same encoded-cwd folder (see Subagents tab).
 ```
 
 Reasoning steps show the model **summary** text; full chain-of-thought is stored encrypted and displayed as `<encrypted>` (API `reasoningTokens` still count real reasoning usage).
@@ -547,8 +576,8 @@ Reasoning steps show the model **summary** text; full chain-of-thought is stored
 
 ## Notes
 
-- Read-only with respect to agent data: no writes to `~/.grok`, `~/.claude`, or `~/.codex`.
-- Claude subagent transcripts are merged into their parent session's chat inline and tagged; opening one directly is also supported.
+- Read-only with respect to agent data: no writes to `~/.grok`, `~/.claude`, `~/.codex`, or `~/.cursor`.
+- **Subagents tab:** Claude sidechains (`…/subagents/agent-*.jsonl`) are still merged into the parent chat and listed per-child on the Subagents tab; Grok child runs appear from `subagents/<id>/meta.json` with an optional full sibling session. Opening Claude subagent paths (and Grok child session directories) directly is supported when authorized.
 - Token totals are **estimates** reconstructed from usage records (not a separate billing ledger). Reasoning is usually included in output tokens; the UI shows both.
 - Chat and events bubbles start collapsed; use Preview, the header chevron, or Expand all.
 - Image and raw file access is restricted to paths under configured agent homes (plus the
