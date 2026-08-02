@@ -7,7 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Nothing yet.
+
 ## [0.3.0] - 2026-08-02
+
+Released on GitHub as tag `v0.3.0`.
 
 Feature release: Cursor sessions, agent-home inventory, subagent viewing, and removal of
 deprecated source-checkout shims.
@@ -112,8 +116,7 @@ flags are backward compatible with 0.1.0.
 
 ### Deprecated
 
-- The root `app.py` and `main.py` shims are scheduled for removal in **0.3.0**. They exist
-  only so older source checkouts keep working, and are already absent from the wheel. Use
+- The root `app.py` and `main.py` shims were deprecated and removed in **0.3.0**. Use
   `agent-session-viewer` or `python -m agent_session_viewer` instead.
 
 ### Fixed
@@ -137,3 +140,8 @@ continuity. The date is that of the first commit.
 - Initial local viewer for Grok Build, Claude Code, and Codex CLI sessions: session list,
   session view, Markdown export, raw download, and media preview, served from a
   loopback-only Flask app.
+
+[Unreleased]: https://github.com/n3rdyguy/agent-session-viewer/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/n3rdyguy/agent-session-viewer/compare/v0.2.0...v0.3.0
+[0.2.0]: https://github.com/n3rdyguy/agent-session-viewer/compare/v0.1.0...v0.2.0
+[0.1.0]: https://github.com/n3rdyguy/agent-session-viewer/releases/tag/v0.1.0
